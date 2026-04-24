@@ -44,5 +44,5 @@ diagrams/
 !assets/*.svg
 *.zip
 .eedom/
-.dogfood/
+.eedom/reports/
 .claude/worktrees/

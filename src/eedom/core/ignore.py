@@ -25,7 +25,7 @@ DEFAULT_PATTERNS: list[str] = [
     ".venv/",
     ".claude/",
     ".eedom/",
-    ".dogfood/",
+    
 ]
 
 

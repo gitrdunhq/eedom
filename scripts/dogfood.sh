@@ -4,7 +4,7 @@ set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-REPORT_DIR="${REPORT_DIR:-${REPO_ROOT}/.dogfood}"
+REPORT_DIR="${REPORT_DIR:-${REPO_ROOT}/.eedom/reports}"
 REPORT_FILE="${REPORT_DIR}/dogfood-report-${TIMESTAMP}.md"
 SARIF_FILE="${REPORT_DIR}/dogfood-${TIMESTAMP}.sarif"
 

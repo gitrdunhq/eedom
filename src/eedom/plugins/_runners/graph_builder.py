@@ -126,7 +126,6 @@ class CodeGraph:
                         ".venv",
                         ".claude",
                         ".eedom",
-                        ".dogfood",
                     )
                 ):
                     continue

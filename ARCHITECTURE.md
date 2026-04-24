@@ -932,7 +932,7 @@ changed files are re-parsed; deleted files are purged via `purge_deleted_files()
 
 On the first run (empty `symbols` table), `index_directory(repo_path)` performs a full
 walk, skipping `.git`, `__pycache__`, `node_modules`, `.venv`, `.claude`, `.eedom`, and
-`.dogfood`.
+`.eedom/reports`.
 
 ### Built-in SQL Checks
 
@@ -1097,7 +1097,7 @@ changes and re-runs the review after a 500 ms quiet period.
 - `Observer` monitors the repo path recursively
 - `_Handler.on_any_event()` filters by file extension (`_WATCH_EXTENSIONS`:
   `.py`, `.ts`, `.js`, `.tf`, `.yaml`, `.yml`) and ignores `_IGNORE_DIRS`
-  (`__pycache__`, `.git`, `.eedom`, `.dogfood`)
+  (`__pycache__`, `.git`, `.eedom`, `.eedom/reports`)
 - `DebounceTimer(delay=0.5)` cancels any pending callback and restarts the timer on
   each matching event; the review fires only after 500 ms of inactivity
 
