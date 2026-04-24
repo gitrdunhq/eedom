@@ -54,16 +54,20 @@ runs:
         EEDOM_EVIDENCE_PATH: ${{ inputs.evidence-path }}
         EEDOM_OPA_POLICY_PATH: ${{ inputs.policy-path }}
         EEDOM_ENABLED_SCANNERS: ${{ inputs.enabled-scanners }}
+        EEDOM_PR_URL: ${{ github.event.pull_request.html_url }}
+        EEDOM_DIFF_PATH: ${{ steps.diff.outputs.diff-path }}
+        EEDOM_TEAM: ${{ inputs.team }}
+        EEDOM_MODE: ${{ inputs.operating-mode }}
       run: |
         DECISION_FILE="$RUNNER_TEMP/decision.json"
         MEMO_FILE="$RUNNER_TEMP/memo.md"
 
         uv run python -m eedom.cli.main evaluate \
           --repo-path "$GITHUB_WORKSPACE" \
-          --diff "${{ steps.diff.outputs.diff-path }}" \
-          --pr-url "${{ github.event.pull_request.html_url }}" \
-          --team "${{ inputs.team }}" \
-          --operating-mode "${{ inputs.operating-mode }}" \
+          --diff "$EEDOM_DIFF_PATH" \
+          --pr-url "$EEDOM_PR_URL" \
+          --team "$EEDOM_TEAM" \
+          --operating-mode "$EEDOM_MODE" \
           --output-json "$DECISION_FILE" \
           | tee "$MEMO_FILE"
 

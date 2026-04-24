@@ -242,7 +242,7 @@ async def main() -> None:
     pr_number = int(os.environ.get("GATEKEEPER_PR_NUMBER", "0"))
     if pr_number == 0:
         logger.error("main.missing_pr_number", hint="Set GATEKEEPER_PR_NUMBER")
-        sys.exit(0)
+        sys.exit(1)
 
     diff_path = os.environ.get("GATEKEEPER_DIFF_PATH", "-")
     if diff_path == "-":

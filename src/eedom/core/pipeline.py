@@ -19,10 +19,10 @@ from eedom.core.decision import assemble_decision
 from eedom.core.diff import DependencyDiffDetector
 from eedom.core.memo import generate_memo
 from eedom.core.models import (
-    ReviewDecision,
     DecisionVerdict,
     OperatingMode,
     PolicyEvaluation,
+    ReviewDecision,
 )
 from eedom.core.normalizer import normalize_findings
 from eedom.core.orchestrator import ScanOrchestrator
@@ -35,16 +35,33 @@ from eedom.core.pipeline_helpers import (  # noqa: F401
 from eedom.core.policy import OpaEvaluator
 from eedom.core.sbom_diff import diff_sboms
 from eedom.core.seal import create_seal, find_previous_seal_hash
-from eedom.data.db import DecisionRepository, NullRepository, RepositoryProtocol
-from eedom.data.evidence import EvidenceStore
-from eedom.data.parquet_writer import append_decisions
-from eedom.data.pypi import PyPIClient
-from eedom.data.scanners.osv import OsvScanner
-from eedom.data.scanners.scancode import ScanCodeScanner
-from eedom.data.scanners.syft import SyftScanner
-from eedom.data.scanners.trivy import TrivyScanner
 
 logger = structlog.get_logger()
+
+
+def _data_imports():
+    """Lazy-import data-tier dependencies to avoid core→data layer violation."""
+    from eedom.data.db import DecisionRepository, NullRepository, RepositoryProtocol
+    from eedom.data.evidence import EvidenceStore
+    from eedom.data.parquet_writer import append_decisions
+    from eedom.data.pypi import PyPIClient
+    from eedom.data.scanners.osv import OsvScanner
+    from eedom.data.scanners.scancode import ScanCodeScanner
+    from eedom.data.scanners.syft import SyftScanner
+    from eedom.data.scanners.trivy import TrivyScanner
+
+    return {
+        "DecisionRepository": DecisionRepository,
+        "NullRepository": NullRepository,
+        "RepositoryProtocol": RepositoryProtocol,
+        "EvidenceStore": EvidenceStore,
+        "append_decisions": append_decisions,
+        "PyPIClient": PyPIClient,
+        "OsvScanner": OsvScanner,
+        "ScanCodeScanner": ScanCodeScanner,
+        "SyftScanner": SyftScanner,
+        "TrivyScanner": TrivyScanner,
+    }
 
 
 class ReviewPipeline:
@@ -100,18 +117,19 @@ class ReviewPipeline:
         if not requests:
             return []
 
+        d = _data_imports()
         evidence_path = Path(config.evidence_path)
 
         scanners = []
         for name in config.enabled_scanners:
             if name == "syft":
-                scanners.append(SyftScanner(evidence_dir=evidence_path))
+                scanners.append(d["SyftScanner"](evidence_dir=evidence_path))
             elif name == "osv-scanner":
-                scanners.append(OsvScanner())
+                scanners.append(d["OsvScanner"]())
             elif name == "trivy":
-                scanners.append(TrivyScanner())
+                scanners.append(d["TrivyScanner"]())
             elif name == "scancode":
-                scanners.append(ScanCodeScanner(evidence_dir=evidence_path))
+                scanners.append(d["ScanCodeScanner"](evidence_dir=evidence_path))
 
         orchestrator = ScanOrchestrator(
             scanners=scanners,
@@ -123,20 +141,20 @@ class ReviewPipeline:
             timeout=config.opa_timeout,
         )
 
-        evidence = EvidenceStore(root_path=config.evidence_path)
-        pypi_client = PyPIClient(timeout=config.pypi_timeout)
+        evidence = d["EvidenceStore"](root_path=config.evidence_path)
+        pypi_client = d["PyPIClient"](timeout=config.pypi_timeout)
 
         try:
-            db: RepositoryProtocol = DecisionRepository(
+            db = d["DecisionRepository"](
                 dsn=config.db_dsn,
                 query_timeout=10,
             )
             if not db.connect():
                 logger.warning("db_unavailable", msg="Falling back to NullRepository")
-                db = NullRepository()
+                db = d["NullRepository"]()
         except Exception:
             logger.warning("db_init_failed", msg="Falling back to NullRepository")
-            db = NullRepository()
+            db = d["NullRepository"]()
 
         decisions: list[ReviewDecision] = []
 
@@ -230,7 +248,7 @@ class ReviewPipeline:
                     )
 
             # Append decisions to the parquet audit log (fail-open)
-            append_decisions(Path(config.evidence_path), decisions, run_id)
+            d["append_decisions"](Path(config.evidence_path), decisions, run_id)
 
             # Seal all evidence artifacts for this run (fail-open)
             try:
@@ -289,18 +307,19 @@ class ReviewPipeline:
         if not requests:
             return []
 
+        d = _data_imports()
         evidence_path = Path(config.evidence_path)
 
         scanners = []
         for name in config.enabled_scanners:
             if name == "syft":
-                scanners.append(SyftScanner(evidence_dir=evidence_path))
+                scanners.append(d["SyftScanner"](evidence_dir=evidence_path))
             elif name == "osv-scanner":
-                scanners.append(OsvScanner())
+                scanners.append(d["OsvScanner"]())
             elif name == "trivy":
-                scanners.append(TrivyScanner())
+                scanners.append(d["TrivyScanner"]())
             elif name == "scancode":
-                scanners.append(ScanCodeScanner(evidence_dir=evidence_path))
+                scanners.append(d["ScanCodeScanner"](evidence_dir=evidence_path))
 
         orchestrator = ScanOrchestrator(
             scanners=scanners,
@@ -312,20 +331,20 @@ class ReviewPipeline:
             timeout=config.opa_timeout,
         )
 
-        evidence = EvidenceStore(root_path=config.evidence_path)
-        pypi_client = PyPIClient(timeout=config.pypi_timeout)
+        evidence = d["EvidenceStore"](root_path=config.evidence_path)
+        pypi_client = d["PyPIClient"](timeout=config.pypi_timeout)
 
         try:
-            db: RepositoryProtocol = DecisionRepository(
+            db = d["DecisionRepository"](
                 dsn=config.db_dsn,
                 query_timeout=10,
             )
             if not db.connect():
                 logger.warning("db_unavailable", msg="Falling back to NullRepository")
-                db = NullRepository()
+                db = d["NullRepository"]()
         except Exception:
             logger.warning("db_init_failed", msg="Falling back to NullRepository")
-            db = NullRepository()
+            db = d["NullRepository"]()
 
         decisions: list[ReviewDecision] = []
 
