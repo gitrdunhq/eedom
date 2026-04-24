@@ -87,25 +87,100 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
       - name: Run eedom review
-        run: uv run eedom review --repo-path . --all --format sarif --output .temp/review.sarif
-
-      - name: Post results
-        if: always()
+        id: review
         run: |
+          uv run eedom review --repo-path . --all --format sarif --output .temp/review.sarif
           uv run eedom review --repo-path . --all --output .temp/review.md || true
-          if [ -s .temp/review.md ]; then
-            MARKER="<!-- eedom-review -->"
-            BODY="${MARKER}
-          $(cat .temp/review.md)"
-            EXISTING=$(unset GITHUB_TOKEN && gh api "repos/${REPO}/issues/${PR_NUM}/comments" \
-              --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1)
-            if [ -n "$EXISTING" ]; then
-              unset GITHUB_TOKEN && gh api "repos/${REPO}/issues/comments/${EXISTING}" \
-                --method PATCH --field body="$BODY" > /dev/null
-            else
-              unset GITHUB_TOKEN && gh pr comment "$PR_NUM" --body "$BODY"
-            fi
+
+          ERRORS=0
+          WARNINGS=0
+          if [ -f .temp/review.sarif ]; then
+            ERRORS=$(python3 -c "
+          import json
+          with open('.temp/review.sarif') as f:
+              sarif = json.load(f)
+          print(sum(1 for r in sarif.get('runs',[]) for res in r.get('results',[]) if res.get('level')=='error'))
+          " 2>/dev/null || echo "0")
+
+            WARNINGS=$(python3 -c "
+          import json
+          with open('.temp/review.sarif') as f:
+              sarif = json.load(f)
+          print(sum(1 for r in sarif.get('runs',[]) for res in r.get('results',[]) if res.get('level')=='warning'))
+          " 2>/dev/null || echo "0")
+          fi
+
+          echo "errors=$ERRORS" >> "$GITHUB_OUTPUT"
+          echo "warnings=$WARNINGS" >> "$GITHUB_OUTPUT"
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "verdict=blocked" >> "$GITHUB_OUTPUT"
+          elif [ "$WARNINGS" -gt 0 ]; then
+            echo "verdict=warnings" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=approved" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set dom label
+        if: github.event_name == 'pull_request'
+        run: |
+          # Remove any existing dom labels
+          for LABEL in "dom: approved" "dom: warnings" "dom: blocked"; do
+            gh issue edit "$PR_NUM" --remove-label "$LABEL" 2>/dev/null || true
+          done
+
+          # Apply the verdict label
+          gh issue edit "$PR_NUM" --add-label "dom: $VERDICT"
+
+          echo "## 🏷️ dom: $VERDICT" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          VERDICT: ${{ steps.review.outputs.verdict }}
+          ERRORS: ${{ steps.review.outputs.errors }}
+          WARNINGS: ${{ steps.review.outputs.warnings }}
+
+      - name: Post review comment
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ ! -s .temp/review.md ]; then
+            echo "No review output — skipping comment."
+            exit 0
+          fi
+
+          ICON="✅"
+          if [ "$VERDICT" = "blocked" ]; then ICON="🚫"; fi
+          if [ "$VERDICT" = "warnings" ]; then ICON="⚠️"; fi
+
+          MARKER="<!-- eedom-review -->"
+          BODY="${MARKER}
+          ${ICON} **dom: ${VERDICT}** — ${ERRORS} error(s), ${WARNINGS} warning(s)
+
+          <details>
+          <summary>Full review</summary>
+
+          $(cat .temp/review.md)
+
+          </details>"
+
+          EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUM}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1)
+
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${REPO}/issues/comments/${EXISTING}" \
+              --method PATCH --field body="$BODY" > /dev/null
+            echo "Updated existing comment $EXISTING"
+          else
+            gh pr comment "$PR_NUM" --body "$BODY"
+            echo "Posted new comment"
           fi
         env:
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ github.event.pull_request.number }}
+          VERDICT: ${{ steps.review.outputs.verdict }}
+          ERRORS: ${{ steps.review.outputs.errors }}
+          WARNINGS: ${{ steps.review.outputs.warnings }}
