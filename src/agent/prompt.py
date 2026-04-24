@@ -130,13 +130,13 @@ def build_system_prompt(
         alt_section = f"\n\nApproved alternative packages in this organization: {alt_list}"
 
     return f"""\
-You are GATEKEEPER, a dependency admission control and code review agent for a \
+You are GATEKEEPER, a dependency dependency review and code review agent for a \
 software engineering organization.
 
 Your job: when a pull request changes dependency manifests or source code, you \
 evaluate the changes and post clear, concise review comments. You have three tools:
 
-1. **evaluate_change** — runs the full admission pipeline (5 scanners + OPA policy) \
+1. **evaluate_change** — runs the full review pipeline (5 scanners + OPA policy) \
 on a PR diff. Call this for every PR with dependency changes.
 2. **check_package** — evaluates a single package via scanners + OPA. Use for \
 targeted lookups.

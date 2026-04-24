@@ -1,21 +1,21 @@
 services:
   postgres:
     image: postgres:16
-    container_name: admission-postgres
+    container_name: eedom-postgres
     environment:
-      POSTGRES_DB: admission
-      POSTGRES_USER: admission
-      POSTGRES_PASSWORD: admission_dev
+      POSTGRES_DB: eedom
+      POSTGRES_USER: eedom
+      POSTGRES_PASSWORD: eedom_dev
     ports:
       - "12432:5432"
     volumes:
-      - admission_pgdata:/var/lib/postgresql/data
+      - eedom_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admission -d admission"]
+      test: ["CMD-SHELL", "pg_isready -U eedom -d eedom"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 10s
 
 volumes:
-  admission_pgdata:
+  eedom_pgdata:

@@ -1,6 +1,6 @@
-# OPA Admission Policy — Input Schema
+# OPA Policy — Input Schema
 
-The `admission` package expects a single JSON input object with three top-level keys:
+The `policy` package expects a single JSON input object with three top-level keys:
 `findings`, `package`, and `config`.
 
 ## `input.findings` — array of scanner findings

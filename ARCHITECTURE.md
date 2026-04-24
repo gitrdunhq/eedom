@@ -3,10 +3,10 @@
 ## 1. System Overview
 
 Eagle Eyed Dom is a deterministic code and dependency review platform for CI. It
-exposes two evaluation paths — a legacy dependency admission pipeline and a 15-plugin
+exposes two evaluation paths — a legacy dependency review pipeline and a 15-plugin
 review system — both fully fail-open with zero LLM in the decision path.
 
-**Dependency admission** (`evaluate` command): when a PR modifies a dependency manifest,
+**Dependency review** (`evaluate` command): when a PR modifies a dependency manifest,
 the pipeline detects changed packages, runs vulnerability and license scanners in
 parallel, normalizes findings, evaluates them against an OPA policy, assembles a
 structured decision, writes a Markdown memo for PR commenting, persists evidence
@@ -23,7 +23,7 @@ All failure paths are fail-open: a scanner timeout produces a `ScanResult.skippe
 plugin exception returns `PluginResult(error=...)`, an OPA failure produces
 `needs_review`, a DB failure falls back to `NullRepository`. Nothing blocks the build.
 
-### Dependency Admission Pipeline
+### Dependency Review Pipeline
 
 ```
 PR diff / SBOM pair
@@ -33,7 +33,7 @@ PR diff / SBOM pair
   (diff.py / sbom_diff.py)
         |
         v
-  AdmissionRequest list
+  ReviewRequest list
         |
         +-----> ScanOrchestrator.run()   <-- ThreadPoolExecutor (scanners in parallel)
         |            |  Syft  |  OSV  |  Trivy  |  ScanCode  |
@@ -57,7 +57,7 @@ PR diff / SBOM pair
         +-----> create_seal()                 (SHA-256 chain)
         |
         v
-  list[AdmissionDecision]
+  list[ReviewDecision]
   (returned to CLI / Jenkins step)
 ```
 
@@ -104,10 +104,10 @@ repo path / diff
 
 | Module | Responsibility |
 |--------|---------------|
-| `cli/main.py` | Click CLI entry point. Four commands: `evaluate` (dependency admission pipeline), `review` (15-plugin repo review), `plugins` (list registered plugins), and `check-health` (binary + DB probe). Reads diff from file or stdin, constructs the appropriate pipeline or registry, delegates all logic, formats output. Never contains business logic. SARIF output (`--format sarif`) and watch mode (`--watch`) are coordinated here but implemented in `core/sarif.py` and the watchdog observer respectively. |
+| `cli/main.py` | Click CLI entry point. Four commands: `evaluate` (dependency review pipeline), `review` (15-plugin repo review), `plugins` (list registered plugins), and `check-health` (binary + DB probe). Reads diff from file or stdin, constructs the appropriate pipeline or registry, delegates all logic, formats output. Never contains business logic. SARIF output (`--format sarif`) and watch mode (`--watch`) are coordinated here but implemented in `core/sarif.py` and the watchdog observer respectively. |
 
-Imports: `click`, `structlog`, `core.models.OperatingMode`, `core.pipeline.AdmissionPipeline`,
-`core.config.AdmissionSettings`, `core.plugin.PluginCategory`, `core.renderer.render_comment`,
+Imports: `click`, `structlog`, `core.models.OperatingMode`, `core.pipeline.ReviewPipeline`,
+`core.config.EedomSettings`, `core.plugin.PluginCategory`, `core.renderer.render_comment`,
 `core.sarif.to_sarif`, `core.repo_config.load_repo_config`, `plugins.get_default_registry`.
 
 The CLI catches `Exception` only at the outermost boundary to exit with code 1. Watch mode
@@ -130,16 +130,16 @@ The agent catches all exceptions and exits 0 (fail-open). Pipeline failures neve
 
 | Module | Responsibility |
 |--------|---------------|
-| `config.py` | `AdmissionSettings` — Pydantic `BaseSettings` with `ADMISSION_` prefix. Custom `_CommaSeparatedEnvSource` handles comma-separated scanner lists. `SecretStr` for `llm_api_key`. Validates at startup; missing `db_dsn` raises immediately. |
-| `models.py` | All domain objects as Pydantic models. Six `StrEnum` types. `AdmissionDecision.model_post_init` computes `should_comment` and `should_mark_unstable` from operating mode x verdict. |
-| `pipeline.py` | `AdmissionPipeline` — stateless per call. Two entry points: `evaluate()` for diff-based (PyPI) and `evaluate_sbom()` for SBOM-based (ecosystem-agnostic). Wires all subsystems together. Enforces per-package pipeline timeout. |
+| `config.py` | `EedomSettings` — Pydantic `BaseSettings` with `EEDOM_` prefix. Custom `_CommaSeparatedEnvSource` handles comma-separated scanner lists. `SecretStr` for `llm_api_key`. Validates at startup; missing `db_dsn` raises immediately. |
+| `models.py` | All domain objects as Pydantic models. Six `StrEnum` types. `ReviewDecision.model_post_init` computes `should_comment` and `should_mark_unstable` from operating mode x verdict. |
+| `pipeline.py` | `ReviewPipeline` — stateless per call. Two entry points: `evaluate()` for diff-based (PyPI) and `evaluate_sbom()` for SBOM-based (ecosystem-agnostic). Wires all subsystems together. Enforces per-package pipeline timeout. |
 | `pipeline_helpers.py` | Extracted helpers keeping `pipeline.py` under 500 lines: `resolve_git_sha`, `count_transitive_deps_from_scan`, `parse_changes`, `sbom_changes_to_requests`. |
 | `orchestrator.py` | `ScanOrchestrator` — parallel execution via `ThreadPoolExecutor`. Combined wall-clock timeout. Returns results in original scanner order. Never raises. |
-| `diff.py` | `DependencyDiffDetector` — parses unified diff output; extracts before/after content for `requirements.txt` and `pyproject.toml`; computes added/removed/upgraded/downgraded changes; creates `AdmissionRequest` objects. |
+| `diff.py` | `DependencyDiffDetector` — parses unified diff output; extracts before/after content for `requirements.txt` and `pyproject.toml`; computes added/removed/upgraded/downgraded changes; creates `ReviewRequest` objects. |
 | `sbom_diff.py` | `diff_sboms()` — ecosystem-agnostic diffing via CycloneDX SBOMs. purl-based ecosystem detection for 17 ecosystems. `packaging.version.Version` for upgrade vs downgrade classification. |
 | `normalizer.py` | `normalize_findings()` — deduplicates vulnerability findings across scanners by `(advisory_id, category, package_name, version)`, highest severity wins. License findings pass through undeduped. Returns merged list + severity summary dict. |
 | `policy.py` | `OpaEvaluator` — builds OPA input (`input.pkg`, not `input.package`), invokes `opa eval` subprocess, parses `deny`/`warn`/`decision` from result, maps to `DecisionVerdict`. All failures degrade to `needs_review`. |
-| `decision.py` | `assemble_decision()` — pure function that constructs `AdmissionDecision` from parts. Zero I/O. |
+| `decision.py` | `assemble_decision()` — pure function that constructs `ReviewDecision` from parts. Zero I/O. |
 | `memo.py` | `generate_memo()` — pure function producing Markdown for PR comments. Truncates at 3900 chars. |
 | `plugin.py` | `ScannerPlugin` ABC and `PluginCategory` enum. `PluginResult` dataclass. `render()` method with Jinja2 template dispatch and `_render_inline()` fallback. |
 | `registry.py` | `PluginRegistry` — register, filter, and run plugins. `discover_plugins()` auto-loads `ScannerPlugin` subclasses from a directory. `run_all()` runs scan plugins first, then the `opa` policy plugin with all aggregated findings. |
@@ -171,10 +171,10 @@ Imports: `core` modules import only from `core` and `data.scanners.base`. The lo
 
 ## 3. Pipeline Flow
 
-Function call chain for `AdmissionPipeline.evaluate()` (`pipeline.py:56`):
+Function call chain for `ReviewPipeline.evaluate()` (`pipeline.py:56`):
 
 ```
-AdmissionPipeline.evaluate(diff_text, pr_url, team, mode, repo_path)
+ReviewPipeline.evaluate(diff_text, pr_url, team, mode, repo_path)
   resolve_git_sha(repo_path)                              # pipeline_helpers.py:24
   DependencyDiffDetector.detect_changed_files(diff_text) # diff.py:212
   parse_changes(detector, diff_text, changed_files)      # pipeline_helpers.py:53
@@ -254,7 +254,7 @@ propagate.
 `quality`, `supply_chain`.
 
 The legacy `Scanner` ABC in `data/scanners/base.py` remains in use for the dependency
-admission pipeline. `ScannerPlugin` is the newer interface for the review system —
+review pipeline. `ScannerPlugin` is the newer interface for the review system —
 both coexist.
 
 ### PluginRegistry
@@ -322,8 +322,8 @@ Error messages are produced by `errors.py:error_msg(ErrorCode, plugin_name, ...)
 
 ## 5. Policy Engine
 
-OPA evaluates `policies/admission.rego` via subprocess. Input is serialized to a temp
-file and passed with `-i`. The query target is `data.admission`.
+OPA evaluates `policies/policy.rego` via subprocess. Input is serialized to a temp
+file and passed with `-i`. The query target is `data.policy`.
 
 ### Input Schema
 
@@ -353,7 +353,7 @@ The `build_opa_input()` function (`policy.py:48`) builds:
 The field is `pkg`, not `package`. `package` is a reserved keyword in Rego (`rego.v1`);
 using it as an input field causes a parse error. All OPA rules reference `input.pkg`.
 
-### Rego Rules (`policies/admission.rego`)
+### Rego Rules (`policies/policy.rego`)
 
 | Rule | Type | Trigger |
 |------|------|---------|
@@ -450,7 +450,7 @@ dimensions produce specific `ValidationError` objects included in retry guidance
 | deny=0, warn=0 | `approve` | false | false |
 | any OPA failure | `needs_review` | true | true |
 
-`should_comment` and `should_mark_unstable` are computed in `AdmissionDecision.model_post_init`
+`should_comment` and `should_mark_unstable` are computed in `ReviewDecision.model_post_init`
 (`models.py:247`) via `_compute_should_comment()` and `_compute_should_mark_unstable()`.
 In `monitor` mode both are always `False` — the pipeline logs but never comments or fails the build.
 
@@ -464,7 +464,7 @@ In `monitor` mode both are always `False` — the pipeline logs but never commen
 ### Package Evaluation Failure
 
 If an unhandled exception occurs during per-package evaluation (`pipeline.py:215`), the
-pipeline appends an `AdmissionDecision` with `verdict=needs_review`, empty findings, and
+pipeline appends an `ReviewDecision` with `verdict=needs_review`, empty findings, and
 `triggered_rules=["package evaluation failed unexpectedly"]`. The pipeline continues to
 the next package.
 
@@ -478,7 +478,7 @@ the next package.
   decisions.parquet              <- append-only audit log (all runs)
   <short_sha>/<YYYYMMDDHHmm>/   <- run_id directory
     <package_name>/
-      decision.json              <- full AdmissionDecision (orjson)
+      decision.json              <- full ReviewDecision (orjson)
       memo.md                    <- Markdown memo
     seal.json                    <- integrity seal for this run
 ```
@@ -602,16 +602,16 @@ are skipped.
 ```
 
 `sbom_changes_to_requests()` (`pipeline_helpers.py:77`) converts these to
-`AdmissionRequest` objects; `removed` changes are skipped.
+`ReviewRequest` objects; `removed` changes are skipped.
 
 
 ## 11. Data Model
 
 ```mermaid
 classDiagram
-    class AdmissionDecision {
+    class ReviewDecision {
         +UUID decision_id
-        +AdmissionRequest request
+        +ReviewRequest request
         +DecisionVerdict decision
         +list~Finding~ findings
         +list~ScanResult~ scan_results
@@ -622,7 +622,7 @@ classDiagram
         +bool should_mark_unstable
         +float pipeline_duration_seconds
     }
-    class AdmissionRequest {
+    class ReviewRequest {
         +UUID request_id
         +RequestType request_type
         +str ecosystem
@@ -659,10 +659,10 @@ classDiagram
         +str policy_bundle_version
         +str note
     }
-    AdmissionDecision --> AdmissionRequest
-    AdmissionDecision --> PolicyEvaluation
-    AdmissionDecision "1" --> "*" Finding
-    AdmissionDecision "1" --> "*" ScanResult
+    ReviewDecision --> ReviewRequest
+    ReviewDecision --> PolicyEvaluation
+    ReviewDecision "1" --> "*" Finding
+    ReviewDecision "1" --> "*" ScanResult
     ScanResult "1" --> "*" Finding
 ```
 
@@ -674,7 +674,7 @@ classDiagram
 ### Migration 001 — Core Pipeline Tables
 
 ```
-admission_requests
+review_requests
   PK: request_id (UUID)
   ecosystem, package_name, target_version, current_version
   team, scope, pr_url, pr_number, repo_name, commit_sha, use_case
@@ -683,23 +683,23 @@ admission_requests
 
 scan_results
   PK: scan_result_id
-  FK: request_id -> admission_requests
+  FK: request_id -> review_requests
   tool_name, status, finding_count, duration_seconds, raw_output_path
 
 policy_evaluations
   PK: evaluation_id
-  FK: request_id -> admission_requests
+  FK: request_id -> review_requests
   policy_version, decision, triggered_rules (JSONB), constraints (JSONB)
 
-admission_decisions
+review_decisions
   PK: decision_id
-  FK: request_id -> admission_requests
+  FK: request_id -> review_requests
   decision, findings_summary (JSONB), evidence_bundle_path, memo_text
   pipeline_duration_seconds, operating_mode
 
 bypass_records
   PK: bypass_id
-  FK: request_id -> admission_requests
+  FK: request_id -> review_requests
   bypass_type CHECK IN ('timeout','manual','kill_switch')
   invoked_by, reason
 ```
@@ -748,7 +748,7 @@ to the caller.
 
 | Component | Failure | Recovery | User-visible effect |
 |-----------|---------|----------|---------------------|
-| Config load | Missing `ADMISSION_DB_DSN` | CLI exits 0 with message | "Pipeline skipped — configuration unavailable" |
+| Config load | Missing `EEDOM_DB_DSN` | CLI exits 0 with message | "Pipeline skipped — configuration unavailable" |
 | DB connect | `ConnectionPool` fails | Falls back to `NullRepository` | `db_unavailable` log warning; pipeline continues |
 | DB query | Any psycopg exception | Exception logged; method returns silently | Decision not persisted in DB |
 | Scanner binary missing | `OSError` in subprocess | `ScanResult.not_installed(name)` | Scanner listed as failed in memo |
@@ -764,7 +764,7 @@ to the caller.
 | Evidence write | Any `OSError` | Exception logged; `store()` returns `""` | Evidence not written; pipeline continues |
 | Seal creation | Any exception | `logger.exception("seal_creation_failed")` | Run not sealed; pipeline still returns decisions |
 | Parquet write | Any exception | `logger.error("parquet_write_failed")` | Audit log not updated for this run |
-| Package eval error | Any unhandled exception | `AdmissionDecision(needs_review)` appended | One package verdict = needs_review |
+| Package eval error | Any unhandled exception | `ReviewDecision(needs_review)` appended | One package verdict = needs_review |
 | LLM advisory | Any failure | Returns `""` | Advisory omitted from memo |
 | Pipeline timeout (300s) | Elapsed >= 300s | Remaining packages skipped, decisions returned | `pipeline_timeout_reached` log warning |
 
@@ -784,7 +784,7 @@ calls in `db.py` use `_safe_dsn(self._dsn)` instead of the raw DSN.
 
 ### SecretStr for LLM API Key
 
-`AdmissionSettings.llm_api_key` is typed as `SecretStr | None` (`config.py:82`).
+`EedomSettings.llm_api_key` is typed as `SecretStr | None` (`config.py:82`).
 Pydantic's `SecretStr` redacts the value in `repr()` and `str()`, preventing accidental
 logging. `taskfit.py:243` calls `get_secret_value()` explicitly when building the
 Authorization header.

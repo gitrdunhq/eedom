@@ -12,8 +12,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -44,8 +44,8 @@ def _request(
     scope: str = "runtime",
     commit_sha: str | None = "abc123def456",
     pr_url: str | None = "https://github.com/org/repo/pull/42",
-) -> AdmissionRequest:
-    return AdmissionRequest(
+) -> ReviewRequest:
+    return ReviewRequest(
         request_type=RequestType.new_package,
         ecosystem=ecosystem,
         package_name=package_name,
@@ -111,10 +111,10 @@ def _decision(
     duration: float = 5.0,
     package_name: str = "requests",
     target_version: str = "2.31.0",
-) -> AdmissionDecision:
+) -> ReviewDecision:
     req = _request(mode=mode, package_name=package_name, target_version=target_version)
     pol = policy or _policy_eval(decision=verdict)
-    return AdmissionDecision(
+    return ReviewDecision(
         request=req,
         decision=DecisionVerdict(verdict),
         findings=findings or [],
@@ -165,9 +165,9 @@ _scan_result_st = st.builds(
 
 
 @st.composite
-def _decision_strategy(draw: st.DrawFn) -> AdmissionDecision:
+def _decision_strategy(draw: st.DrawFn) -> ReviewDecision:
     verdict = draw(_verdict_st)
-    req = AdmissionRequest(
+    req = ReviewRequest(
         request_type=draw(_request_type_st),
         ecosystem=draw(_safe_text),
         package_name=draw(_safe_text),
@@ -184,7 +184,7 @@ def _decision_strategy(draw: st.DrawFn) -> AdmissionDecision:
         constraints=draw(st.lists(_safe_text, max_size=3)),
         policy_bundle_version=draw(_safe_text),
     )
-    return AdmissionDecision(
+    return ReviewDecision(
         request=req,
         decision=verdict,
         findings=draw(st.lists(_finding_st, max_size=5)),
@@ -213,7 +213,7 @@ class TestDecisionToRow:
         )
         findings = [_finding(severity="critical", advisory_id="CVE-2024-999")]
         scans = [_scan_result(tool="osv-scanner", status="success")]
-        dec = AdmissionDecision(
+        dec = ReviewDecision(
             request=_request(
                 mode="advise",
                 commit_sha="abc123",
@@ -313,7 +313,7 @@ class TestDecisionToRow:
         """When commit_sha is None on request, row has empty string."""
         req = _request(commit_sha=None)
         pol = _policy_eval()
-        dec = AdmissionDecision(
+        dec = ReviewDecision(
             request=req,
             decision=DecisionVerdict.approve,
             findings=[],
@@ -328,7 +328,7 @@ class TestDecisionToRow:
         """When pr_url is None on request, row has empty string."""
         req = _request(pr_url=None)
         pol = _policy_eval()
-        dec = AdmissionDecision(
+        dec = ReviewDecision(
             request=req,
             decision=DecisionVerdict.approve,
             findings=[],
@@ -481,8 +481,8 @@ class TestAppendDecisions:
 
 @given(_decision_strategy())
 @settings(max_examples=50)
-def test_any_valid_decision_converts_to_row(decision: AdmissionDecision) -> None:
-    """decision_to_row never raises for any valid AdmissionDecision."""
+def test_any_valid_decision_converts_to_row(decision: ReviewDecision) -> None:
+    """decision_to_row never raises for any valid ReviewDecision."""
     row = decision_to_row(decision, run_id="hypothesis-run")
 
     # All SCHEMA field names must be present in the row

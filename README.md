@@ -15,7 +15,21 @@
 
 ---
 
-When a PR touches a dependency manifest — `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, any of 18 ecosystems — Eagle Eyed Dom detects the changed packages, runs 15 plugins in parallel, deduplicates findings, evaluates them against OPA policy, writes tamper-evident evidence, and appends the decision to a Parquet audit log.
+## Why This Exists
+
+Every PR that touches a dependency or a source file needs someone to answer the same mechanical questions: any known CVEs? License compatible? Package too new to trust? Secrets leaked? Complexity getting worse?
+
+Those checks aren't hard. They're tedious. And they're the reason your senior engineers spend half their review time on things a script could catch — while the stuff that actually needs a human brain (architecture, logic, design intent) gets a tired "LGTM" at the end.
+
+**So what?** When reviews bottleneck, one of two things happens. Teams either slow down — PRs queue up, deploys stall, developers context-switch while waiting — or they speed up wrong. Reviews get rubber-stamped. A critical CVE ships because nobody had the energy to check transitive deps on the fourth PR of the afternoon. A copyleft license sneaks into a commercial codebase because the reviewer was focused on the actual code change, not the new dependency it pulled in.
+
+Both outcomes cost real money. One costs velocity. The other costs incidents.
+
+**Eagle Eyed Dom doesn't replace human review. It removes the mechanical half so humans can do the half that requires judgment.** Fifteen plugins run the checks that don't need a brain. OPA policy makes the accept/reject decision deterministically. The reviewer opens a PR and the dependency, vulnerability, license, complexity, and secret checks are already done — with evidence, an audit trail, and a clear verdict. They can skip straight to "does this design make sense?"
+
+---
+
+When a PR touches a dependency manifest — `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, any of 18 ecosystems — eedom detects the changed packages, runs 15 plugins in parallel, deduplicates findings, evaluates them against OPA policy, writes tamper-evident evidence, and appends the decision to a Parquet audit log.
 
 Every scanning tool is deterministic. The decision is deterministic. Nothing blocks the build unless OPA says so.
 
@@ -204,7 +218,7 @@ Or use the composite action (`action.yml`):
 
 ## OPA Policy Rules
 
-6 rules in `policies/admission.rego`. All individually toggleable via `input.config.rules_enabled`.
+6 rules in `policies/policy.rego`. All individually toggleable via `input.config.rules_enabled`.
 
 | Rule | Type | Trigger | Default |
 |------|------|---------|---------|
@@ -254,7 +268,7 @@ src/eedom/
 │   ├── sbom_diff.py        #   CycloneDX SBOM differ (18 ecosystems via purl)
 │   ├── normalizer.py       #   Finding deduplication (highest severity wins)
 │   ├── orchestrator.py     #   Parallel scanner runner (ThreadPoolExecutor)
-│   ├── decision.py         #   Pure assembler — OPA verdict → AdmissionDecision
+│   ├── decision.py         #   Pure assembler — OPA verdict → ReviewDecision
 │   ├── memo.py             #   Markdown PR comment generator
 │   ├── seal.py             #   SHA-256 evidence chain
 │   └── taskfit*.py         #   Optional LLM advisory (disabled by default)
@@ -326,19 +340,19 @@ Nothing blocks the build unless OPA says so. Every external call has a timeout. 
 
 ## Configuration
 
-### CLI (`ADMISSION_*` prefix)
+### CLI (`EEDOM_*` prefix)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ADMISSION_OPERATING_MODE` | `monitor` | `monitor` or `advise` |
-| `ADMISSION_DB_DSN` | — | PostgreSQL DSN (optional — NullRepository fallback) |
-| `ADMISSION_EVIDENCE_PATH` | `./evidence` | Evidence + Parquet root |
-| `ADMISSION_ENABLED_SCANNERS` | `syft,osv-scanner,trivy,scancode` | Active scanners |
-| `ADMISSION_SCANNER_TIMEOUT` | `60` | Per-scanner timeout (s) |
-| `ADMISSION_COMBINED_SCANNER_TIMEOUT` | `180` | Combined scanner timeout (s) |
-| `ADMISSION_OPA_TIMEOUT` | `10` | OPA timeout (s) |
-| `ADMISSION_PIPELINE_TIMEOUT` | `300` | Per-package timeout (s) |
-| `ADMISSION_LLM_ENABLED` | `false` | Enable optional LLM task-fit advisory |
+| `EEDOM_OPERATING_MODE` | `monitor` | `monitor` or `advise` |
+| `EEDOM_DB_DSN` | — | PostgreSQL DSN (optional — NullRepository fallback) |
+| `EEDOM_EVIDENCE_PATH` | `./evidence` | Evidence + Parquet root |
+| `EEDOM_ENABLED_SCANNERS` | `syft,osv-scanner,trivy,scancode` | Active scanners |
+| `EEDOM_SCANNER_TIMEOUT` | `60` | Per-scanner timeout (s) |
+| `EEDOM_COMBINED_SCANNER_TIMEOUT` | `180` | Combined scanner timeout (s) |
+| `EEDOM_OPA_TIMEOUT` | `10` | OPA timeout (s) |
+| `EEDOM_PIPELINE_TIMEOUT` | `300` | Per-package timeout (s) |
+| `EEDOM_LLM_ENABLED` | `false` | Enable optional LLM task-fit advisory |
 
 ### GATEKEEPER (`GATEKEEPER_*` prefix)
 

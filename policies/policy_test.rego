@@ -1,8 +1,8 @@
-package admission_test
+package policy_test
 
 import rego.v1
 
-import data.admission
+import data.policy
 
 # --- Helper: base input with no findings and all rules enabled ---
 
@@ -47,7 +47,7 @@ test_critical_vuln_deny if {
 		"advisory_id": "CVE-2024-1234",
 		"source_tool": "osv-scanner",
 	}]})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 1
 	some msg in result
 	contains(msg, "CVE-2024-1234")
@@ -66,7 +66,7 @@ test_high_vuln_deny if {
 		"advisory_id": "CVE-2024-5555",
 		"source_tool": "trivy",
 	}]})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 1
 	some msg in result
 	contains(msg, "CVE-2024-5555")
@@ -85,9 +85,9 @@ test_medium_vuln_warn_only if {
 		"advisory_id": "CVE-2024-5678",
 		"source_tool": "osv-scanner",
 	}]})
-	deny_result := admission.deny with input as inp
+	deny_result := policy.deny with input as inp
 	count(deny_result) == 0
-	warn_result := admission.warn with input as inp
+	warn_result := policy.warn with input as inp
 	count(warn_result) == 1
 	some msg in warn_result
 	contains(msg, "CVE-2024-5678")
@@ -97,11 +97,11 @@ test_medium_vuln_warn_only if {
 # --- No findings results in allow ---
 
 test_no_findings_approve if {
-	deny_result := admission.deny with input as clean_input
+	deny_result := policy.deny with input as clean_input
 	count(deny_result) == 0
-	warn_result := admission.warn with input as clean_input
+	warn_result := policy.warn with input as clean_input
 	count(warn_result) == 0
-	decision := admission.decision with input as clean_input
+	decision := policy.decision with input as clean_input
 	decision == "approve"
 }
 
@@ -118,7 +118,7 @@ test_forbidden_license_deny if {
 		"source_tool": "scancode",
 		"license_id": "GPL-3.0-only",
 	}]})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 1
 	some msg in result
 	contains(msg, "GPL-3.0-only")
@@ -138,7 +138,7 @@ test_allowed_license_no_deny if {
 		"source_tool": "scancode",
 		"license_id": "MIT",
 	}]})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 0
 }
 
@@ -150,7 +150,7 @@ test_young_package_deny if {
 		"first_published_date": "2099-01-01T00:00:00Z",
 	})
 	inp := object.union(clean_input, {"pkg": young_package})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 1
 	some msg in result
 	contains(msg, "days old")
@@ -160,7 +160,7 @@ test_young_package_deny if {
 
 test_old_package_no_deny if {
 	# 2020-01-01 is well over 90 days old
-	result := admission.deny with input as clean_input
+	result := policy.deny with input as clean_input
 	count(result) == 0
 }
 
@@ -176,7 +176,7 @@ test_malicious_package_deny if {
 		"advisory_id": "MAL-2024-9999",
 		"source_tool": "osv-scanner",
 	}]})
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	some msg in result
 	contains(msg, "MAL-2024-9999")
 	contains(msg, "evil-pkg@0.1.0")
@@ -187,7 +187,7 @@ test_malicious_package_deny if {
 test_transitive_deps_warn if {
 	heavy_package := object.union(base_package, {"transitive_dep_count": 250})
 	inp := object.union(clean_input, {"pkg": heavy_package})
-	warn_result := admission.warn with input as inp
+	warn_result := policy.warn with input as inp
 	count(warn_result) == 1
 	some msg in warn_result
 	contains(msg, "250")
@@ -214,9 +214,9 @@ test_disabled_critical_vuln_no_deny if {
 		"pkg": base_package,
 		"config": disabled_config,
 	}
-	deny_result := admission.deny with input as inp
+	deny_result := policy.deny with input as inp
 	count(deny_result) == 0
-	warn_result := admission.warn with input as inp
+	warn_result := policy.warn with input as inp
 	count(warn_result) == 0
 }
 
@@ -239,7 +239,7 @@ test_disabled_forbidden_license_no_deny if {
 		"pkg": base_package,
 		"config": disabled_config,
 	}
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 0
 }
 
@@ -261,7 +261,7 @@ test_disabled_malicious_no_deny if {
 		"pkg": base_package,
 		"config": disabled_config,
 	}
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 0
 }
 
@@ -302,7 +302,7 @@ test_multiple_deny_reasons if {
 		"pkg": base_package,
 		"config": base_config,
 	}
-	result := admission.deny with input as inp
+	result := policy.deny with input as inp
 	count(result) == 3
 }
 
@@ -318,7 +318,7 @@ test_decision_reject if {
 		"advisory_id": "CVE-2024-0001",
 		"source_tool": "osv-scanner",
 	}]})
-	decision := admission.decision with input as inp
+	decision := policy.decision with input as inp
 	decision == "reject"
 }
 
@@ -334,13 +334,13 @@ test_decision_approve_with_constraints if {
 		"advisory_id": "CVE-2024-9999",
 		"source_tool": "osv-scanner",
 	}]})
-	decision := admission.decision with input as inp
+	decision := policy.decision with input as inp
 	decision == "approve_with_constraints"
 }
 
 # --- Decision: approve when no deny and no warn ---
 
 test_decision_approve if {
-	decision := admission.decision with input as clean_input
+	decision := policy.decision with input as clean_input
 	decision == "approve"
 }

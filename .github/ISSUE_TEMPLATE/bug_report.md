@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in the admission control pipeline or agent
+about: Report a bug in the review pipeline or agent
 labels: bug
 ---
 

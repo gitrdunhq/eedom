@@ -121,4 +121,4 @@ Both bypasses share the same root cause: **the contract between producer and con
 
 - `.wfc/reviews/REVIEW-main-001.md` — findings F-010, F-012
 - `policies/INPUT_SCHEMA.md` — the OPA input schema that the Python code should match
-- `policies/admission_test.rego` — OPA tests that pass with correct input but never verify Python produces correct input
+- `policies/policy_test.rego` — OPA tests that pass with correct input but never verify Python produces correct input

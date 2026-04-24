@@ -9,7 +9,7 @@ from unittest.mock import patch
 import httpx
 import respx
 
-from eedom.core.config import AdmissionSettings
+from eedom.core.config import EedomSettings
 from eedom.core.taskfit import TaskFitAdvisor
 
 # ---------------------------------------------------------------------------
@@ -24,22 +24,22 @@ def _make_config(
     llm_model: str | None = None,
     llm_api_key: str | None = None,
     llm_timeout: int = 30,
-) -> AdmissionSettings:
-    """Build an AdmissionSettings with controlled LLM fields."""
+) -> EedomSettings:
+    """Build an EedomSettings with controlled LLM fields."""
     env = {
-        "ADMISSION_DB_DSN": "postgresql://test:test@localhost/test",
-        "ADMISSION_LLM_ENABLED": str(llm_enabled).lower(),
-        "ADMISSION_LLM_TIMEOUT": str(llm_timeout),
+        "EEDOM_DB_DSN": "postgresql://test:test@localhost/test",
+        "EEDOM_LLM_ENABLED": str(llm_enabled).lower(),
+        "EEDOM_LLM_TIMEOUT": str(llm_timeout),
     }
     if llm_endpoint:
-        env["ADMISSION_LLM_ENDPOINT"] = llm_endpoint
+        env["EEDOM_LLM_ENDPOINT"] = llm_endpoint
     if llm_model:
-        env["ADMISSION_LLM_MODEL"] = llm_model
+        env["EEDOM_LLM_MODEL"] = llm_model
     if llm_api_key:
-        env["ADMISSION_LLM_API_KEY"] = llm_api_key
+        env["EEDOM_LLM_API_KEY"] = llm_api_key
 
     with patch.dict(os.environ, env, clear=True):
-        return AdmissionSettings()
+        return EedomSettings()
 
 
 SAMPLE_METADATA = {"summary": "A fast HTTP client library"}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from eedom.core.decision import assemble_decision
 from eedom.core.models import (
-    AdmissionRequest,
+    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -21,8 +21,8 @@ from eedom.core.models import (
 # ---------------------------------------------------------------------------
 
 
-def _request(mode: str = "advise") -> AdmissionRequest:
-    return AdmissionRequest(
+def _request(mode: str = "advise") -> ReviewRequest:
+    return ReviewRequest(
         request_type=RequestType.new_package,
         ecosystem="npm",
         package_name="lodash",

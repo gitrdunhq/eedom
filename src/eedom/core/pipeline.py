@@ -1,4 +1,4 @@
-"""Admission Control pipeline — orchestrates scanners, policy eval, and decision assembly.
+"""Review pipeline — orchestrates scanners, policy eval, and decision assembly.
 
 # tested-by: tests/unit/test_pipeline.py
 
@@ -14,12 +14,12 @@ from pathlib import Path
 import orjson
 import structlog
 
-from eedom.core.config import AdmissionSettings
+from eedom.core.config import EedomSettings
 from eedom.core.decision import assemble_decision
 from eedom.core.diff import DependencyDiffDetector
 from eedom.core.memo import generate_memo
 from eedom.core.models import (
-    AdmissionDecision,
+    ReviewDecision,
     DecisionVerdict,
     OperatingMode,
     PolicyEvaluation,
@@ -47,10 +47,10 @@ from eedom.data.scanners.trivy import TrivyScanner
 logger = structlog.get_logger()
 
 
-class AdmissionPipeline:
-    """End-to-end admission pipeline — stateless per call."""
+class ReviewPipeline:
+    """End-to-end review pipeline — stateless per call."""
 
-    def __init__(self, config: AdmissionSettings) -> None:
+    def __init__(self, config: EedomSettings) -> None:
         self._config = config
 
     def evaluate(
@@ -61,10 +61,10 @@ class AdmissionPipeline:
         mode: OperatingMode,
         repo_path: Path,
         commit_sha: str | None = None,
-    ) -> list[AdmissionDecision]:
-        """Run the full admission control pipeline on dependency changes.
+    ) -> list[ReviewDecision]:
+        """Run the full review pipeline on dependency changes.
 
-        Returns a list of AdmissionDecision objects (one per changed package).
+        Returns a list of ReviewDecision objects (one per changed package).
         Returns an empty list if no dependency changes are detected.
         """
         from datetime import UTC, datetime
@@ -138,7 +138,7 @@ class AdmissionPipeline:
             logger.warning("db_init_failed", msg="Falling back to NullRepository")
             db = NullRepository()
 
-        decisions: list[AdmissionDecision] = []
+        decisions: list[ReviewDecision] = []
 
         try:
             # Run scanners ONCE before the per-package loop (F-005)
@@ -215,7 +215,7 @@ class AdmissionPipeline:
                 except Exception:
                     logger.exception("package_evaluation_failed", package=req.package_name)
                     decisions.append(
-                        AdmissionDecision(
+                        ReviewDecision(
                             request=req,
                             decision=DecisionVerdict.needs_review,
                             findings=[],
@@ -254,14 +254,14 @@ class AdmissionPipeline:
         mode: OperatingMode,
         repo_path: Path,
         commit_sha: str | None = None,
-    ) -> list[AdmissionDecision]:
+    ) -> list[ReviewDecision]:
         """Evaluate dependency changes using SBOM diff. Ecosystem-agnostic.
 
         Diffs two CycloneDX SBOMs (before/after) to discover changed packages
         across any ecosystem Syft supports, then runs them through the same
         scanner → normalize → OPA → decision → memo pipeline as evaluate().
 
-        Returns a list of AdmissionDecision objects (one per changed package).
+        Returns a list of ReviewDecision objects (one per changed package).
         Returns an empty list when no dependency changes are found.
         """
         from datetime import UTC, datetime
@@ -327,7 +327,7 @@ class AdmissionPipeline:
             logger.warning("db_init_failed", msg="Falling back to NullRepository")
             db = NullRepository()
 
-        decisions: list[AdmissionDecision] = []
+        decisions: list[ReviewDecision] = []
 
         try:
             # Run scanners ONCE before the per-package loop (F-005)
@@ -405,7 +405,7 @@ class AdmissionPipeline:
                 except Exception:
                     logger.exception("package_evaluation_failed", package=req.package_name)
                     decisions.append(
-                        AdmissionDecision(
+                        ReviewDecision(
                             request=req,
                             decision=DecisionVerdict.needs_review,
                             findings=[],

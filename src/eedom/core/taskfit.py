@@ -16,7 +16,7 @@ import httpx
 import structlog
 
 if TYPE_CHECKING:
-    from eedom.core.config import AdmissionSettings
+    from eedom.core.config import EedomSettings
 
 logger = structlog.get_logger(__name__)
 
@@ -24,7 +24,7 @@ _MAX_ADVISORY_LENGTH = 500
 _SUMMARY_MAX_LEN = 200
 
 _SYSTEM_PROMPT = """\
-You are a dependency admission control analyst for a software engineering organization.
+You are a dependency dependency review analyst for a software engineering organization.
 
 Your job is to evaluate whether a requested third-party package is appropriate, \
 proportionate, and safe for its stated use case. You are the last line of reasoning \
@@ -121,10 +121,10 @@ class TaskFitAdvisor:
     """Queries an OpenAI-compatible LLM for package proportionality advice.
 
     All failures are absorbed -- this class never raises and never blocks
-    the admission pipeline.
+    the review pipeline.
     """
 
-    def __init__(self, config: AdmissionSettings) -> None:
+    def __init__(self, config: EedomSettings) -> None:
         self._enabled = config.llm_enabled
         self._endpoint = config.llm_endpoint
         self._model = config.llm_model
