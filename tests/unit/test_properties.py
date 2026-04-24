@@ -1,4 +1,4 @@
-"""Property-based tests for Admission Control invariants.
+"""Property-based tests for Dependency Review invariants.
 
 # tested-by: tests/unit/test_properties.py
 
@@ -14,8 +14,8 @@ from hypothesis import strategies as st
 from eedom.core.diff import _parse_requirements
 from eedom.core.memo import _MAX_MEMO_LENGTH, generate_memo
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -66,9 +66,9 @@ def _build_decision(
     findings: list[Finding],
     triggered_rules: list[str],
     scan_results: list[ScanResult] | None = None,
-) -> AdmissionDecision:
-    """Build a minimal AdmissionDecision for property testing."""
-    request = AdmissionRequest(
+) -> ReviewDecision:
+    """Build a minimal ReviewDecision for property testing."""
+    request = ReviewRequest(
         request_type=RequestType.new_package,
         ecosystem="pypi",
         package_name="test-pkg",
@@ -81,7 +81,7 @@ def _build_decision(
         triggered_rules=triggered_rules,
         policy_bundle_version="1.0.0",
     )
-    return AdmissionDecision(
+    return ReviewDecision(
         request=request,
         decision=verdict,
         findings=findings,

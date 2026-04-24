@@ -1,4 +1,4 @@
-"""CLI entry point for the Admission Control pipeline."""
+"""CLI entry point for the Review pipeline."""
 
 # tested-by: tests/unit/test_cli.py
 
@@ -56,7 +56,7 @@ class DebounceTimer:
 
 @click.group()
 def cli() -> None:
-    """Agentic Dependency Admission Control — PoC CLI."""
+    """Agentic Dependency Dependency Review — PoC CLI."""
 
 
 @cli.command()
@@ -86,14 +86,14 @@ def evaluate(
     operating_mode: str,
     output_json: str | None,
 ) -> None:
-    """Run the full admission control pipeline on dependency changes."""
+    """Run the full review pipeline on dependency changes."""
     diff_text = _read_diff(diff)
     mode = OperatingMode(operating_mode)
 
     try:
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
-        config = AdmissionSettings()  # type: ignore[call-arg]
+        config = EedomSettings()  # type: ignore[call-arg]
     except Exception:
         logger.warning(
             "config_load_failed", msg="Pipeline skipped — config unavailable (fail-open)"
@@ -104,9 +104,9 @@ def evaluate(
     try:
         import orjson
 
-        from eedom.core.pipeline import AdmissionPipeline
+        from eedom.core.pipeline import ReviewPipeline
 
-        pipeline = AdmissionPipeline(config)
+        pipeline = ReviewPipeline(config)
         decisions = pipeline.evaluate(
             diff_text=diff_text,
             pr_url=pr_url,
@@ -156,9 +156,9 @@ def check_health() -> None:
     click.echo()
 
     try:
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
-        config = AdmissionSettings()  # type: ignore[call-arg]
+        config = EedomSettings()  # type: ignore[call-arg]
         from eedom.data.db import DecisionRepository
 
         db = DecisionRepository(dsn=config.db_dsn)
@@ -396,7 +396,7 @@ def query(question: str, db_path: str) -> None:
     \b
       eedom query "which functions have the highest fan-out?"
       eedom query "show me dead code"
-      eedom query "what depends on AdmissionPipeline"
+      eedom query "what depends on ReviewPipeline"
       eedom query "are there circular imports?"
     """
     from eedom.core.nl_query import TEMPLATES, query_code

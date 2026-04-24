@@ -157,16 +157,16 @@ def _make_llm_config(
     llm_endpoint: str = "https://llm.example.com/v1",
     llm_model: str = "gpt-4o",
 ) -> object:
-    from eedom.core.config import AdmissionSettings
+    from eedom.core.config import EedomSettings
 
     env = {
-        "ADMISSION_DB_DSN": "postgresql://test:test@localhost/test",
-        "ADMISSION_LLM_ENABLED": str(llm_enabled).lower(),
-        "ADMISSION_LLM_ENDPOINT": llm_endpoint,
-        "ADMISSION_LLM_MODEL": llm_model,
+        "EEDOM_DB_DSN": "postgresql://test:test@localhost/test",
+        "EEDOM_LLM_ENABLED": str(llm_enabled).lower(),
+        "EEDOM_LLM_ENDPOINT": llm_endpoint,
+        "EEDOM_LLM_MODEL": llm_model,
     }
     with patch.dict(os.environ, env, clear=True):
-        return AdmissionSettings()
+        return EedomSettings()
 
 
 class TestLLMPromptInjection:

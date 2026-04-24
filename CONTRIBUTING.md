@@ -1,4 +1,4 @@
-# Contributing to Admission Control
+# Contributing to Dependency Review
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ opa test policies/            # OPA policy unit tests
 First-run sanity check:
 
 ```bash
-uv run python -c "from eedom.core.pipeline import AdmissionPipeline; print('ok')"
+uv run python -c "from eedom.core.pipeline import ReviewPipeline; print('ok')"
 ```
 
 ## Project Structure
@@ -83,7 +83,7 @@ uv run pytest tests/integration/ -v   # requires Docker + scanner binaries
 
 **Fail-open** — scanner timeouts skip with a notation in the evidence bundle; OPA failures route to `needs_review`; DB failures log and continue. Nothing blocks the build.
 
-**Timeouts** — every external call must have an explicit timeout. Read it from `AdmissionConfig`, never hardcode it. Default values live in the config model.
+**Timeouts** — every external call must have an explicit timeout. Read it from `ReviewConfig`, never hardcode it. Default values live in the config model.
 
 **Secrets** — `pydantic.SecretStr` for all credential fields. Never log DSNs or API keys.
 
@@ -104,10 +104,10 @@ Scanner output must be normalized via `FindingNormalizer` before reaching `core`
 
 ## Adding an OPA Rule
 
-1. Add the new rule to `policies/admission.rego`
-2. Add a test case in `policies/admission_test.rego` — both passing and failing inputs
+1. Add the new rule to `policies/policy.rego`
+2. Add a test case in `policies/policy_test.rego` — both passing and failing inputs
 3. Update `policies/INPUT_SCHEMA.md` with any new input fields the rule reads
-4. Populate the new field in `AdmissionPipeline._build_package_metadata()` in `core/pipeline.py`
+4. Populate the new field in `ReviewPipeline._build_package_metadata()` in `core/pipeline.py`
 5. Run `opa test policies/` — all tests must pass
 
 Rules must be written defensively: `input.pkg.field` with `default` assignments so that missing fields produce `needs_review`, not `deny` or silent bypass.

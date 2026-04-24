@@ -1,8 +1,8 @@
 """Agent-specific configuration for GATEKEEPER.
 # tested-by: tests/unit/test_agent_config.py
 
-Separate from AdmissionSettings — uses GATEKEEPER_ env prefix.
-The agent constructs an AdmissionSettings internally when calling the pipeline.
+Separate from EedomSettings — uses GATEKEEPER_ env prefix.
+The agent constructs an EedomSettings internally when calling the pipeline.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class AgentSettings(BaseSettings):
     pipeline_timeout: int = 300
     # TODO: replace with Optional[str] once no-DB mode is implemented.
     # Currently triggers NullRepository fallback in the pipeline.
-    # Removal condition: when AdmissionSettings.db_dsn becomes optional.
+    # Removal condition: when EedomSettings.db_dsn becomes optional.
     db_dsn: str = "postgresql://unused:unused@localhost/unused"
     policy_version: str = "1.0.0"
 

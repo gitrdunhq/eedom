@@ -10,8 +10,8 @@ from unittest.mock import patch
 import pytest
 
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     DecisionVerdict,
     OperatingMode,
     PolicyEvaluation,
@@ -21,12 +21,12 @@ from eedom.core.models import (
 )
 
 
-def _make_decision(verdict: DecisionVerdict = DecisionVerdict.approve) -> AdmissionDecision:
-    """Build a minimal AdmissionDecision for testing."""
+def _make_decision(verdict: DecisionVerdict = DecisionVerdict.approve) -> ReviewDecision:
+    """Build a minimal ReviewDecision for testing."""
     from datetime import datetime
     from uuid import uuid4
 
-    req = AdmissionRequest(
+    req = ReviewRequest(
         request_id=uuid4(),
         request_type=RequestType.new_package,
         ecosystem="pypi",
@@ -48,7 +48,7 @@ def _make_decision(verdict: DecisionVerdict = DecisionVerdict.approve) -> Admiss
         findings=[],
         duration_seconds=1.5,
     )
-    return AdmissionDecision(
+    return ReviewDecision(
         decision_id=uuid4(),
         request=req,
         decision=verdict,

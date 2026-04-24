@@ -1,4 +1,4 @@
-"""Core data models for the Admission Control system.
+"""Core data models for the eedom.
 # tested-by: tests/unit/test_models.py
 
 All domain objects are Pydantic models with strict enum validation,
@@ -46,7 +46,7 @@ class ScanResultStatus(enum.StrEnum):
 
 
 class DecisionVerdict(enum.StrEnum):
-    """Final admission decision for a package request."""
+    """Final review decision for a package request."""
 
     approve = "approve"
     reject = "reject"
@@ -105,7 +105,7 @@ class FindingCategory(enum.StrEnum):
 
 
 class RequestType(enum.StrEnum):
-    """Type of admission request."""
+    """Type of review request."""
 
     new_package = "new_package"
     upgrade = "upgrade"
@@ -195,7 +195,7 @@ class ScanResult(BaseModel):
         )
 
 
-class AdmissionRequest(BaseModel):
+class ReviewRequest(BaseModel):
     """Inbound request to evaluate a dependency change."""
 
     model_config = _MODEL_CONFIG
@@ -255,13 +255,13 @@ def _compute_should_mark_unstable(operating_mode: OperatingMode, verdict: Decisi
     return verdict in (DecisionVerdict.reject, DecisionVerdict.needs_review)
 
 
-class AdmissionDecision(BaseModel):
-    """Aggregate root — the complete admission decision for a package request."""
+class ReviewDecision(BaseModel):
+    """Aggregate root — the complete review decision for a package request."""
 
     model_config = _MODEL_CONFIG
 
     decision_id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    request: AdmissionRequest
+    request: ReviewRequest
     decision: DecisionVerdict
     findings: list[Finding]
     scan_results: list[ScanResult]
@@ -284,7 +284,7 @@ class AdmissionDecision(BaseModel):
 
 
 class BypassRecord(BaseModel):
-    """Record of a manual bypass of the admission decision."""
+    """Record of a manual bypass of the review decision."""
 
     model_config = _MODEL_CONFIG
 

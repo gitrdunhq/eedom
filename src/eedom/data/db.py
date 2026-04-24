@@ -1,4 +1,4 @@
-"""Decision record repository -- persistence layer for admission decisions.
+"""Decision record repository -- persistence layer for review decisions.
 # tested-by: tests/unit/test_db.py
 
 Fail-open design: database failures are logged and absorbed, never raised.
@@ -16,8 +16,8 @@ import structlog
 from psycopg_pool import ConnectionPool
 
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     BypassRecord,
     PolicyEvaluation,
     ScanResult,
@@ -28,15 +28,15 @@ logger = structlog.get_logger(__name__)
 
 @runtime_checkable
 class RepositoryProtocol(Protocol):
-    """Structural contract for admission pipeline repository implementations."""
+    """Structural contract for review pipeline repository implementations."""
 
-    def save_request(self, request: AdmissionRequest) -> None: ...
+    def save_request(self, request: ReviewRequest) -> None: ...
     def save_scan_results(self, request_id: uuid.UUID, results: list[ScanResult]) -> None: ...
     def save_policy_evaluation(
         self, request_id: uuid.UUID, evaluation: PolicyEvaluation
     ) -> None: ...
-    def save_decision(self, request_id: uuid.UUID, decision: AdmissionDecision) -> None: ...
-    def get_decision_by_request_id(self, request_id: uuid.UUID) -> AdmissionDecision | None: ...
+    def save_decision(self, request_id: uuid.UUID, decision: ReviewDecision) -> None: ...
+    def get_decision_by_request_id(self, request_id: uuid.UUID) -> ReviewDecision | None: ...
     def save_bypass(self, record: BypassRecord) -> None: ...
     def close(self) -> None: ...
     def connect(self) -> bool: ...
@@ -64,10 +64,10 @@ def _safe_dsn(dsn: str) -> str:
 
 
 class DecisionRepository:
-    """Postgres-backed repository for admission pipeline records.
+    """Postgres-backed repository for review pipeline records.
 
     All methods absorb database errors -- they log the failure and return
-    gracefully so the admission pipeline is never blocked by storage issues.
+    gracefully so the review pipeline is never blocked by storage issues.
     """
 
     def __init__(self, dsn: str, query_timeout: int = 10, connect_timeout: int = 5) -> None:
@@ -106,8 +106,8 @@ class DecisionRepository:
             f"SET LOCAL statement_timeout = '{self._query_timeout * _QUERY_TIMEOUT_MS_MULTIPLIER}'"
         )
 
-    def save_request(self, request: AdmissionRequest) -> None:
-        """INSERT an admission request record."""
+    def save_request(self, request: ReviewRequest) -> None:
+        """INSERT an review request record."""
         if self._pool is None:
             logger.warning("save_request_skipped", reason="no_pool")
             return
@@ -118,7 +118,7 @@ class DecisionRepository:
                     cur.execute(self._timeout_sql())
                     cur.execute(
                         """
-                        INSERT INTO admission_requests (
+                        INSERT INTO review_requests (
                             request_id, request_type, ecosystem, package_name,
                             target_version, current_version, team, scope,
                             pr_url, pr_number, repo_name, commit_sha,
@@ -240,8 +240,8 @@ class DecisionRepository:
                 exc_info=True,
             )
 
-    def save_decision(self, request_id: uuid.UUID, decision: AdmissionDecision) -> None:
-        """INSERT a final admission decision record."""
+    def save_decision(self, request_id: uuid.UUID, decision: ReviewDecision) -> None:
+        """INSERT a final review decision record."""
         if self._pool is None:
             logger.warning("save_decision_skipped", reason="no_pool")
             return
@@ -254,7 +254,7 @@ class DecisionRepository:
                     cur.execute(self._timeout_sql())
                     cur.execute(
                         """
-                        INSERT INTO admission_decisions (
+                        INSERT INTO review_decisions (
                             decision_id, request_id, decision,
                             findings_summary, evidence_bundle_path,
                             memo_text, pipeline_duration_seconds,
@@ -288,7 +288,7 @@ class DecisionRepository:
                 exc_info=True,
             )
 
-    def get_decision_by_request_id(self, request_id: uuid.UUID) -> AdmissionDecision | None:
+    def get_decision_by_request_id(self, request_id: uuid.UUID) -> ReviewDecision | None:
         """SELECT a decision by request_id. Returns None if not found or on error."""
         if self._pool is None:
             logger.warning("get_decision_skipped", reason="no_pool")
@@ -310,8 +310,8 @@ class DecisionRepository:
                             r.repo_name, r.commit_sha, r.use_case,
                             r.operating_mode AS req_operating_mode,
                             r.created_at AS req_created_at
-                        FROM admission_decisions d
-                        JOIN admission_requests r ON r.request_id = d.request_id
+                        FROM review_decisions d
+                        JOIN review_requests r ON r.request_id = d.request_id
                         WHERE d.request_id = %s
                         ORDER BY d.created_at DESC
                         LIMIT 1
@@ -323,7 +323,7 @@ class DecisionRepository:
             if row is None:
                 return None
 
-            request = AdmissionRequest(
+            request = ReviewRequest(
                 request_id=uuid.UUID(row[8]),
                 request_type=row[9],
                 ecosystem=row[10],
@@ -343,7 +343,7 @@ class DecisionRepository:
 
             findings = orjson.loads(row[2]) if row[2] else []
 
-            return AdmissionDecision(
+            return ReviewDecision(
                 decision_id=uuid.UUID(row[0]),
                 request=request,
                 decision=row[1],
@@ -421,7 +421,7 @@ class NullRepository:
     def close(self) -> None:
         pass
 
-    def save_request(self, request: AdmissionRequest) -> None:
+    def save_request(self, request: ReviewRequest) -> None:
         pass
 
     def save_scan_results(self, request_id: uuid.UUID, results: list[ScanResult]) -> None:
@@ -430,10 +430,10 @@ class NullRepository:
     def save_policy_evaluation(self, request_id: uuid.UUID, evaluation: PolicyEvaluation) -> None:
         pass
 
-    def save_decision(self, request_id: uuid.UUID, decision: AdmissionDecision) -> None:
+    def save_decision(self, request_id: uuid.UUID, decision: ReviewDecision) -> None:
         pass
 
-    def get_decision_by_request_id(self, request_id: uuid.UUID) -> AdmissionDecision | None:
+    def get_decision_by_request_id(self, request_id: uuid.UUID) -> ReviewDecision | None:
         return None
 
     def save_bypass(self, record: BypassRecord) -> None:

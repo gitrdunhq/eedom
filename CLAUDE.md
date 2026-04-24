@@ -57,7 +57,7 @@ Three-tier — imports flow downward only (cli -> core -> data):
 
 ## OPA Policy
 
-6 rules in `policies/admission.rego`. Critical/high vulns deny. Forbidden licenses deny. Package age < 30 days denies. Malicious packages deny. Medium vulns warn. High transitive dep count warns.
+6 rules in `policies/policy.rego`. Critical/high vulns deny. Forbidden licenses deny. Package age < 30 days denies. Malicious packages deny. Medium vulns warn. High transitive dep count warns.
 
 ## Dev Ports
 

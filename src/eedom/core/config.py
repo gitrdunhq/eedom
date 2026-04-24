@@ -1,6 +1,6 @@
-"""Configuration module for Admission Control.
+"""Configuration module for eedom.
 
-All configuration is loaded from environment variables with the ADMISSION_ prefix.
+All configuration is loaded from environment variables with the EEDOM_ prefix.
 # tested-by: tests/unit/test_config.py
 Uses Pydantic BaseSettings for validation and type coercion.
 """
@@ -38,8 +38,8 @@ class _CommaSeparatedEnvSource(EnvSettingsSource):
             return value
 
 
-class AdmissionSettings(BaseSettings):
-    """Admission Control configuration loaded from ADMISSION_* env vars.
+class EedomSettings(BaseSettings):
+    """Eedom configuration loaded from EEDOM_* env vars.
 
     Required fields:
         db_dsn: PostgreSQL connection string — must be provided, no default.
@@ -48,7 +48,7 @@ class AdmissionSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="ADMISSION_",
+        env_prefix="EEDOM_",
         case_sensitive=False,
     )
 

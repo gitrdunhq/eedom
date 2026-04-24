@@ -46,7 +46,7 @@ The system had 246 passing tests but was entirely non-functional in production. 
 
 ### Architecture extraction
 
-`cli/main.py` (285 lines of business logic) → `core/pipeline.py` (AdmissionPipeline class) + thin CLI adapter (150 lines). The presentation layer no longer owns business logic.
+`cli/main.py` (285 lines of business logic) → `core/pipeline.py` (ReviewPipeline class) + thin CLI adapter (150 lines). The presentation layer no longer owns business logic.
 
 ## Regressions Caught During Pass 2
 

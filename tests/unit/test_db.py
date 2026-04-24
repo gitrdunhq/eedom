@@ -6,8 +6,8 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     BypassRecord,
     DecisionVerdict,
     OperatingMode,
@@ -20,8 +20,8 @@ from eedom.core.models import (
 
 def _make_request(
     request_id: uuid.UUID | None = None,
-) -> AdmissionRequest:
-    return AdmissionRequest(
+) -> ReviewRequest:
+    return ReviewRequest(
         request_id=request_id or uuid.uuid4(),
         request_type=RequestType.new_package,
         ecosystem="pypi",
@@ -49,8 +49,8 @@ def _make_policy_evaluation() -> PolicyEvaluation:
     )
 
 
-def _make_decision(request: AdmissionRequest) -> AdmissionDecision:
-    return AdmissionDecision(
+def _make_decision(request: ReviewRequest) -> ReviewDecision:
+    return ReviewDecision(
         request=request,
         decision=DecisionVerdict.approve,
         findings=[],
@@ -98,7 +98,7 @@ class TestDecisionRepository:
         sql_text = insert_call[0][0]
         params = insert_call[0][1]
 
-        assert "INSERT INTO admission_requests" in sql_text
+        assert "INSERT INTO review_requests" in sql_text
         assert str(request.request_id) in params
         assert request.package_name in params
         assert request.ecosystem in params

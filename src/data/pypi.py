@@ -1,7 +1,7 @@
 """PyPI metadata enrichment client.
 # tested-by: tests/unit/test_pypi.py
 
-Fetches package metadata from the PyPI JSON API for use in admission
+Fetches package metadata from the PyPI JSON API for use in review
 decisions. All errors are absorbed and returned as structured dicts --
 this module never raises on HTTP or parse failures.
 """

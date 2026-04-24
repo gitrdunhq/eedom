@@ -1,4 +1,19 @@
-# Eagle Eyed Dom — Automated Code Review for CI
+<div align="center">
+  <img src="../assets/hero.svg" alt="Eagle Eyed Dom" width="900">
+  <br>
+  <strong>Fully deterministic dependency review for CI.</strong><br>
+  15 plugins. 6 OPA policy rules. 18 ecosystems. Zero LLM in the decision path.
+  <br><br>
+
+  <a href="../README.md#quick-start"><img src="https://img.shields.io/badge/get_started-→-d4251a?style=flat-square" alt="Get Started"></a>
+  <a href="../README.md#the-15-plugins"><img src="https://img.shields.io/badge/15_plugins-deterministic-f2c14a?style=flat-square&labelColor=0e0706" alt="15 Plugins"></a>
+  <a href="../README.md#opa-policy-rules"><img src="https://img.shields.io/badge/OPA-6_rules-1e3a8a?style=flat-square" alt="OPA Rules"></a>
+  <a href="../LICENSE"><img src="https://img.shields.io/badge/license-PolyForm_Shield-7ae582?style=flat-square" alt="PolyForm Shield License"></a>
+</div>
+
+<br>
+
+---
 
 ## The problem
 

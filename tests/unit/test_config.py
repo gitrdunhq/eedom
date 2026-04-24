@@ -9,44 +9,44 @@ import pytest
 from pydantic import ValidationError
 
 
-class TestAdmissionSettings:
-    """Test suite for AdmissionSettings configuration loading."""
+class TestEedomSettings:
+    """Test suite for EedomSettings configuration loading."""
 
     @staticmethod
     def _minimal_env() -> dict[str, str]:
         """Return the minimum required env vars for a valid config."""
         return {
-            "ADMISSION_DB_DSN": "postgresql://user:pass@localhost:5432/testdb",
+            "EEDOM_DB_DSN": "postgresql://user:pass@localhost:5432/testdb",
         }
 
     @staticmethod
     def _full_env() -> dict[str, str]:
         """Return a complete env var set with all fields specified."""
         return {
-            "ADMISSION_OPERATING_MODE": "advise",
-            "ADMISSION_DB_DSN": "postgresql://user:pass@localhost:5432/testdb",
-            "ADMISSION_EVIDENCE_PATH": "/tmp/evidence",
-            "ADMISSION_SCANNER_TIMEOUT": "90",
-            "ADMISSION_COMBINED_SCANNER_TIMEOUT": "200",
-            "ADMISSION_OPA_TIMEOUT": "15",
-            "ADMISSION_LLM_TIMEOUT": "45",
-            "ADMISSION_PIPELINE_TIMEOUT": "400",
-            "ADMISSION_OPA_POLICY_PATH": "/opt/policies",
-            "ADMISSION_ENABLED_SCANNERS": "syft,trivy",
-            "ADMISSION_LLM_ENABLED": "true",
-            "ADMISSION_LLM_ENDPOINT": "https://llm.example.com/v1",
-            "ADMISSION_LLM_MODEL": "gpt-4o",
-            "ADMISSION_LLM_API_KEY": "sk-test-key",
-            "ADMISSION_ALTERNATIVES_PATH": "/opt/alternatives.json",
+            "EEDOM_OPERATING_MODE": "advise",
+            "EEDOM_DB_DSN": "postgresql://user:pass@localhost:5432/testdb",
+            "EEDOM_EVIDENCE_PATH": "/tmp/evidence",
+            "EEDOM_SCANNER_TIMEOUT": "90",
+            "EEDOM_COMBINED_SCANNER_TIMEOUT": "200",
+            "EEDOM_OPA_TIMEOUT": "15",
+            "EEDOM_LLM_TIMEOUT": "45",
+            "EEDOM_PIPELINE_TIMEOUT": "400",
+            "EEDOM_OPA_POLICY_PATH": "/opt/policies",
+            "EEDOM_ENABLED_SCANNERS": "syft,trivy",
+            "EEDOM_LLM_ENABLED": "true",
+            "EEDOM_LLM_ENDPOINT": "https://llm.example.com/v1",
+            "EEDOM_LLM_MODEL": "gpt-4o",
+            "EEDOM_LLM_API_KEY": "sk-test-key",
+            "EEDOM_ALTERNATIVES_PATH": "/opt/alternatives.json",
         }
 
     def test_valid_config_loads_from_env(self) -> None:
         """Full env var set produces a correctly populated settings object."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._full_env()
         with patch.dict(os.environ, env, clear=True):
-            settings = AdmissionSettings()
+            settings = EedomSettings()
 
         assert settings.operating_mode.value == "advise"
         assert settings.db_dsn == "postgresql://user:pass@localhost:5432/testdb"
@@ -66,10 +66,10 @@ class TestAdmissionSettings:
 
     def test_missing_db_dsn_raises_validation_error(self) -> None:
         """Config without DB_DSN must fail with a clear validation error."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         with patch.dict(os.environ, {}, clear=True), pytest.raises(ValidationError) as exc_info:
-            AdmissionSettings()
+            EedomSettings()
 
         errors = exc_info.value.errors()
         field_names = [e["loc"][-1] for e in errors]
@@ -77,12 +77,12 @@ class TestAdmissionSettings:
 
     def test_invalid_operating_mode_raises_validation_error(self) -> None:
         """Operating mode must be restricted to 'monitor' and 'advise'."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._minimal_env()
-        env["ADMISSION_OPERATING_MODE"] = "enforce"
+        env["EEDOM_OPERATING_MODE"] = "enforce"
         with patch.dict(os.environ, env, clear=True), pytest.raises(ValidationError) as exc_info:
-            AdmissionSettings()
+            EedomSettings()
 
         errors = exc_info.value.errors()
         # The error should reference operating_mode
@@ -91,11 +91,11 @@ class TestAdmissionSettings:
 
     def test_default_values_are_correct(self) -> None:
         """When only required fields are provided, defaults match the architecture doc."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._minimal_env()
         with patch.dict(os.environ, env, clear=True):
-            settings = AdmissionSettings()
+            settings = EedomSettings()
 
         # Operating mode defaults to monitor
         assert settings.operating_mode.value == "monitor"
@@ -123,22 +123,22 @@ class TestAdmissionSettings:
 
     def test_minimal_config_loads_with_defaults(self) -> None:
         """Minimal config (just DB_DSN) loads successfully."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._minimal_env()
         with patch.dict(os.environ, env, clear=True):
-            settings = AdmissionSettings()
+            settings = EedomSettings()
 
         assert settings.db_dsn == "postgresql://user:pass@localhost:5432/testdb"
 
     def test_enabled_scanners_parsed_from_comma_separated(self) -> None:
         """Comma-separated scanner list is parsed into a Python list."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._minimal_env()
-        env["ADMISSION_ENABLED_SCANNERS"] = "syft,trivy,osv-scanner"
+        env["EEDOM_ENABLED_SCANNERS"] = "syft,trivy,osv-scanner"
         with patch.dict(os.environ, env, clear=True):
-            settings = AdmissionSettings()
+            settings = EedomSettings()
 
         assert settings.enabled_scanners == ["syft", "trivy", "osv-scanner"]
 
@@ -146,12 +146,12 @@ class TestAdmissionSettings:
         """F-021: llm_api_key must be a SecretStr, not a plain str."""
         from pydantic import SecretStr
 
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
 
         env = self._minimal_env()
-        env["ADMISSION_LLM_API_KEY"] = "sk-my-key"
+        env["EEDOM_LLM_API_KEY"] = "sk-my-key"
         with patch.dict(os.environ, env, clear=True):
-            settings = AdmissionSettings()
+            settings = EedomSettings()
 
         assert isinstance(settings.llm_api_key, SecretStr)
         # repr/str must not expose the value

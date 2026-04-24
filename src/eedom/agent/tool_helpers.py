@@ -132,12 +132,12 @@ def get_agent_settings() -> object:
 
 
 def make_pipeline_config() -> object:
-    """Build AdmissionSettings from AgentSettings."""
-    from eedom.core.config import AdmissionSettings
+    """Build EedomSettings from AgentSettings."""
+    from eedom.core.config import EedomSettings
     from eedom.core.models import OperatingMode
 
     agent_cfg = get_agent_settings()
-    return AdmissionSettings(
+    return EedomSettings(
         db_dsn=agent_cfg.db_dsn,
         operating_mode=OperatingMode.advise,
         evidence_path=str(agent_cfg.evidence_path),
@@ -209,13 +209,13 @@ def run_pipeline(
     team: str,
     repo_path: str,
 ) -> tuple[list, list[dict], dict]:
-    """Run the admission pipeline. Returns (decisions, sbom_changes, raw_sbom)."""
+    """Run the review pipeline. Returns (decisions, sbom_changes, raw_sbom)."""
     from eedom.core.models import OperatingMode
-    from eedom.core.pipeline import AdmissionPipeline
+    from eedom.core.pipeline import ReviewPipeline
     from eedom.core.sbom_diff import diff_sboms
 
     config = make_pipeline_config()
-    pipeline = AdmissionPipeline(config)
+    pipeline = ReviewPipeline(config)
 
     manifest_changes = detect_manifest_changes(diff_text)
     python_manifests = manifest_changes.pop("pypi", [])

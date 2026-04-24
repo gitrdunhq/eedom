@@ -69,23 +69,23 @@ This is ALL business logic. The CLI should be a thin adapter: parse args → cal
 ```python
 # After — extract to core/pipeline.py
 # core/pipeline.py
-class AdmissionPipeline:
-    def __init__(self, config: AdmissionSettings):
+class ReviewPipeline:
+    def __init__(self, config: EedomSettings):
         self._config = config
         self._orchestrator = self._build_orchestrator()
         self._opa = OpaEvaluator(...)
         self._evidence = EvidenceStore(...)
         self._db = self._connect_db()
 
-    def evaluate(self, diff_text: str, pr_url: str, team: str, mode: OperatingMode) -> list[AdmissionDecision]:
+    def evaluate(self, diff_text: str, pr_url: str, team: str, mode: OperatingMode) -> list[ReviewDecision]:
         """Run the full pipeline. Returns decisions for all changed packages."""
         ...
 
 # cli/main.py — thin adapter
 @cli.command()
 def evaluate(repo_path, diff, pr_url, team, operating_mode, output_json):
-    config = AdmissionSettings()
-    pipeline = AdmissionPipeline(config)
+    config = EedomSettings()
+    pipeline = ReviewPipeline(config)
     diff_text = _read_diff(diff)
     decisions = pipeline.evaluate(diff_text, pr_url, team, OperatingMode(operating_mode))
     for d in decisions:
