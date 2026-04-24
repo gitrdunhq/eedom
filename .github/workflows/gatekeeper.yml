@@ -74,7 +74,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install dependencies
+      - name: Detect runtime
+        id: runtime
+        run: |
+          if command -v podman &>/dev/null; then
+            echo "engine=podman" >> "$GITHUB_OUTPUT"
+            echo "container=true" >> "$GITHUB_OUTPUT"
+          elif command -v docker &>/dev/null; then
+            echo "engine=docker" >> "$GITHUB_OUTPUT"
+            echo "container=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "engine=native" >> "$GITHUB_OUTPUT"
+            echo "container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies (native)
+        if: steps.runtime.outputs.container == 'false'
         run: uv sync --group dev
 
       - name: Generate PR diff
@@ -86,12 +101,28 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
-      - name: Run eedom review
-        id: review
+      - name: Run eedom review (container)
+        if: steps.runtime.outputs.container == 'true'
+        run: |
+          ENGINE="${{ steps.runtime.outputs.engine }}"
+          $ENGINE run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
+            eedom:latest \
+            sh -c "
+              uv run eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif
+              uv run eedom review --repo-path /workspace --all --output /workspace/.temp/review.md || true
+            "
+
+      - name: Run eedom review (native)
+        if: steps.runtime.outputs.container == 'false'
         run: |
           uv run eedom review --repo-path . --all --format sarif --output .temp/review.sarif
           uv run eedom review --repo-path . --all --output .temp/review.md || true
 
+      - name: Compute verdict
+        id: verdict
+        run: |
           ERRORS=0
           WARNINGS=0
           if [ -f .temp/review.sarif ]; then
@@ -121,27 +152,28 @@ jobs:
             echo "verdict=approved" >> "$GITHUB_OUTPUT"
           fi
 
+          echo "Runtime: ${{ steps.runtime.outputs.engine }} | Errors: $ERRORS | Warnings: $WARNINGS"
+
       - name: Set dom label
         if: github.event_name == 'pull_request'
         run: |
-          # Remove any existing dom labels
           for LABEL in "dom: approved" "dom: warnings" "dom: blocked"; do
             gh issue edit "$PR_NUM" --remove-label "$LABEL" 2>/dev/null || true
           done
 
-          # Apply the verdict label
           gh issue edit "$PR_NUM" --add-label "dom: $VERDICT"
 
-          echo "## 🏷️ dom: $VERDICT" >> "$GITHUB_STEP_SUMMARY"
+          echo "## dom: $VERDICT" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Runtime:** ${{ steps.runtime.outputs.engine }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUM: ${{ github.event.pull_request.number }}
-          VERDICT: ${{ steps.review.outputs.verdict }}
-          ERRORS: ${{ steps.review.outputs.errors }}
-          WARNINGS: ${{ steps.review.outputs.warnings }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          ERRORS: ${{ steps.verdict.outputs.errors }}
+          WARNINGS: ${{ steps.verdict.outputs.warnings }}
 
       - name: Post review comment
         if: github.event_name == 'pull_request'
@@ -181,6 +213,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ github.event.pull_request.number }}
-          VERDICT: ${{ steps.review.outputs.verdict }}
-          ERRORS: ${{ steps.review.outputs.errors }}
-          WARNINGS: ${{ steps.review.outputs.warnings }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          ERRORS: ${{ steps.verdict.outputs.errors }}
+          WARNINGS: ${{ steps.verdict.outputs.warnings }}
