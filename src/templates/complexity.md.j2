@@ -1,0 +1,24 @@
+{% if error %}
+**complexity**: {{ error }}
+{% elif findings %}
+<details><summary>📊 <b>Complexity (avg CCN: {{ summary.get("avg_cyclomatic_complexity", 0) }}, max: {{ summary.get("max_cyclomatic_complexity", 0) }}, {{ summary.get("total_nloc", 0) }} NLOC)</b></summary>
+
+{% if high_ccn %}
+**⚠️ High complexity (CCN > 10):**
+
+| Function | File | CCN | MI | NLOC |
+|----------|------|-----|----|------|
+{% for f in high_ccn %}
+| `{{ f.function }}` | `{{ f.file }}` | {{ f.cyclomatic_complexity }} | {{ f.get("maintainability_index", "?") }} | {{ f.nloc }} |
+{% endfor %}
+
+{% endif %}
+| Function | CCN | MI | NLOC |
+|----------|-----|----|------|
+{% for f in findings %}
+| `{{ f.function }}` | {{ f.cyclomatic_complexity }} | {{ f.get("maintainability_index", "?") }} | {{ f.nloc }} |
+{% endfor %}
+
+</details>
+
+{% endif %}

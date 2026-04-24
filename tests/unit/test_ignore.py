@@ -1,0 +1,187 @@
+"""Tests for eedom.core.ignore — .eedomignore loading and path filtering."""
+
+# tested-by: tests/unit/test_ignore.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from eedom.core.ignore import DEFAULT_PATTERNS, load_ignore_patterns, should_ignore
+
+# ---------------------------------------------------------------------------
+# load_ignore_patterns
+# ---------------------------------------------------------------------------
+
+
+class TestLoadIgnorePatterns:
+    """Tests for load_ignore_patterns()."""
+
+    def test_no_file_returns_defaults_only(self, tmp_path: Path) -> None:
+        """When .eedomignore does not exist, only default patterns are returned."""
+        patterns = load_ignore_patterns(tmp_path)
+        assert patterns == DEFAULT_PATTERNS
+
+    def test_loads_patterns_from_file(self, tmp_path: Path) -> None:
+        """Patterns listed in .eedomignore are appended after defaults."""
+        (tmp_path / ".eedomignore").write_text("vendor/\ntests/fixtures/\n")
+        patterns = load_ignore_patterns(tmp_path)
+        assert "vendor/" in patterns
+        assert "tests/fixtures/" in patterns
+
+    def test_comments_are_ignored(self, tmp_path: Path) -> None:
+        """Lines starting with # are treated as comments and excluded."""
+        (tmp_path / ".eedomignore").write_text("# This is a comment\nvendor/\n")
+        patterns = load_ignore_patterns(tmp_path)
+        assert "# This is a comment" not in patterns
+        assert "vendor/" in patterns
+
+    def test_inline_comments_not_stripped(self, tmp_path: Path) -> None:
+        """A line that does NOT start with # is kept verbatim (inline # is not stripped)."""
+        (tmp_path / ".eedomignore").write_text("vendor/  # keep this\n")
+        patterns = load_ignore_patterns(tmp_path)
+        # The line is kept as-is after stripping leading/trailing whitespace.
+        assert "vendor/  # keep this" in patterns
+
+    def test_empty_lines_are_ignored(self, tmp_path: Path) -> None:
+        """Blank lines are skipped and do not appear in the returned list."""
+        (tmp_path / ".eedomignore").write_text("\n\nvendor/\n\n")
+        patterns = load_ignore_patterns(tmp_path)
+        assert "" not in patterns
+        assert "vendor/" in patterns
+
+    def test_whitespace_only_lines_are_ignored(self, tmp_path: Path) -> None:
+        """Lines containing only whitespace are skipped."""
+        (tmp_path / ".eedomignore").write_text("   \n  \t  \nvendor/\n")
+        patterns = load_ignore_patterns(tmp_path)
+        assert "   " not in patterns
+        assert "vendor/" in patterns
+
+    def test_defaults_always_present_when_file_exists(self, tmp_path: Path) -> None:
+        """Default patterns are included even when .eedomignore is present."""
+        (tmp_path / ".eedomignore").write_text("vendor/\n")
+        patterns = load_ignore_patterns(tmp_path)
+        for default in DEFAULT_PATTERNS:
+            assert default in patterns
+
+    def test_returns_list(self, tmp_path: Path) -> None:
+        """Return type is a plain list."""
+        result = load_ignore_patterns(tmp_path)
+        assert isinstance(result, list)
+
+    def test_file_with_only_comments_returns_defaults(self, tmp_path: Path) -> None:
+        """A .eedomignore with only comment lines is equivalent to no user patterns."""
+        (tmp_path / ".eedomignore").write_text("# ignore everything\n# nope\n")
+        patterns = load_ignore_patterns(tmp_path)
+        assert patterns == DEFAULT_PATTERNS
+
+
+# ---------------------------------------------------------------------------
+# should_ignore — directory patterns
+# ---------------------------------------------------------------------------
+
+
+class TestShouldIgnoreDirectoryPattern:
+    """Tests for should_ignore() with trailing-slash (directory) patterns."""
+
+    def test_direct_child_of_vendor(self) -> None:
+        assert should_ignore("vendor/foo.py", ["vendor/"]) is True
+
+    def test_nested_under_vendor(self) -> None:
+        assert should_ignore("vendor/bar/baz.py", ["vendor/"]) is True
+
+    def test_deeply_nested_under_vendor(self) -> None:
+        assert should_ignore("a/b/vendor/c/d.py", ["vendor/"]) is True
+
+    def test_unrelated_file_not_ignored(self) -> None:
+        assert should_ignore("src/foo.py", ["vendor/"]) is False
+
+    def test_basename_containing_dir_name_not_ignored(self) -> None:
+        """A file named 'vendor.py' at root should NOT be ignored by 'vendor/'."""
+        assert should_ignore("vendor.py", ["vendor/"]) is False
+
+    def test_multiple_dir_patterns(self) -> None:
+        assert should_ignore("tests/fixtures/bad.json", ["vendor/", "tests/fixtures/"]) is True
+
+    def test_dotgit_excluded_by_default(self) -> None:
+        assert should_ignore(".git/config", DEFAULT_PATTERNS) is True
+
+    def test_pycache_excluded_by_default(self) -> None:
+        assert should_ignore("src/__pycache__/module.pyc", DEFAULT_PATTERNS) is True
+
+    def test_node_modules_excluded_by_default(self) -> None:
+        assert should_ignore("node_modules/lodash/index.js", DEFAULT_PATTERNS) is True
+
+
+# ---------------------------------------------------------------------------
+# should_ignore — glob patterns (no trailing slash)
+# ---------------------------------------------------------------------------
+
+
+class TestShouldIgnoreGlobPattern:
+    """Tests for should_ignore() with fnmatch glob patterns."""
+
+    def test_star_extension_matches_basename(self) -> None:
+        assert should_ignore("src/foo.pyc", ["*.pyc"]) is True
+
+    def test_star_extension_matches_nested(self) -> None:
+        assert should_ignore("a/b/c/foo.pyc", ["*.pyc"]) is True
+
+    def test_star_extension_no_match(self) -> None:
+        assert should_ignore("src/foo.py", ["*.pyc"]) is False
+
+    def test_exact_filename_match(self) -> None:
+        assert should_ignore("some/path/secret.key", ["secret.key"]) is True
+
+    def test_full_path_pattern(self) -> None:
+        assert should_ignore("docs/internal/draft.md", ["docs/internal/draft.md"]) is True
+
+
+# ---------------------------------------------------------------------------
+# should_ignore — edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestShouldIgnoreEdgeCases:
+    """Edge-case tests for should_ignore()."""
+
+    def test_empty_patterns_never_ignores(self) -> None:
+        assert should_ignore("vendor/foo.py", []) is False
+
+    def test_empty_patterns_never_ignores_git(self) -> None:
+        assert should_ignore(".git/HEAD", []) is False
+
+    def test_absolute_path_with_dir_pattern(self) -> None:
+        """Absolute paths with a matching component are still ignored."""
+        assert should_ignore("/home/user/project/vendor/lib.py", ["vendor/"]) is True
+
+    def test_absolute_path_no_match(self) -> None:
+        assert should_ignore("/home/user/project/src/main.py", ["vendor/"]) is False
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".git/COMMIT_EDITMSG",
+            "__pycache__/mod.cpython-312.pyc",
+            "src/__pycache__/x.pyc",
+            "node_modules/@types/foo.d.ts",
+            ".venv/lib/python3.12/site.py",
+        ],
+    )
+    def test_default_patterns_cover_common_noise(self, path: str) -> None:
+        """Default patterns should exclude all common non-source noise paths."""
+        assert should_ignore(path, DEFAULT_PATTERNS) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/main.py",
+            "tests/unit/test_foo.py",
+            "pyproject.toml",
+            "Dockerfile",
+            "README.md",
+        ],
+    )
+    def test_default_patterns_do_not_exclude_source_files(self, path: str) -> None:
+        """Default patterns must not exclude ordinary source files."""
+        assert should_ignore(path, DEFAULT_PATTERNS) is False

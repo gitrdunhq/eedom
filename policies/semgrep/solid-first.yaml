@@ -1,0 +1,85 @@
+rules:
+  # ── FIRST: Fast ────────────────────────────────────────────────────────────
+  # Tests must be fast. time.sleep() introduces artificial delays that make
+  # suites slow, flaky, and context-dependent.
+
+  - id: first-no-sleep-in-tests
+    pattern: time.sleep(...)
+    paths:
+      include:
+        - tests/
+    message: >
+      Tests should be fast — avoid time.sleep() in tests.
+      Use mock.patch('time.sleep'), event-based waits, or decouple timing dependencies.
+    severity: WARNING
+    languages: [python]
+
+  # ── FIRST: Isolated ────────────────────────────────────────────────────────
+  # Tests must be isolated from environment state. Direct os.environ reads
+  # create hidden coupling to the host environment, breaking reproducibility.
+
+  - id: first-no-environ-in-tests
+    patterns:
+      - pattern-either:
+          - pattern: os.environ[$KEY]
+          - pattern: os.environ.get(...)
+    paths:
+      include:
+        - tests/
+    message: >
+      Tests should be isolated — avoid direct os.environ reads in tests.
+      Use monkeypatch.setenv(), os.environ patching, or inject config as parameters.
+    severity: WARNING
+    languages: [python]
+
+  # ── FIRST: Self-validating ─────────────────────────────────────────────────
+  # Tests must self-validate. A test function that never asserts anything
+  # always passes and provides zero safety. Every test must have at least
+  # one assert or pytest.raises() to be meaningful.
+
+  - id: first-test-no-assert
+    patterns:
+      - pattern: |
+          def test_$NAME(...):
+              ...
+      - pattern-not: |
+          def test_$NAME(...):
+              ...
+              assert ...
+              ...
+      - pattern-not: |
+          def test_$NAME(...):
+              ...
+              with pytest.raises($E):
+                  ...
+    paths:
+      include:
+        - tests/
+    message: >
+      Test function has no assert or pytest.raises() — it always passes and validates nothing.
+      Add an assertion that would fail if the implementation were deleted.
+    severity: WARNING
+    languages: [python]
+
+  # ── OCP: isinstance chain ──────────────────────────────────────────────────
+  # The Open-Closed Principle is violated when a chain of isinstance checks
+  # grows with each new type. Each new type requires modifying the existing
+  # chain. Prefer polymorphism, dispatch tables, or single-dispatch.
+
+  - id: ocp-isinstance-chain
+    patterns:
+      - pattern: |
+          if isinstance($X, $T1):
+              ...
+          elif isinstance($X, $T2):
+              ...
+          elif isinstance($X, $T3):
+              ...
+          elif isinstance($X, $T4):
+              ...
+    message: >
+      isinstance chain with 4+ branches is an OCP violation signal.
+      Each new type requires modifying this block. Prefer polymorphism,
+      functools.singledispatch, or a dispatch table instead.
+    severity: WARNING
+    languages: [python]

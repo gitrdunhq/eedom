@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 80" width="960" height="80">
+  <title>Eagle Eyed Dom — six scanners</title>
+  <rect x="20" y="15" width="140" height="50" fill="#f2c14a" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="90" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#0e0706" text-anchor="middle">SYFT</text>
+  <rect x="170" y="15" width="140" height="50" fill="#d4251a" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="240" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#0e0706" text-anchor="middle">OSV</text>
+  <rect x="320" y="15" width="140" height="50" fill="#1e3a8a" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="390" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#f4efe6" text-anchor="middle">TRIVY</text>
+  <rect x="470" y="15" width="140" height="50" fill="#7ae582" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="540" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#0e0706" text-anchor="middle">SCANCODE</text>
+  <rect x="620" y="15" width="140" height="50" fill="#4c6fbf" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="690" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#0e0706" text-anchor="middle">OPA</text>
+  <rect x="770" y="15" width="170" height="50" fill="#6b1e3a" stroke="#0e0706" stroke-width="2"></rect>
+  <text x="855" y="45" font-family="monospace" font-size="14" font-weight="700" letter-spacing="2" fill="#f2c14a" text-anchor="middle">SEMGREP</text>
+</svg>

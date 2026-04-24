@@ -1,0 +1,348 @@
+"""Tests for comment renderer.
+# tested-by: tests/unit/test_renderer.py
+"""
+
+from __future__ import annotations
+
+from eedom.core.plugin import PluginResult
+from eedom.core.renderer import calculate_severity_score, render_comment
+
+
+def _vuln_result() -> PluginResult:
+    return PluginResult(
+        plugin_name="osv-scanner",
+        findings=[
+            {
+                "id": "CVE-2023-0286",
+                "severity": "high",
+                "package": "cryptography",
+                "version": "3.3.2",
+                "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-0286",
+                "summary": "Vulnerable OpenSSL",
+            },
+            {
+                "id": "CVE-2024-1234",
+                "severity": "medium",
+                "package": "requests",
+                "version": "2.25.1",
+                "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+                "summary": "Something medium",
+            },
+        ],
+        summary={"total": 2, "critical_high": 1},
+    )
+
+
+def _complexity_result() -> PluginResult:
+    return PluginResult(
+        plugin_name="complexity",
+        findings=[
+            {
+                "function": "process_data",
+                "file": "app.py",
+                "nloc": 20,
+                "cyclomatic_complexity": 12,
+                "maintainability_index": "A (85.3)",
+            },
+            {
+                "function": "simple",
+                "file": "app.py",
+                "nloc": 5,
+                "cyclomatic_complexity": 1,
+                "maintainability_index": "A (100.0)",
+            },
+        ],
+        summary={
+            "avg_cyclomatic_complexity": 6.5,
+            "high_complexity_count": 1,
+            "max_cyclomatic_complexity": 12,
+            "total_nloc": 25,
+        },
+    )
+
+
+def _empty_result() -> PluginResult:
+    return PluginResult(plugin_name="cspell", summary={"status": "skipped"})
+
+
+def _error_result() -> PluginResult:
+    return PluginResult(plugin_name="kube-linter", error="not installed")
+
+
+class TestRenderComment:
+    def test_renders_header(self):
+        md = render_comment(
+            [],
+            repo="org/repo",
+            pr_num=42,
+            title="feat: add thing",
+        )
+        assert "Eagle Eyed Dom" in md
+        assert "org/repo#42" in md
+        assert "feat: add thing" in md
+
+    def test_verdict_clear_when_no_findings(self):
+        md = render_comment(
+            [_empty_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "ALL CLEAR" in md
+
+    def test_verdict_blocked_on_critical(self):
+        md = render_comment(
+            [_vuln_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "BLOCKED" in md
+
+    def test_verdict_warnings_on_non_critical(self):
+        result = PluginResult(
+            plugin_name="semgrep",
+            findings=[{"severity": "WARNING", "message": "x"}],
+        )
+        md = render_comment(
+            [result],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "PASS WITH WARNINGS" in md
+
+    def test_summary_table_has_plugin_counts(self):
+        md = render_comment(
+            [_vuln_result(), _empty_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+            file_count=5,
+        )
+        assert "| osv-scanner | 2 |" in md
+        assert "| cspell | skipped |" in md
+        assert "| Files scanned | 5 |" in md
+
+    def test_error_plugin_shows_error(self):
+        md = render_comment(
+            [_error_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "not installed" in md
+
+    def test_mi_grade_in_header(self):
+        md = render_comment(
+            [_complexity_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "Maintainability" in md
+        assert "CCN avg" in md
+
+    def test_plugin_render_used_when_provided(self):
+        class FakePlugin:
+            def render(self, result):
+                return "CUSTOM RENDER OUTPUT"
+
+        md = render_comment(
+            [_vuln_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+            plugin_renderers={"osv-scanner": FakePlugin()},
+        )
+        assert "CUSTOM RENDER OUTPUT" in md
+
+    def test_footer_has_version(self):
+        md = render_comment(
+            [_vuln_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+        )
+        assert "Eagle Eyed Dom v0.1.0" in md
+
+    def test_truncation_at_65k(self):
+        class VerbosePlugin:
+            def render(self, result):
+                lines = []
+                for f in result.findings:
+                    lines.append(f"| `{f['word']}` | {f['detail']} |")
+                return "\n".join(lines)
+
+        big = PluginResult(
+            plugin_name="verbose",
+            findings=[
+                {"word": f"w{i}", "detail": "x" * 500, "severity": "low"} for i in range(200)
+            ],
+        )
+        md = render_comment(
+            [big],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+            plugin_renderers={"verbose": VerbosePlugin()},
+        )
+        assert len(md) <= 65536
+        assert "truncated" in md
+
+
+class TestPerPackageRendering:
+    """Monorepo: results with package_root set are grouped by package."""
+
+    def _pkg_result(
+        self,
+        plugin_name: str,
+        package_root: str,
+        severity: str = "high",
+    ) -> PluginResult:
+        return PluginResult(
+            plugin_name=plugin_name,
+            package_root=package_root,
+            findings=[{"severity": severity, "id": "CVE-T3-1", "message": "test finding"}],
+            summary={},
+        )
+
+    def _clean_pkg_result(self, plugin_name: str, package_root: str) -> PluginResult:
+        return PluginResult(
+            plugin_name=plugin_name,
+            package_root=package_root,
+            findings=[],
+            summary={},
+        )
+
+    def test_single_package_no_grouping(self):
+        """Results with package_root=None render identically to current behavior."""
+        result = PluginResult(
+            plugin_name="semgrep",
+            findings=[{"severity": "high", "id": "CVE-1", "message": "x"}],
+            summary={},
+        )
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+        # No per-package section headers
+        assert "## apps/" not in md
+        assert "## libs/" not in md
+        # Standard verdict still applies
+        assert "BLOCKED" in md
+
+    def test_multi_package_section_headers(self):
+        """Two packages get separate section headers."""
+        results = [
+            self._pkg_result("semgrep", "apps/web"),
+            self._pkg_result("osv-scanner", "libs/core"),
+        ]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "## apps/web" in md
+        assert "## libs/core" in md
+
+    def test_multi_package_overall_verdict(self):
+        """Overall verdict is worst of all packages (blocked > warnings > clear)."""
+        results = [
+            self._pkg_result("semgrep", "apps/web", severity="high"),  # blocked
+            self._pkg_result("osv-scanner", "libs/core", severity="medium"),  # warnings
+        ]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "BLOCKED" in md
+
+    def test_multi_package_per_package_score(self):
+        """Each package section shows its own severity score."""
+        results = [
+            self._pkg_result("semgrep", "apps/web", severity="high"),  # score 95 (100-5)
+            self._clean_pkg_result("osv-scanner", "libs/core"),  # score 100
+        ]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "apps/web" in md
+        assert "libs/core" in md
+        # apps/web has 1 high finding → per-package score = 95
+        assert "95" in md
+
+    def test_multi_package_clean_and_dirty(self):
+        """One clean package + one with findings: overall = the dirty one's verdict."""
+        results = [
+            self._clean_pkg_result("semgrep", "apps/web"),
+            self._pkg_result("osv-scanner", "libs/core", severity="high"),
+        ]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "BLOCKED" in md
+
+
+class TestCalculateSeverityScore:
+    def test_no_findings_score_is_100(self):
+        results = [PluginResult(plugin_name="osv-scanner", findings=[])]
+        assert calculate_severity_score(results) == 100.0
+
+    def test_one_critical_finding_score_is_90(self):
+        results = [
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[{"severity": "critical", "id": "CVE-X"}],
+            )
+        ]
+        assert calculate_severity_score(results) == 90.0
+
+    def test_one_critical_two_high_score_is_80(self):
+        results = [
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[
+                    {"severity": "critical", "id": "CVE-1"},
+                    {"severity": "high", "id": "CVE-2"},
+                    {"severity": "high", "id": "CVE-3"},
+                ],
+            )
+        ]
+        # 100 - 10 - 5 - 5 = 80
+        assert calculate_severity_score(results) == 80.0
+
+    def test_only_info_findings_score_is_100(self):
+        results = [
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[
+                    {"severity": "info", "id": "INFO-1"},
+                    {"severity": "info", "id": "INFO-2"},
+                ],
+            )
+        ]
+        assert calculate_severity_score(results) == 100.0
+
+    def test_massive_findings_score_floors_at_0(self):
+        results = [
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[{"severity": "critical", "id": f"CVE-{i}"} for i in range(20)],
+            )
+        ]
+        # 20 * 10 = 200 weighted sum; 100 - 200 = -100 → clamped to 0
+        assert calculate_severity_score(results) == 0.0
+
+    def test_missing_severity_key_treated_as_info_weight_zero(self):
+        results = [
+            PluginResult(
+                plugin_name="semgrep",
+                findings=[
+                    {"message": "no severity key here"},
+                    {"message": "also missing"},
+                ],
+            )
+        ]
+        assert calculate_severity_score(results) == 100.0
+
+    def test_score_shown_in_comment_when_below_100(self):
+        results = [
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[{"severity": "critical", "id": "CVE-X"}],
+            )
+        ]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "Health Score: 90/100" in md
+
+    def test_score_not_shown_in_comment_when_100(self):
+        results = [PluginResult(plugin_name="osv-scanner", findings=[])]
+        md = render_comment(results, repo="org/repo", pr_num=1, title="test")
+        assert "Health Score" not in md

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: admission-postgres
+    environment:
+      POSTGRES_DB: admission
+      POSTGRES_USER: admission
+      POSTGRES_PASSWORD: admission_dev
+    ports:
+      - "12432:5432"
+    volumes:
+      - admission_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admission -d admission"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  admission_pgdata:

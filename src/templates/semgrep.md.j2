@@ -1,0 +1,13 @@
+{% if error %}
+**semgrep**: {{ error }}
+{% elif findings %}
+<details open><summary>🔍 <b>Semgrep ({{ findings | length }})</b></summary>
+
+{% for f in findings %}
+{% if f.severity == "ERROR" %}🔴{% elif f.severity == "WARNING" %}🟡{% elif f.severity == "INFO" %}ℹ️{% else %}?{% endif %} **`{{ f.file }}:{{ f.start_line }}`** — **{{ f.rule_id.split(".")|last }}**
+> {{ f.message | truncate(200, true, "") }}
+
+{% endfor %}
+</details>
+
+{% endif %}

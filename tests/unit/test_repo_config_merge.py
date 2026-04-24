@@ -1,0 +1,147 @@
+"""Tests for load_merged_config — root + per-package config merging.
+# tested-by: tests/unit/test_repo_config_merge.py
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from eedom.core.repo_config import (
+    RepoConfig,
+    load_merged_config,
+)
+
+# ── Helpers ──
+
+
+def _write_config(directory: Path, content: dict) -> None:
+    cfg = directory / ".eagle-eyed-dom.yaml"
+    cfg.write_text(yaml.dump(content))
+
+
+# ── TestLoadMergedConfig ──
+
+
+class TestLoadMergedConfig:
+    def test_no_package_root_returns_root_config(self, tmp_path: Path) -> None:
+        """When package_root=None, returns the root config unchanged."""
+        _write_config(tmp_path, {"plugins": {"disabled": ["trivy"]}})
+
+        result = load_merged_config(tmp_path, package_root=None)
+
+        assert result.plugins.disabled == ["trivy"]
+        assert result.plugins.enabled is None
+
+    def test_package_root_equals_repo_root_returns_root_config(self, tmp_path: Path) -> None:
+        """When package_root == repo_path, no merge — returns root config as-is."""
+        _write_config(tmp_path, {"plugins": {"disabled": ["cspell"]}})
+
+        result = load_merged_config(tmp_path, package_root=tmp_path)
+
+        assert result.plugins.disabled == ["cspell"]
+
+    def test_no_package_config_file_falls_back_to_root(self, tmp_path: Path) -> None:
+        """When the package directory has no .eagle-eyed-dom.yaml, returns root config."""
+        _write_config(tmp_path, {"plugins": {"disabled": ["semgrep"]}})
+        pkg_dir = tmp_path / "packages" / "web"
+        pkg_dir.mkdir(parents=True)
+        # Intentionally no config file in pkg_dir
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.plugins.disabled == ["semgrep"]
+
+    def test_package_disabled_overrides_root(self, tmp_path: Path) -> None:
+        """Package-level disabled list takes precedence over root disabled list."""
+        _write_config(tmp_path, {"plugins": {"disabled": ["trivy"]}})
+        pkg_dir = tmp_path / "packages" / "api"
+        pkg_dir.mkdir(parents=True)
+        _write_config(pkg_dir, {"plugins": {"disabled": ["osv-scanner"]}})
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.plugins.disabled == ["osv-scanner"]
+
+    def test_package_enabled_overrides_root(self, tmp_path: Path) -> None:
+        """Package-level enabled list takes precedence over root enabled list."""
+        _write_config(tmp_path, {"plugins": {"enabled": ["semgrep", "trivy"]}})
+        pkg_dir = tmp_path / "packages" / "frontend"
+        pkg_dir.mkdir(parents=True)
+        _write_config(pkg_dir, {"plugins": {"enabled": ["semgrep"]}})
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.plugins.enabled == ["semgrep"]
+
+    def test_package_thresholds_override_root_on_conflict(self, tmp_path: Path) -> None:
+        """When both root and package define the same threshold key, package wins."""
+        _write_config(
+            tmp_path,
+            {"thresholds": {"semgrep": {"max_findings": 10}, "trivy": {"severity": "high"}}},
+        )
+        pkg_dir = tmp_path / "packages" / "service"
+        pkg_dir.mkdir(parents=True)
+        _write_config(pkg_dir, {"thresholds": {"semgrep": {"max_findings": 0}}})
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.thresholds["semgrep"] == {"max_findings": 0}
+        # trivy threshold from root is preserved
+        assert result.thresholds["trivy"] == {"severity": "high"}
+
+    def test_root_thresholds_preserved_when_not_in_package(self, tmp_path: Path) -> None:
+        """Root thresholds not mentioned in package config are kept in the merge."""
+        _write_config(
+            tmp_path,
+            {"thresholds": {"trivy": {"severity": "critical"}, "cspell": {"words": 5}}},
+        )
+        pkg_dir = tmp_path / "libs" / "core"
+        pkg_dir.mkdir(parents=True)
+        _write_config(pkg_dir, {"thresholds": {"trivy": {"severity": "high"}}})
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.thresholds["trivy"] == {"severity": "high"}
+        assert result.thresholds["cspell"] == {"words": 5}
+
+    def test_root_has_no_config_package_has_values(self, tmp_path: Path) -> None:
+        """When root has no config file and package does, package config is used."""
+        pkg_dir = tmp_path / "packages" / "app"
+        pkg_dir.mkdir(parents=True)
+        _write_config(
+            pkg_dir,
+            {
+                "plugins": {"disabled": ["osv-scanner"]},
+                "thresholds": {"trivy": {"severity": "medium"}},
+            },
+        )
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.plugins.disabled == ["osv-scanner"]
+        assert result.thresholds["trivy"] == {"severity": "medium"}
+
+    def test_root_disabled_used_when_package_has_no_disabled(self, tmp_path: Path) -> None:
+        """When package config exists but has no disabled list, root disabled is kept."""
+        _write_config(tmp_path, {"plugins": {"disabled": ["cspell"]}})
+        pkg_dir = tmp_path / "packages" / "lib"
+        pkg_dir.mkdir(parents=True)
+        _write_config(pkg_dir, {"thresholds": {"semgrep": {"max_findings": 5}}})
+
+        result = load_merged_config(tmp_path, package_root=pkg_dir)
+
+        assert result.plugins.disabled == ["cspell"]
+
+    def test_returns_repo_config_instance(self, tmp_path: Path) -> None:
+        """load_merged_config always returns a RepoConfig instance."""
+        result = load_merged_config(tmp_path, package_root=None)
+        assert isinstance(result, RepoConfig)
+
+    def test_both_none_returns_defaults(self, tmp_path: Path) -> None:
+        """No root config file and no package_root → returns default RepoConfig."""
+        result = load_merged_config(tmp_path)
+        assert result.plugins.disabled is None
+        assert result.plugins.enabled is None
+        assert result.thresholds == {}

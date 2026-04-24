@@ -1,0 +1,108 @@
+"""Pipeline helper functions — extracted to keep pipeline.py under 500 lines.
+# tested-by: tests/unit/test_pipeline.py
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import structlog
+
+from eedom.core.diff import DependencyDiffDetector
+from eedom.core.models import (
+    AdmissionRequest,
+    OperatingMode,
+    RequestType,
+    ScanResult,
+    ScanResultStatus,
+)
+
+logger = structlog.get_logger(__name__)
+
+
+def resolve_git_sha(repo_path: Path) -> str | None:
+    """Get the HEAD commit SHA from the repo. Returns None if not a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def count_transitive_deps_from_scan(scan_results: list[ScanResult]) -> int | None:
+    """Extract transitive dependency count from the Syft SBOM scan result."""
+    for result in scan_results:
+        if result.tool_name == "syft" and result.status == ScanResultStatus.success:
+            msg = result.message or ""
+            if "components detected" in msg:
+                try:
+                    return int(msg.split(":")[1].split("components")[0].strip())
+                except (ValueError, IndexError):
+                    pass
+    return None
+
+
+def parse_changes(
+    detector: DependencyDiffDetector,
+    diff_text: str,
+    changed_files: list[str],
+) -> list[dict]:
+    """Parse dependency changes from diff text for all changed files."""
+    all_changes: list[dict] = []
+
+    for fpath in changed_files:
+        basename = fpath.rsplit("/", maxsplit=1)[-1] if "/" in fpath else fpath
+        before_content, after_content = detector.extract_file_content_from_diff(diff_text, fpath)
+
+        if basename in ("requirements.txt", "requirements-dev.txt"):
+            changes = detector.parse_requirements_diff(before_content, after_content)
+            all_changes.extend(changes)
+        elif basename == "pyproject.toml":
+            changes = detector.parse_pyproject_diff(before_content, after_content)
+            all_changes.extend(changes)
+        else:
+            logger.warning("unsupported_dependency_file", file=fpath, basename=basename)
+
+    return all_changes
+
+
+def sbom_changes_to_requests(
+    changes: list[dict],
+    team: str,
+    pr_url: str | None,
+    operating_mode: OperatingMode,
+) -> list[AdmissionRequest]:
+    """Convert SBOM diff change dicts into AdmissionRequest objects."""
+    requests: list[AdmissionRequest] = []
+
+    for change in changes:
+        action = change["action"]
+        if action == "removed":
+            continue
+
+        req_type = RequestType.new_package if action == "added" else RequestType.upgrade
+        current_version = change.get("old_version") if action != "added" else None
+        target_version = change.get("new_version") or "unknown"
+
+        requests.append(
+            AdmissionRequest(
+                request_type=req_type,
+                ecosystem=change.get("ecosystem", "unknown"),
+                package_name=change["package"],
+                target_version=target_version,
+                current_version=current_version,
+                team=team,
+                pr_url=pr_url,
+                operating_mode=operating_mode,
+            )
+        )
+
+    return requests
