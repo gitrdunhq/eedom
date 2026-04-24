@@ -77,10 +77,11 @@ jobs:
       - name: Detect runtime
         id: runtime
         run: |
-          if command -v podman &>/dev/null; then
+          # Check podman is installed AND responsive (machine running, image pullable)
+          if command -v podman &>/dev/null && podman info &>/dev/null && podman image exists eedom:latest &>/dev/null; then
             echo "engine=podman" >> "$GITHUB_OUTPUT"
             echo "container=true" >> "$GITHUB_OUTPUT"
-          elif command -v docker &>/dev/null; then
+          elif command -v docker &>/dev/null && docker info &>/dev/null && docker image inspect eedom:latest &>/dev/null; then
             echo "engine=docker" >> "$GITHUB_OUTPUT"
             echo "container=true" >> "$GITHUB_OUTPUT"
           else
