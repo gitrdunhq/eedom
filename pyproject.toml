@@ -14,7 +14,7 @@ dependencies = [
     "orjson==3.11.8",
     "packaging==26.1",
     "pyarrow==24.0.0",
-    "agent-framework-github-copilot==1.0.0b260423",
+    "agent-framework-github-copilot==1.0.0b260424",
     "jinja2==3.1.6",
     "pyyaml==6.0.3",
     "watchdog==6.0.0",
