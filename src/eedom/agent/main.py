@@ -132,7 +132,7 @@ class GatekeeperAgent:
         agent = GitHubCopilotAgent(
             instructions=system_prompt,
             name="gatekeeper",
-            description="Dependency dependency review and code review agent",
+            description="Dependency review and code review agent",
             tools=[
                 evaluate_change,
                 check_package,

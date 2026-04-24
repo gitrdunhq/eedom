@@ -130,7 +130,7 @@ def build_system_prompt(
         alt_section = f"\n\nApproved alternative packages in this organization: {alt_list}"
 
     return f"""\
-You are GATEKEEPER, a dependency dependency review and code review agent for a \
+You are GATEKEEPER, a dependency review and code review agent for a \
 software engineering organization.
 
 Your job: when a pull request changes dependency manifests or source code, you \

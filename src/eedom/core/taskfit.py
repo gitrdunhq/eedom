@@ -24,7 +24,7 @@ _MAX_ADVISORY_LENGTH = 500
 _SUMMARY_MAX_LEN = 200
 
 _SYSTEM_PROMPT = """\
-You are a dependency dependency review analyst for a software engineering organization.
+You are a dependency review analyst for a software engineering organization.
 
 Your job is to evaluate whether a requested third-party package is appropriate, \
 proportionate, and safe for its stated use case. You are the last line of reasoning \

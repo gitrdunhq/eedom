@@ -56,7 +56,7 @@ class DebounceTimer:
 
 @click.group()
 def cli() -> None:
-    """Agentic Dependency Dependency Review — PoC CLI."""
+    """Agentic Dependency Review — PoC CLI."""
 
 
 @cli.command()

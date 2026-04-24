@@ -1,4 +1,4 @@
-"""GitHub Copilot Agent for dependency dependency review and code review.
+"""GitHub Copilot Agent for dependency review and code review.
 # tested-by: tests/unit/test_agent_main.py
 
 Reactive PR flow: triggers on lockfile/manifest changes, evaluates packages via
