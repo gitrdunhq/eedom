@@ -11,11 +11,14 @@ from __future__ import annotations
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
 from eedom.core.models import ScanResult
-from eedom.data.scanners.base import Scanner
+
+if TYPE_CHECKING:
+    from eedom.data.scanners.base import Scanner
 
 logger = structlog.get_logger()
 
