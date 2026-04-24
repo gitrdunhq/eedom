@@ -30,7 +30,7 @@ ARG JQ_SHA256=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 1: builder — installs everything; produces clean staged artifacts
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION
 ARG SYFT_SHA256 TRIVY_SHA256 OSV_SHA256 OPA_SHA256 GITLEAKS_SHA256 JQ_SHA256
@@ -172,7 +172,7 @@ RUN printf '%s\n' \
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 2: runtime — receives only staged artifacts; no build tools
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.13-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # Runtime system packages:
 #   git       — /usr/bin/git with all shared libs (satisfies ldd test)
