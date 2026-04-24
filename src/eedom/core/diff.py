@@ -14,7 +14,7 @@ import structlog
 from packaging.version import InvalidVersion, Version  # noqa: F401
 
 from eedom.core.models import (
-    AdmissionRequest,
+    ReviewRequest,
     OperatingMode,
     RequestType,
 )
@@ -255,14 +255,14 @@ class DependencyDiffDetector:
         team: str,
         pr_url: str | None,
         operating_mode: OperatingMode,
-    ) -> list[AdmissionRequest]:
-        """Convert change dicts into AdmissionRequest objects.
+    ) -> list[ReviewRequest]:
+        """Convert change dicts into ReviewRequest objects.
 
         - added -> request_type=new_package
         - upgraded/downgraded -> request_type=upgrade (with current_version)
-        - removed -> skipped (no admission needed)
+        - removed -> skipped (no review needed)
         """
-        requests: list[AdmissionRequest] = []
+        requests: list[ReviewRequest] = []
 
         for change in changes:
             action = change["action"]
@@ -281,7 +281,7 @@ class DependencyDiffDetector:
             target_version = change["new_version"] or "unknown"
 
             requests.append(
-                AdmissionRequest(
+                ReviewRequest(
                     request_type=req_type,
                     ecosystem=ecosystem,
                     package_name=change["package"],

@@ -183,10 +183,10 @@ class TestParamExtraction:
 
     def test_extract_param_preserves_original_case(self) -> None:
         param = _extract_param(
-            "callers of AdmissionPipeline",
+            "callers of ReviewPipeline",
             [r"callers of (\w+)", r"of (\w+)"],
         )
-        assert param == "AdmissionPipeline"
+        assert param == "ReviewPipeline"
 
 
 # ---------------------------------------------------------------------------

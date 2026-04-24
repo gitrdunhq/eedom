@@ -1,7 +1,7 @@
 """OPA policy evaluation wrapper.
 # tested-by: tests/unit/test_policy.py
 
-Invokes OPA as a subprocess to evaluate the admission policy against
+Invokes OPA as a subprocess to evaluate the review policy against
 scanner findings and package metadata. Never raises -- all failures
 degrade gracefully to needs_review.
 """
@@ -93,7 +93,7 @@ def build_opa_input(
 
 
 class OpaEvaluator:
-    """Evaluates admission policy by invoking the OPA binary.
+    """Evaluates review policy by invoking the OPA binary.
 
     All failures degrade to needs_review -- this class never raises.
     """
@@ -107,7 +107,7 @@ class OpaEvaluator:
         findings: list[Finding],
         package_metadata: dict,
     ) -> PolicyEvaluation:
-        """Evaluate findings against the OPA admission policy.
+        """Evaluate findings against the OPA review policy.
 
         Args:
             findings: Scanner findings to evaluate.
@@ -166,7 +166,7 @@ class OpaEvaluator:
                 self._policy_path,
                 "-i",
                 tmp.name,
-                "data.admission",
+                "data.policy",
                 "--format",
                 "json",
             ]

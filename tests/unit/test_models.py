@@ -208,8 +208,8 @@ class TestScanResult:
         assert restored.duration_seconds == 45.3
 
 
-class TestAdmissionRequest:
-    """AdmissionRequest model with UUID auto-generation and datetime."""
+class TestReviewRequest:
+    """ReviewRequest model with UUID auto-generation and datetime."""
 
     @staticmethod
     def _make_request(**overrides: object) -> dict:
@@ -225,30 +225,30 @@ class TestAdmissionRequest:
         return defaults
 
     def test_uuid_auto_generated(self) -> None:
-        from eedom.core.models import AdmissionRequest
+        from eedom.core.models import ReviewRequest
 
-        req = AdmissionRequest.model_validate(self._make_request())
+        req = ReviewRequest.model_validate(self._make_request())
         assert isinstance(req.request_id, uuid.UUID)
 
     def test_created_at_auto_generated(self) -> None:
-        from eedom.core.models import AdmissionRequest
+        from eedom.core.models import ReviewRequest
 
-        req = AdmissionRequest.model_validate(self._make_request())
+        req = ReviewRequest.model_validate(self._make_request())
         assert isinstance(req.created_at, datetime)
         # Should be recent (within last 10 seconds)
         delta = datetime.now(UTC) - req.created_at
         assert delta.total_seconds() < 10
 
     def test_default_scope_is_runtime(self) -> None:
-        from eedom.core.models import AdmissionRequest
+        from eedom.core.models import ReviewRequest
 
-        req = AdmissionRequest.model_validate(self._make_request())
+        req = ReviewRequest.model_validate(self._make_request())
         assert req.scope == "runtime"
 
     def test_optional_fields_default_none(self) -> None:
-        from eedom.core.models import AdmissionRequest
+        from eedom.core.models import ReviewRequest
 
-        req = AdmissionRequest.model_validate(self._make_request())
+        req = ReviewRequest.model_validate(self._make_request())
         assert req.current_version is None
         assert req.pr_url is None
         assert req.pr_number is None
@@ -257,9 +257,9 @@ class TestAdmissionRequest:
         assert req.use_case is None
 
     def test_round_trip_json(self) -> None:
-        from eedom.core.models import AdmissionRequest
+        from eedom.core.models import ReviewRequest
 
-        req = AdmissionRequest.model_validate(
+        req = ReviewRequest.model_validate(
             self._make_request(
                 pr_url="https://github.com/org/repo/pull/42",
                 pr_number=42,
@@ -267,7 +267,7 @@ class TestAdmissionRequest:
             )
         )
         dumped = req.model_dump(mode="json")
-        restored = AdmissionRequest.model_validate(dumped)
+        restored = ReviewRequest.model_validate(dumped)
 
         assert restored.request_id == req.request_id
         assert restored.package_name == "requests"
@@ -310,8 +310,8 @@ class TestPolicyEvaluation:
         assert restored.constraints == ["Requires security team sign-off"]
 
 
-class TestAdmissionDecision:
-    """AdmissionDecision — the aggregate root with business logic."""
+class TestReviewDecision:
+    """ReviewDecision — the aggregate root with business logic."""
 
     @staticmethod
     def _make_decision(
@@ -354,22 +354,22 @@ class TestAdmissionDecision:
         }
 
     def test_uuid_auto_generated(self) -> None:
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(self._make_decision())
+        decision = ReviewDecision.model_validate(self._make_decision())
         assert isinstance(decision.decision_id, uuid.UUID)
 
     def test_created_at_auto_generated(self) -> None:
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(self._make_decision())
+        decision = ReviewDecision.model_validate(self._make_decision())
         assert isinstance(decision.created_at, datetime)
 
     def test_monitor_mode_never_comments_or_marks_unstable(self) -> None:
         """In monitor mode, the system logs only — no PR comment, no build unstable."""
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(
+        decision = ReviewDecision.model_validate(
             self._make_decision(operating_mode="monitor", verdict="reject")
         )
         assert decision.should_comment is False
@@ -377,9 +377,9 @@ class TestAdmissionDecision:
 
     def test_advise_mode_reject_comments_and_marks_unstable(self) -> None:
         """In advise mode with a reject verdict, both comment and mark unstable."""
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(
+        decision = ReviewDecision.model_validate(
             self._make_decision(operating_mode="advise", verdict="reject")
         )
         assert decision.should_comment is True
@@ -387,9 +387,9 @@ class TestAdmissionDecision:
 
     def test_advise_mode_approve_no_comment_no_unstable(self) -> None:
         """In advise mode with approve, no comment or unstable marking needed."""
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(
+        decision = ReviewDecision.model_validate(
             self._make_decision(operating_mode="advise", verdict="approve")
         )
         assert decision.should_comment is False
@@ -397,9 +397,9 @@ class TestAdmissionDecision:
 
     def test_advise_mode_needs_review_comments_and_marks_unstable(self) -> None:
         """In advise mode with needs_review, comment and mark unstable."""
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(
+        decision = ReviewDecision.model_validate(
             self._make_decision(operating_mode="advise", verdict="needs_review")
         )
         assert decision.should_comment is True
@@ -407,20 +407,20 @@ class TestAdmissionDecision:
 
     def test_advise_mode_approve_with_constraints_comments_no_unstable(self) -> None:
         """In advise mode with approve_with_constraints, comment but don't mark unstable."""
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(
+        decision = ReviewDecision.model_validate(
             self._make_decision(operating_mode="advise", verdict="approve_with_constraints")
         )
         assert decision.should_comment is True
         assert decision.should_mark_unstable is False
 
     def test_round_trip_json(self) -> None:
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(self._make_decision())
+        decision = ReviewDecision.model_validate(self._make_decision())
         dumped = decision.model_dump(mode="json")
-        restored = AdmissionDecision.model_validate(dumped)
+        restored = ReviewDecision.model_validate(dumped)
 
         assert restored.decision_id == decision.decision_id
         assert restored.decision.value == "reject"
@@ -428,9 +428,9 @@ class TestAdmissionDecision:
         assert restored.pipeline_duration_seconds == 25.0
 
     def test_default_optional_fields(self) -> None:
-        from eedom.core.models import AdmissionDecision
+        from eedom.core.models import ReviewDecision
 
-        decision = AdmissionDecision.model_validate(self._make_decision())
+        decision = ReviewDecision.model_validate(self._make_decision())
         assert decision.evidence_bundle_path is None
         assert decision.memo_text is None
 

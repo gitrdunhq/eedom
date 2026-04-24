@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from eedom.core.models import (
-    AdmissionDecision,
+    ReviewDecision,
     DecisionVerdict,
     FindingSeverity,
     ScanResultStatus,
@@ -28,7 +28,7 @@ _STATUS_ICON: dict[ScanResultStatus, str] = {
 _MAX_MEMO_LENGTH = 3900
 
 
-def generate_memo(decision: AdmissionDecision) -> str:
+def generate_memo(decision: ReviewDecision) -> str:
     req = decision.request
     badge = _VERDICT_BADGE.get(decision.decision, str(decision.decision))
     parts: list[str] = []
@@ -108,7 +108,7 @@ def generate_memo(decision: AdmissionDecision) -> str:
 
     parts.append("---")
     parts.append(
-        f"*Admission Control PoC | Policy v{pol.policy_bundle_version} "
+        f"*eedom | Policy v{pol.policy_bundle_version} "
         f"| Pipeline: {decision.pipeline_duration_seconds:.1f}s*"
     )
 

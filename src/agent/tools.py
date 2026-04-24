@@ -1,7 +1,7 @@
 """GATEKEEPER agent tool definitions.
 # tested-by: tests/unit/test_agent_tools.py
 
-Three @tool functions wrapping the admission pipeline and Semgrep.
+Three @tool functions wrapping the review pipeline and Semgrep.
 Internal helpers live in tool_helpers.py.
 """
 
@@ -23,14 +23,14 @@ from eedom.agent.tool_helpers import (
     run_pipeline,
     validate_paths,
 )
-from eedom.core.models import AdmissionDecision
+from eedom.core.models import ReviewDecision
 from eedom.plugins import get_default_registry
 
 logger = structlog.get_logger(__name__)
 
 
-def _serialize_decision(decision: AdmissionDecision) -> dict:
-    """Serialize an AdmissionDecision to a dict for the agent."""
+def _serialize_decision(decision: ReviewDecision) -> dict:
+    """Serialize an ReviewDecision to a dict for the agent."""
     findings_summary: dict[str, int] = {}
     for f in decision.findings:
         sev = f.severity.value
@@ -63,7 +63,7 @@ def _serialize_decision(decision: AdmissionDecision) -> dict:
 @tool(
     name="evaluate_change",
     description=(
-        "Run the full admission pipeline on a PR diff. Supports 18+ ecosystems "
+        "Run the full review pipeline on a PR diff. Supports 18+ ecosystems "
         "(Python, npm, Cargo, Go, Ruby, Maven, NuGet, Dart, PHP, Elixir, Swift, "
         "CocoaPods, and more). Executes 6 tools: Syft (SBOM), OSV-Scanner, "
         "Trivy, ScanCode (vulnerabilities + licenses) + OPA policy + Semgrep "
@@ -76,7 +76,7 @@ def evaluate_change(
     team: Annotated[str, "The team that owns the repository"],
     repo_path: Annotated[str, "Path to the repository root"],
 ) -> dict:
-    """Run full admission pipeline on a PR diff."""
+    """Run full review pipeline on a PR diff."""
     try:
         decisions, sbom_changes, raw_sbom = run_pipeline(
             diff_text,

@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     Finding,
     PolicyEvaluation,
     ScanResult,
@@ -14,14 +14,14 @@ from eedom.core.models import (
 
 
 def assemble_decision(
-    request: AdmissionRequest,
+    request: ReviewRequest,
     findings: list[Finding],
     scan_results: list[ScanResult],
     policy_evaluation: PolicyEvaluation,
     evidence_bundle_path: str | None,
     pipeline_duration: float,
-) -> AdmissionDecision:
-    return AdmissionDecision(
+) -> ReviewDecision:
+    return ReviewDecision(
         request=request,
         decision=policy_evaluation.decision,
         findings=findings,

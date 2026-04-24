@@ -12,7 +12,7 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 ### Added
 
 **GATEKEEPER Copilot Agent — reactive PR review**
-- New `src/eedom/agent/` module: GitHub Copilot Agent that wraps the existing admission pipeline for reactive PR review
+- New `src/eedom/agent/` module: GitHub Copilot Agent that wraps the existing review pipeline for reactive PR review
 - 8-tool scanning suite (all deterministic, no LLM in the scanning pipeline):
   - Syft (SBOM generation, 18 ecosystems)
   - OSV-Scanner (CVE/GHSA database lookup)
@@ -89,9 +89,9 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 ### Added
 
 **Phase 0 — Jenkins PoC foundation**
-- `AdmissionPipeline` entry point: evaluates dependency changes on PRs via Jenkins
+- `ReviewPipeline` entry point: evaluates dependency changes on PRs via Jenkins
 - CLI (`src/eedom/cli/main.py`) with `monitor` and `advise` operating modes
-- Jenkins shared library (`jenkins/vars/dependencyAdmission.groovy`) with `withEnv`-based parameter passing
+- Jenkins shared library (`jenkins/vars/dependencyReview.groovy`) with `withEnv`-based parameter passing
 
 **Scanners**
 - `OsvScanner` — OSV-Scanner CVE detection; non-recursive invocation to avoid recursive scanning on monorepos
@@ -107,7 +107,7 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 - `FindingNormalizer` — cross-scanner deduplication; highest severity wins on disagreement; dedup key includes finding category to prevent non-vuln collapses
 
 **Policy**
-- OPA `admission.rego` policy with deny rules for critical CVEs, license violations, package age, and transitive dependency depth
+- OPA `policy.rego` policy with deny rules for critical CVEs, license violations, package age, and transitive dependency depth
 - `package_metadata` populated from PyPI client (`first_published_date`) and Syft SBOM (`transitive_dep_count`) so age and depth rules fire
 - CVSS base score parsing with vector heuristic fallback — no more silent `info` rating for untagged vulns
 
@@ -127,14 +127,14 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 - `db_dsn` typed as `pydantic.SecretStr` to prevent accidental string serialization of credentials
 
 **Configuration**
-- All timeouts configurable via `AdmissionConfig`; no hardcoded values in business logic
+- All timeouts configurable via `ReviewConfig`; no hardcoded values in business logic
 - Startup validation fails fast on missing critical config fields
 
 ### Fixed
 
 **Dogfood bugs (caught post-initial-commit)**
 - `OsvScanner` was invoked with `--recursive` flag, causing it to re-scan nested `node_modules` and virtualenvs; removed flag and scoped scan to project root
-- OPA reserved word collision: renamed `input.package` to `input.pkg` in `admission.rego` (reserved word in Rego)
+- OPA reserved word collision: renamed `input.package` to `input.pkg` in `policy.rego` (reserved word in Rego)
 - DB connection timeout mis-configured as string instead of int; `psycopg2` rejected the value silently and fell back to no timeout
 
 **Review Pass 1 — 15 critical/high findings (all fixed)**
@@ -166,10 +166,10 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 - Path traversal in `EvidenceStore` via unvalidated `artifact_name` → guard added (F-022)
 - LLM prompt injection from PyPI metadata fields → structured role separation + sanitization (F-013)
 - LLM API key stored as `str` → `pydantic.SecretStr` (F-021)
-- `db_dsn` exposed as plain string → `SecretStr` in `AdmissionConfig`
+- `db_dsn` exposed as plain string → `SecretStr` in `ReviewConfig`
 
 ### Changed
 
-- Pipeline logic extracted from CLI presentation layer into `AdmissionPipeline` in `core/pipeline.py`; `main.py` is now a thin adapter (F-024)
+- Pipeline logic extracted from CLI presentation layer into `ReviewPipeline` in `core/pipeline.py`; `main.py` is now a thin adapter (F-024)
 - Evidence keyed by commit SHA + timestamp instead of random UUID — enables deterministic replay and audit correlation
 - Scanner result factory functions moved from `data/scanners/base.py` to `core/models.py` to fix tier inversion

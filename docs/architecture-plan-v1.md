@@ -1,4 +1,4 @@
-# Agentic Dependency Admission Control
+# Agentic Dependency Dependency Review
 
 ## OSS Architecture, Operating Model, and Epic-Level Implementation Packet
 
@@ -6,7 +6,7 @@
 
 # 1. Executive Summary
 
-This document defines a **platform-agnostic, event-driven dependency admission control system** for governing how third-party software packages and version upgrades are approved for use.
+This document defines a **platform-agnostic, event-driven dependency dependency review system** for governing how third-party software packages and version upgrades are approved for use.
 
 The core objective is to move dependency security from a **reactive scanning model** to a **proactive eedom model**.
 
@@ -41,7 +41,7 @@ This model is particularly attractive when an organization already uses Argo but
 Modern development teams regularly introduce third-party packages and version upgrades to accelerate delivery. In practice, those changes often occur with inconsistent or incomplete review. Typical organizational failure modes include:
 
 - dependency approval happens informally through chat or tribal knowledge
-- repositories proxy public ecosystems without strong admission controls
+- repositories proxy public ecosystems without strong dependency reviews
 - version upgrades are treated as routine housekeeping rather than change risk events
 - teams optimize for speed and convenience over minimum necessary dependency footprint
 - scanners produce findings, but there is no central decision point controlling approval
@@ -62,7 +62,7 @@ These gaps create exposure across several dimensions:
 
 The target state is a system where:
 
-> Nothing becomes generally consumable in the internal development environment without passing through a consistent, explainable, and auditable dependency admission process.
+> Nothing becomes generally consumable in the internal development environment without passing through a consistent, explainable, and auditable dependency review process.
 
 ---
 
@@ -129,9 +129,9 @@ The target state is a system where:
 
 # 4. Core Concept
 
-## 4.1 Dependency Admission Control
+## 4.1 Dependency Dependency Review
 
-The closest conceptual analogue is **Kubernetes Admission Control**.
+The closest conceptual analogue is **Kubernetes Dependency Review**.
 
 In Kubernetes, requests to create or modify objects are intercepted before acceptance. Policies validate or mutate the request, and the cluster either accepts or rejects the object.
 
@@ -140,12 +140,12 @@ This system applies the same mental model to software dependencies.
 | Kubernetes                          | This System                               |
 | ----------------------------------- | ----------------------------------------- |
 | API request to create/update object | Request to add package or upgrade version |
-| Admission webhook                   | Admission orchestrator                    |
+| Review webhook                   | Review orchestrator                    |
 | Policy engine                       | OPA policy evaluation                     |
 | Allow / deny / mutate               | Approve / reject / constrain              |
 | Cluster state                       | Internal artifact availability state      |
 
-The result is a **Dependency Admission Controller**.
+The result is a **Dependency Dependency Reviewler**.
 
 ## 4.2 Why this is different from standard scanning
 
@@ -180,7 +180,7 @@ This system must answer broader questions:
    - agentic/LLM analysis informs decisions
    - OPA and deterministic rules enforce decisions
 
-4. **Admission before broad consumption**
+4. **Review before broad consumption**
 
    - packages may exist in quarantine, but not in approved repositories until a decision is made
 
@@ -237,7 +237,7 @@ This system must answer broader questions:
 Trigger Source
   -> Event Layer
   -> Workflow Orchestration
-  -> Admission Orchestrator
+  -> Review Orchestrator
       -> Package Metadata Enrichment
       -> SBOM Generation
       -> Security Scanners
@@ -329,7 +329,7 @@ Recommended characteristics:
 
 ## 9.1 Closest Conceptual Prior Art
 
-### Kubernetes admission controllers
+### Kubernetes dependency reviewlers
 
 Examples:
 
@@ -362,7 +362,7 @@ Examples:
 - SLSA-aligned practices
 - GUAC
 
-These establish provenance and evidence but do not independently solve contextual package admission.
+These establish provenance and evidence but do not independently solve contextual package review.
 
 ## 9.2 Coverage vs gap
 
@@ -384,7 +384,7 @@ These establish provenance and evidence but do not independently solve contextua
 ### Largely uncovered and differentiated
 
 - task-fit / intent-aware dependency reasoning
-- centralized, event-driven dependency admission control
+- centralized, event-driven dependency dependency review
 - upgrade risk delta analysis as a first-class workflow
 - explainable, unified decision control plane that composes scanners and policy
 
@@ -392,7 +392,7 @@ These establish provenance and evidence but do not independently solve contextua
 
 This system can be positioned as:
 
-> Kubernetes-style admission control for software dependencies, implemented as an event-driven, policy-enforced control plane with contextual risk reasoning.
+> Kubernetes-style dependency review for software dependencies, implemented as an event-driven, policy-enforced control plane with contextual risk reasoning.
 
 ---
 
@@ -1597,7 +1597,7 @@ Outputs:
 - durable orchestrated workflow backbone
 - reusable workflow templates
 
-## Epic 4: Admission Orchestrator Service
+## Epic 4: Review Orchestrator Service
 
 Objective: Build the core control-plane application.
 
@@ -1707,7 +1707,7 @@ Outputs:
 - standardized decision outputs
 - auditable evidence storage
 
-## Epic 10: New Package Admission Workflow
+## Epic 10: New Package Review Workflow
 
 Objective: Deliver the first end-to-end package approval capability.
 
@@ -1863,11 +1863,11 @@ Include:
 - Platform Foundation
 - Event and Triggering Foundation
 - Workflow Orchestration Foundation
-- Admission Orchestrator Service
+- Review Orchestrator Service
 - minimal Scanner Integration Framework
 - initial Policy Engine
 - Registry Control
-- New Package Admission Workflow
+- New Package Review Workflow
 
 Outcome:
 
@@ -2118,7 +2118,7 @@ It transforms dependency governance from:
 
 into:
 
-- proactive, event-driven, policy-enforced admission control with contextual reasoning and lifecycle reassessment
+- proactive, event-driven, policy-enforced dependency review with contextual reasoning and lifecycle reassessment
 
 This is the architectural shift.
 
@@ -2128,7 +2128,7 @@ This is the architectural shift.
 
 The design is fully achievable with open-source technology.
 
-What does not exist off the shelf is not the scanning layer, the workflow layer, or even the policy layer. Those all exist. The core work is composing them into a coherent **dependency admission control system** with:
+What does not exist off the shelf is not the scanning layer, the workflow layer, or even the policy layer. Those all exist. The core work is composing them into a coherent **dependency dependency review system** with:
 
 - strong event handling
 - durable workflows
@@ -2154,7 +2154,7 @@ This section translates the design into **build-ready architecture guidance** fo
 | Service              | Responsibility                     | Tech suggestion           |
 | -------------------- | ---------------------------------- | ------------------------- |
 | API Gateway          | external entrypoint, auth, routing | NGINX / Kong              |
-| Admission API        | request intake + validation        | Go / FastAPI              |
+| Review API        | request intake + validation        | Go / FastAPI              |
 | Orchestrator Workers | workflow logic, Temporal workers   | Go preferred              |
 | Scanner Workers      | execute scanning jobs              | containerized jobs (Argo) |
 | Policy Service       | OPA sidecar or centralized         | OPA                       |
@@ -2176,20 +2176,20 @@ This section translates the design into **build-ready architecture guidance** fo
 ## 36.2 Namespace / Deployment Layout (Kubernetes)
 
 ```
-dep-admission-core/
+dep-review-core/
   api
   orchestrator
   policy
 
-dep-admission-execution/
+dep-review-execution/
   scanners
   argo-workflows
 
-dep-admission-data/
+dep-review-data/
   postgres
   minio
 
-dep-admission-observability/
+dep-review-observability/
   prometheus
   grafana
   loki
@@ -2411,9 +2411,9 @@ flowchart TB
     end
 
     subgraph CP["Control Plane"]
-        ADMIT["Admission API"]
+        ADMIT["Review API"]
         TEMP["Temporal Workflows"]
-        ORCH["Admission Orchestrator"]
+        ORCH["Review Orchestrator"]
         POLICY["OPA Policy Engine"]
         TASKFIT["Task-Fit / Agentic Reasoning"]
         DECIDE["Decision Assembly"]
@@ -2525,9 +2525,9 @@ Audit / Search / Analytics"]
 
 ```mermaid
 flowchart LR
-    A["Requests / Events"] --> B["Admission API"]
+    A["Requests / Events"] --> B["Review API"]
     B --> C["Temporal Control Plane"]
-    C --> D["Admission Orchestrator"]
+    C --> D["Review Orchestrator"]
 
     D --> E["Argo Scanner Workflows"]
     E --> E1["SBOM / Vuln / License / Code / Provenance"]
@@ -2553,26 +2553,26 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph CLUSTER["k3s / Kubernetes Cluster"]
-        subgraph CORE["dep-admission-core"]
-            API2["Admission API"]
+        subgraph CORE["dep-review-core"]
+            API2["Review API"]
             ORCH2["Orchestrator Workers"]
             OPA2["OPA"]
             NOTIF2["Notification Service"]
         end
 
-        subgraph EXEC["dep-admission-execution"]
+        subgraph EXEC["dep-review-execution"]
             TEMP2["Temporal"]
             ARGO2["Argo Workflows"]
             SCAN2["Scanner Jobs"]
         end
 
-        subgraph DATA["dep-admission-data"]
+        subgraph DATA["dep-review-data"]
             PG2["PostgreSQL"]
             MINIO2["MinIO"]
             SEARCH2["OpenSearch"]
         end
 
-        subgraph OBS2["dep-admission-observability"]
+        subgraph OBS2["dep-review-observability"]
             PROM2["Prometheus"]
             GRAF2["Grafana"]
             LOKI2["Loki"]
@@ -2608,7 +2608,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant U as User / CI / Event Source
-    participant API as Admission API
+    participant API as Review API
     participant T as Temporal Workflow
     participant O as Orchestrator Worker
     participant A as Argo Workflow
@@ -2636,7 +2636,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant D as Developer
-    participant API as Admission API
+    participant API as Review API
     participant T as Temporal
     participant O as Orchestrator
     participant E as Metadata Enrichment
@@ -2667,7 +2667,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant D as Developer / CI
-    participant API as Admission API
+    participant API as Review API
     participant T as Temporal
     participant O as Orchestrator
     participant CUR as Current Version Metadata
@@ -2794,7 +2794,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    API3["Admission API"] --> TEMP3["Temporal"]
+    API3["Review API"] --> TEMP3["Temporal"]
     TEMP3 --> ORCH3["Orchestrator Workers"]
     ORCH3 --> OPA3["OPA"]
     ORCH3 --> ARGO3["Argo Workflows"]
@@ -2814,7 +2814,7 @@ flowchart TB
 flowchart TD
     E1["Epic 1: Platform Foundation"] --> E2["Epic 2: Event and Triggering"]
     E1 --> E3["Epic 3: Workflow Orchestration"]
-    E1 --> E4["Epic 4: Admission Orchestrator"]
+    E1 --> E4["Epic 4: Review Orchestrator"]
     E2 --> E4
     E3 --> E4
     E4 --> E5["Epic 5: Metadata Enrichment"]

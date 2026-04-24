@@ -1,7 +1,7 @@
 """Parquet evidence writer — append-only columnar audit log.
 # tested-by: tests/unit/test_parquet_writer.py
 
-Writes admission decisions to a single append-only parquet file per
+Writes review decisions to a single append-only parquet file per
 evidence root. Enables DuckDB-powered analytics and LLM-queryable
 audit history without loading individual JSON files.
 
@@ -17,7 +17,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import structlog
 
-from eedom.core.models import AdmissionDecision
+from eedom.core.models import ReviewDecision
 
 logger = structlog.get_logger(__name__)
 
@@ -56,8 +56,8 @@ SCHEMA = pa.schema(
 )
 
 
-def decision_to_row(decision: AdmissionDecision, run_id: str = "") -> dict:
-    """Flatten an AdmissionDecision into a parquet-ready dict."""
+def decision_to_row(decision: ReviewDecision, run_id: str = "") -> dict:
+    """Flatten an ReviewDecision into a parquet-ready dict."""
     req = decision.request
     pol = decision.policy_evaluation
 
@@ -101,7 +101,7 @@ def decision_to_row(decision: AdmissionDecision, run_id: str = "") -> dict:
 
 def append_decisions(
     evidence_root: Path,
-    decisions: list[AdmissionDecision],
+    decisions: list[ReviewDecision],
     run_id: str = "",
 ) -> Path | None:
     """Append decisions to the parquet file. Creates it if it doesn't exist.

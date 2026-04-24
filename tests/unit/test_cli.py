@@ -26,7 +26,7 @@ class TestEvaluateNoDependencyChanges:
         """When the diff contains no dependency file changes, exit 0 with a message."""
         runner = CliRunner()
         env = {
-            "ADMISSION_DB_DSN": "postgresql://test:test@localhost/test",
+            "EEDOM_DB_DSN": "postgresql://test:test@localhost/test",
         }
 
         with runner.isolated_filesystem():
@@ -58,7 +58,7 @@ class TestEvaluateNoDependencyChanges:
         """An empty diff file exits 0 with no changes message."""
         runner = CliRunner()
         env = {
-            "ADMISSION_DB_DSN": "postgresql://test:test@localhost/test",
+            "EEDOM_DB_DSN": "postgresql://test:test@localhost/test",
         }
 
         with runner.isolated_filesystem():
@@ -121,7 +121,7 @@ class TestEvaluateAlwaysExitsZero:
     def test_evaluate_exits_zero_on_config_error(self) -> None:
         """Even with a broken config, evaluate exits 0 (fail-open)."""
         runner = CliRunner()
-        # No ADMISSION_DB_DSN set -- config will fail to load
+        # No EEDOM_DB_DSN set -- config will fail to load
         # The CLI should catch this and exit 0
 
         with runner.isolated_filesystem():
@@ -152,7 +152,7 @@ class TestEvaluateAlwaysExitsZero:
         """Evaluate accepts diff from stdin via '-'."""
         runner = CliRunner()
         env = {
-            "ADMISSION_DB_DSN": "postgresql://test:test@localhost/test",
+            "EEDOM_DB_DSN": "postgresql://test:test@localhost/test",
         }
 
         result = runner.invoke(

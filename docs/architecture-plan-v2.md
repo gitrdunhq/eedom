@@ -1,4 +1,4 @@
-# Agentic Dependency Admission Control — v2
+# Agentic Dependency Dependency Review — v2
 
 ## OSS Architecture, Operating Model, and Phased Implementation Plan
 
@@ -6,7 +6,7 @@
 
 # 1. Executive Summary
 
-This document defines a **platform-agnostic, event-driven dependency admission control system** for governing how third-party software packages and version upgrades are approved for use.
+This document defines a **platform-agnostic, event-driven dependency dependency review system** for governing how third-party software packages and version upgrades are approved for use.
 
 The core objective is to move dependency security from a **reactive scanning model** to a **proactive eedom model**.
 
@@ -31,7 +31,7 @@ The architecture is explicitly **not tied to any single artifact backend**. Any 
 
 This revision preserves the north-star architecture from v1 but fundamentally reworks how we get there:
 
-- **Phase 0 is a Jenkins CI proof of concept** — no new infrastructure, no new cluster, no Temporal, no Argo. Dependency admission runs as a Jenkins pipeline using existing CI infrastructure.
+- **Phase 0 is a Jenkins CI proof of concept** — no new infrastructure, no new cluster, no Temporal, no Argo. Dependency review runs as a Jenkins pipeline using existing CI infrastructure.
 - **Build-vs-buy analysis added** — existing tools cover ~60% of the capability stack. We build only the differentiated value and compose the rest.
 - **Three operating modes from day one** — monitor, advise, enforce. Launch in monitor. Graduate to enforce per-team, not org-wide.
 - **Team sizing and operational cost** explicitly stated per phase.
@@ -46,7 +46,7 @@ This revision preserves the north-star architecture from v1 but fundamentally re
 Modern development teams regularly introduce third-party packages and version upgrades to accelerate delivery. In practice, those changes often occur with inconsistent or incomplete review. Typical organizational failure modes include:
 
 - dependency approval happens informally through chat or tribal knowledge
-- repositories proxy public ecosystems without strong admission controls
+- repositories proxy public ecosystems without strong dependency reviews
 - version upgrades are treated as routine housekeeping rather than change risk events
 - teams optimize for speed and convenience over minimum necessary dependency footprint
 - scanners produce findings, but there is no central decision point controlling approval
@@ -67,7 +67,7 @@ These gaps create exposure across several dimensions:
 
 The target state is a system where:
 
-> Nothing becomes generally consumable in the internal development environment without passing through a consistent, explainable, and auditable dependency admission process.
+> Nothing becomes generally consumable in the internal development environment without passing through a consistent, explainable, and auditable dependency review process.
 
 ---
 
@@ -99,9 +99,9 @@ The target state is a system where:
 
 # 4. Core Concept
 
-## 4.1 Dependency Admission Control
+## 4.1 Dependency Dependency Review
 
-The closest conceptual analogue is **Kubernetes Admission Control**.
+The closest conceptual analogue is **Kubernetes Dependency Review**.
 
 In Kubernetes, requests to create or modify objects are intercepted before acceptance. Policies validate or mutate the request, and the cluster either accepts or rejects the object.
 
@@ -110,12 +110,12 @@ This system applies the same mental model to software dependencies.
 | Kubernetes                          | This System                               |
 | ----------------------------------- | ----------------------------------------- |
 | API request to create/update object | Request to add package or upgrade version |
-| Admission webhook                   | Admission orchestrator                    |
+| Review webhook                   | Review orchestrator                    |
 | Policy engine                       | OPA policy evaluation                     |
 | Allow / deny / mutate               | Approve / reject / constrain              |
 | Cluster state                       | Internal artifact availability state      |
 
-The result is a **Dependency Admission Controller**.
+The result is a **Dependency Dependency Reviewler**.
 
 ## 4.2 Why this is different from standard scanning
 
@@ -141,7 +141,7 @@ This system must answer broader questions:
 2. **Event-driven first** — requests and changes should trigger evaluation immediately
 3. **Repository-agnostic** — Artifactory, Nexus, Harbor, GitHub Packages, CodeArtifact, or internal proxies can all fit
 4. **Reasoning is advisory; policy is authoritative** — agentic/LLM analysis informs decisions; OPA and deterministic rules enforce decisions
-5. **Admission before broad consumption** — packages may exist in quarantine, but not in approved repositories until a decision is made
+5. **Review before broad consumption** — packages may exist in quarantine, but not in approved repositories until a decision is made
 6. **Upgrades are first-class risk events** — version bumps are not treated as routine by default
 7. **Auditability by default** — every decision should have an evidence trail
 8. **Progressive automation** — start with human review and narrow auto-approvals; expand automation as confidence increases
@@ -175,7 +175,7 @@ The system must support three operating modes from day one. This is non-negotiab
 - Dependency changes that violate policy are blocked
 - Approved alternatives are surfaced with rejections
 - Exception and bypass paths are available
-- Purpose: actual admission control
+- Purpose: actual dependency review
 
 ## 6.4 Mode Transition Rules
 
@@ -193,7 +193,7 @@ The system must support three operating modes from day one. This is non-negotiab
 
 When the system is unavailable or producing false positives at scale:
 
-- **Automatic bypass**: if the admission pipeline does not return a decision within the configured timeout (default: 5 minutes), the dependency change proceeds with a logged `BYPASS_TIMEOUT` decision
+- **Automatic bypass**: if the review pipeline does not return a decision within the configured timeout (default: 5 minutes), the dependency change proceeds with a logged `BYPASS_TIMEOUT` decision
 - **Manual bypass**: authorized users can invoke a bypass command (CLI, API, or Jenkins parameter) that logs a `BYPASS_MANUAL` decision with the invoker's identity and stated reason
 - **Kill switch**: platform operators can set the entire system to monitor mode via a single configuration change, restoring full developer autonomy immediately
 - All bypass events are logged, auditable, and included in dashboards
@@ -224,7 +224,7 @@ These capabilities exist in mature, well-maintained open-source tools. We should
 
 | Capability | Existing Coverage | Gap |
 |---|---|---|
-| Repository firewall / quarantine | Nexus Pro, JFrog Xray | OSS options require manual configuration; no event-driven admission workflow |
+| Repository firewall / quarantine | Nexus Pro, JFrog Xray | OSS options require manual configuration; no event-driven review workflow |
 | Policy gates on dependencies | Xray, Sonatype Lifecycle | Proprietary, vendor-locked, limited contextual reasoning |
 | SBOM diff / upgrade analysis | None turnkey | Individual tools exist but no unified upgrade-risk workflow |
 
@@ -235,7 +235,7 @@ These capabilities exist in mature, well-maintained open-source tools. We should
 | Capability | Market Status |
 |---|---|
 | Task-fit / intent-aware dependency reasoning | No existing solution |
-| Centralized, event-driven dependency admission control plane | No turnkey OSS solution |
+| Centralized, event-driven dependency dependency review plane | No turnkey OSS solution |
 | Upgrade risk delta analysis as a first-class workflow | No unified solution |
 | Explainable decision memos composing scanner + policy + context | No existing solution |
 | Three-mode (monitor/advise/enforce) progressive rollout | No existing solution |
@@ -247,8 +247,8 @@ These capabilities exist in mature, well-maintained open-source tools. We should
 | Approach | Covers | Doesn't Cover | Cost Model | Lock-in Risk |
 |---|---|---|---|---|
 | Sonatype Lifecycle + Firewall | Vuln scanning, license, quarantine, policy | Task-fit, upgrade intelligence, unified control plane | Per-developer licensing | High (proprietary policy engine) |
-| JFrog Xray + Advanced Security | Vuln scanning, license, contextual analysis, secrets | Task-fit reasoning, event-driven admission workflow | Platform licensing | High (Artifactory-coupled) |
-| This system (OSS) | Everything above + task-fit + upgrade intelligence + admission control | Requires build + ops investment | Infrastructure + team cost | None (OSS stack) |
+| JFrog Xray + Advanced Security | Vuln scanning, license, contextual analysis, secrets | Task-fit reasoning, event-driven review workflow | Platform licensing | High (Artifactory-coupled) |
+| This system (OSS) | Everything above + task-fit + upgrade intelligence + dependency review | Requires build + ops investment | Infrastructure + team cost | None (OSS stack) |
 
 **Recommendation**: If the organization wants task-fit reasoning, upgrade intelligence, and vendor independence, build this system. If the organization only needs vulnerability scanning and basic policy gates, buy Sonatype or JFrog — it's cheaper and faster.
 
@@ -309,7 +309,7 @@ The following are assumed to exist before product development begins. If they do
 
 ## 9.1 Closest Conceptual Prior Art
 
-### Kubernetes admission controllers
+### Kubernetes dependency reviewlers
 
 Examples: OPA Gatekeeper, Kyverno
 
@@ -325,7 +325,7 @@ These provide parts of the capability stack: vulnerability scanning, policy enfo
 
 Examples: Sigstore, in-toto, SLSA-aligned practices, GUAC
 
-These establish provenance and evidence but do not independently solve contextual package admission.
+These establish provenance and evidence but do not independently solve contextual package review.
 
 ## 9.2 Coverage vs gap
 
@@ -345,14 +345,14 @@ These establish provenance and evidence but do not independently solve contextua
 ### Largely uncovered and differentiated
 
 - task-fit / intent-aware dependency reasoning
-- centralized, event-driven dependency admission control
+- centralized, event-driven dependency dependency review
 - upgrade risk delta analysis as a first-class workflow
 - explainable, unified decision control plane that composes scanners and policy
 - progressive rollout with monitor/advise/enforce modes
 
 ## 9.3 Positioning statement
 
-> Kubernetes-style admission control for software dependencies, implemented as an event-driven, policy-enforced control plane with contextual risk reasoning and progressive enforcement.
+> Kubernetes-style dependency review for software dependencies, implemented as an event-driven, policy-enforced control plane with contextual risk reasoning and progressive enforcement.
 
 ---
 
@@ -616,7 +616,7 @@ The system defaults to **fail-open** in all phases. This means:
 - If a scanner fails or times out, the workflow continues without that scanner's results. The decision memo notes the missing scanner output.
 - If the OPA policy evaluation fails, the request is marked `NEEDS_HUMAN_REVIEW` — it is not auto-rejected.
 - If the orchestrator service is unavailable, dependency changes proceed normally. No blocking occurs.
-- If the Jenkins pipeline step fails, the build continues. The admission step is advisory, not a build gate (until enforce mode is enabled for that team).
+- If the Jenkins pipeline step fails, the build continues. The review step is advisory, not a build gate (until enforce mode is enabled for that team).
 
 ## 14.2 Fail-closed behavior (opt-in)
 
@@ -1037,7 +1037,7 @@ The task-fit layer is only useful when the approved-alternatives catalog is popu
 2. Auto-approve these as the initial approved catalog
 3. For each approved package, record its primary use case category
 4. Seed the alternatives mapping: for each category, list the approved options
-5. Expand the catalog as new packages are approved through the admission process
+5. Expand the catalog as new packages are approved through the review process
 
 This bootstrap is a **prerequisite** for transitioning any team to advise or enforce mode. It should be completed during the PoC phase using existing lockfile data.
 
@@ -1255,7 +1255,7 @@ The biggest non-technical risk is workflow bypass. Teams will bypass if:
 
 ### Platform engineering
 
-- operate the admission control system
+- operate the dependency review system
 - maintain Jenkins pipeline (PoC) or orchestrator service (later phases)
 - maintain registry integrations
 - manage operating mode transitions
@@ -1282,7 +1282,7 @@ The biggest non-technical risk is workflow bypass. Teams will bypass if:
 
 | Function | Owner |
 |---|---|
-| Admission system ops | Platform |
+| Review system ops | Platform |
 | Scanner execution reliability | Platform / Security shared |
 | OPA policy rules | Security |
 | Approved alternatives catalog | Security / Platform / App enablement shared |
@@ -1355,7 +1355,7 @@ Ongoing ops: 2-3 FTE for full platform operations.
 | Sonatype Lifecycle | 0.5-1 eng-month (integration) | 0.25 FTE | $50-200K licensing | Moderate-High |
 | JFrog Xray + Advanced | 0.5-1 eng-month (integration) | 0.25 FTE | $50-250K licensing | Moderate-High |
 
-**Decision point**: if the organization values vendor independence and the differentiated capabilities (task-fit, upgrade intelligence, admission control plane), the build cost is justified. If only vulnerability scanning and basic policy gates are needed, buy.
+**Decision point**: if the organization values vendor independence and the differentiated capabilities (task-fit, upgrade intelligence, dependency review plane), the build cost is justified. If only vulnerability scanning and basic policy gates are needed, buy.
 
 ---
 
@@ -1396,7 +1396,7 @@ This plan is organized around delivery phases, not a waterfall of 17 sequential 
 
 ### Epic 0.1: Jenkins Pipeline Foundation
 
-Objective: Build a Jenkins shared library that detects dependency changes and runs admission evaluation.
+Objective: Build a Jenkins shared library that detects dependency changes and runs review evaluation.
 
 Scope:
 
@@ -1415,7 +1415,7 @@ Outputs:
 
 - working Jenkins pipeline evaluating dependency changes on PRs
 - decision database with queryable records
-- PR comments with admission decisions
+- PR comments with review decisions
 
 ### Epic 0.2: Initial Policy Bundle
 
@@ -1468,7 +1468,7 @@ Outputs:
 
 ## Phase 1: Service Extraction (4-6 weeks)
 
-### Epic 1.1: Admission Orchestrator Service
+### Epic 1.1: Review Orchestrator Service
 
 Objective: Extract the Jenkins pipeline logic into a standalone service.
 
@@ -1763,7 +1763,7 @@ A developer's build is blocked by a false positive in enforce mode.
 
 # 34. Recommended MVP (Phase 0 Jenkins PoC)
 
-The MVP is a Jenkins pipeline that proves the admission control concept works with zero new infrastructure.
+The MVP is a Jenkins pipeline that proves the dependency review concept works with zero new infrastructure.
 
 **Included:**
 
@@ -1817,7 +1817,7 @@ PR (dependency file change)
 Trigger Source
   → Event Layer (NATS / Webhooks)
   → Workflow Orchestration (Temporal)
-  → Admission Orchestrator
+  → Review Orchestrator
       → Package Metadata Enrichment
       → SBOM Generation
       → Security Scanners (via Argo Workflows)
@@ -1906,9 +1906,9 @@ flowchart TB
     end
 
     subgraph CP["Control Plane"]
-        ADMIT["Admission API"]
+        ADMIT["Review API"]
         TEMP["Temporal Workflows"]
-        ORCH["Admission Orchestrator"]
+        ORCH["Review Orchestrator"]
         POLICY["OPA Policy Engine"]
         TASKFIT2["Task-Fit Reasoning"]
         DECIDE2["Decision Assembly"]
@@ -2019,7 +2019,7 @@ sequenceDiagram
     J->>OS: Store evidence bundle
     J->>GH: Post PR comment with findings
     J->>J: Set build status per operating mode
-    GH-->>D: PR shows admission results
+    GH-->>D: PR shows review results
 ```
 
 ## 36.4 Operating Mode State Diagram
@@ -2040,7 +2040,7 @@ stateDiagram-v2
 ```mermaid
 sequenceDiagram
     participant U as User / CI / Event Source
-    participant API as Admission API
+    participant API as Review API
     participant T as Temporal Workflow
     participant O as Orchestrator Worker
     participant A as Argo Workflow
@@ -2068,7 +2068,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant D as Developer
-    participant API as Admission API
+    participant API as Review API
     participant O as Orchestrator
     participant E as Metadata Enrichment
     participant S as Scanners
@@ -2097,7 +2097,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant D as Developer / CI
-    participant API as Admission API
+    participant API as Review API
     participant O as Orchestrator
     participant CUR as Current Version Data
     participant TAR as Target Version Data

@@ -1,4 +1,4 @@
-"""Tests for eedom.core.pipeline — AdmissionPipeline."""
+"""Tests for eedom.core.pipeline — ReviewPipeline."""
 
 # tested-by: tests/unit/test_pipeline.py
 
@@ -30,10 +30,10 @@ index 000..111 100644
 
 
 def _make_config(tmp_path: Path):
-    """Build a minimal AdmissionSettings pointing at tmp_path."""
-    from eedom.core.config import AdmissionSettings
+    """Build a minimal EedomSettings pointing at tmp_path."""
+    from eedom.core.config import EedomSettings
 
-    return AdmissionSettings(
+    return EedomSettings(
         db_dsn="postgresql://test:test@localhost/test",
         evidence_path=str(tmp_path / "evidence"),
         opa_policy_path=str(tmp_path / "policies"),
@@ -43,15 +43,15 @@ def _make_config(tmp_path: Path):
     )
 
 
-class TestAdmissionPipelineNoDependencyChanges:
+class TestReviewPipelineNoDependencyChanges:
     """Pipeline returns empty list when no dependency files changed."""
 
     def test_no_dependency_changes_returns_empty_list(self, tmp_path: Path) -> None:
         """When the diff has no dependency files, evaluate returns []."""
-        from eedom.core.pipeline import AdmissionPipeline
+        from eedom.core.pipeline import ReviewPipeline
 
         config = _make_config(tmp_path)
-        pipeline = AdmissionPipeline(config)
+        pipeline = ReviewPipeline(config)
 
         decisions = pipeline.evaluate(
             diff_text=DIFF_NO_DEPS,
@@ -68,10 +68,10 @@ class TestAdmissionPipelineNoDependencyChanges:
     def test_empty_diff_returns_empty_list(self, tmp_path: Path) -> None:
         """An empty diff string returns no decisions."""
         from eedom.core.models import OperatingMode
-        from eedom.core.pipeline import AdmissionPipeline
+        from eedom.core.pipeline import ReviewPipeline
 
         config = _make_config(tmp_path)
-        pipeline = AdmissionPipeline(config)
+        pipeline = ReviewPipeline(config)
 
         decisions = pipeline.evaluate(
             diff_text="",
@@ -84,15 +84,15 @@ class TestAdmissionPipelineNoDependencyChanges:
         assert decisions == []
 
 
-class TestAdmissionPipelineConstruction:
-    """AdmissionPipeline can be constructed without raising."""
+class TestReviewPipelineConstruction:
+    """ReviewPipeline can be constructed without raising."""
 
     def test_constructor_does_not_raise(self, tmp_path: Path) -> None:
-        """Importing and constructing AdmissionPipeline with valid config raises nothing."""
-        from eedom.core.pipeline import AdmissionPipeline
+        """Importing and constructing ReviewPipeline with valid config raises nothing."""
+        from eedom.core.pipeline import ReviewPipeline
 
         config = _make_config(tmp_path)
-        pipeline = AdmissionPipeline(config)
+        pipeline = ReviewPipeline(config)
 
         assert pipeline is not None
 
@@ -118,16 +118,16 @@ class TestAdmissionPipelineConstruction:
         assert trivy.name == "trivy"
 
 
-class TestAdmissionPipelineTimeoutEnforcement:
+class TestReviewPipelineTimeoutEnforcement:
     """Pipeline breaks the per-package loop when pipeline_timeout is exceeded."""
 
     def test_timeout_breaks_loop(self, tmp_path: Path) -> None:
         """When pipeline_timeout=0, the loop exits before processing any package."""
-        from eedom.core.config import AdmissionSettings
+        from eedom.core.config import EedomSettings
         from eedom.core.models import OperatingMode
-        from eedom.core.pipeline import AdmissionPipeline
+        from eedom.core.pipeline import ReviewPipeline
 
-        config = AdmissionSettings(
+        config = EedomSettings(
             db_dsn="postgresql://test:test@localhost/test",
             evidence_path=str(tmp_path / "evidence"),
             opa_policy_path=str(tmp_path / "policies"),
@@ -136,7 +136,7 @@ class TestAdmissionPipelineTimeoutEnforcement:
             combined_scanner_timeout=180,
         )
 
-        pipeline = AdmissionPipeline(config)
+        pipeline = ReviewPipeline(config)
 
         # Patch orchestrator.run to return empty results quickly
         with patch(

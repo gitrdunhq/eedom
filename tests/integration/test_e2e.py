@@ -1,4 +1,4 @@
-"""End-to-end integration tests for the Admission Control pipeline.
+"""End-to-end integration tests for the Review pipeline.
 
 Tests the full pipeline from diff input through decision output, with all
 external dependencies mocked at system boundaries:
@@ -212,10 +212,10 @@ def _write_diff(tmp_path: Path, diff_text: str, name: str = "test.diff") -> Path
 
 def _base_env(tmp_path: Path) -> dict[str, str]:
     return {
-        "ADMISSION_DB_DSN": "postgresql://test:test@localhost:12432/test",
-        "ADMISSION_EVIDENCE_PATH": str(tmp_path / "evidence"),
-        "ADMISSION_ENABLED_SCANNERS": "syft,scancode",
-        "ADMISSION_OPA_POLICY_PATH": str(tmp_path / "policies"),
+        "EEDOM_DB_DSN": "postgresql://test:test@localhost:12432/test",
+        "EEDOM_EVIDENCE_PATH": str(tmp_path / "evidence"),
+        "EEDOM_ENABLED_SCANNERS": "syft,scancode",
+        "EEDOM_OPA_POLICY_PATH": str(tmp_path / "policies"),
     }
 
 

@@ -39,7 +39,7 @@ Each module's unit tests verify that module's behavior in isolation. The scanner
 
 ### Layer 3: E2E tests mock at the wrong boundary
 
-The E2E integration test (`test_e2e.py`) was supposed to catch these bugs. Instead, it mocked `ScanOrchestrator` at the class level (replacing it entirely), mocked `DependencyDiffDetector.parse_requirements_diff` to inject fake changes, and limited `ADMISSION_ENABLED_SCANNERS` to only the two scanners whose constructors happened to work. The E2E test effectively rewired the pipeline to avoid the broken paths, then verified the non-broken subset worked.
+The E2E integration test (`test_e2e.py`) was supposed to catch these bugs. Instead, it mocked `ScanOrchestrator` at the class level (replacing it entirely), mocked `DependencyDiffDetector.parse_requirements_diff` to inject fake changes, and limited `EEDOM_ENABLED_SCANNERS` to only the two scanners whose constructors happened to work. The E2E test effectively rewired the pipeline to avoid the broken paths, then verified the non-broken subset worked.
 
 **The test passed because it tested a different pipeline than the one the CLI actually runs.**
 

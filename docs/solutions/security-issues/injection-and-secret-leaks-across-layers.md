@@ -1,6 +1,6 @@
 ---
 title: "Injection and Secret Leaks Across Three Layers"
-component: jenkins/vars/dependencyAdmission.groovy, src/eedom/data/db.py, src/eedom/core/taskfit.py
+component: jenkins/vars/dependencyReview.groovy, src/eedom/data/db.py, src/eedom/core/taskfit.py
 tags: security, injection, shell-injection, credential-leak, prompt-injection, jenkins, secrets, owasp
 category: security-issues
 date: 2026-04-23
@@ -28,7 +28,7 @@ Each agent implemented its layer correctly from a functional standpoint but appl
 
 ### Vulnerability 1: Jenkins shell injection (F-008, severity 8)
 
-`dependencyAdmission.groovy:142` constructs a shell command via Groovy string interpolation with single-quote wrapping:
+`dependencyReview.groovy:142` constructs a shell command via Groovy string interpolation with single-quote wrapping:
 
 ```groovy
 // Before — shell injection via single-quote breakout

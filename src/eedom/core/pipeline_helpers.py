@@ -11,7 +11,7 @@ import structlog
 
 from eedom.core.diff import DependencyDiffDetector
 from eedom.core.models import (
-    AdmissionRequest,
+    ReviewRequest,
     OperatingMode,
     RequestType,
     ScanResult,
@@ -79,9 +79,9 @@ def sbom_changes_to_requests(
     team: str,
     pr_url: str | None,
     operating_mode: OperatingMode,
-) -> list[AdmissionRequest]:
-    """Convert SBOM diff change dicts into AdmissionRequest objects."""
-    requests: list[AdmissionRequest] = []
+) -> list[ReviewRequest]:
+    """Convert SBOM diff change dicts into ReviewRequest objects."""
+    requests: list[ReviewRequest] = []
 
     for change in changes:
         action = change["action"]
@@ -93,7 +93,7 @@ def sbom_changes_to_requests(
         target_version = change.get("new_version") or "unknown"
 
         requests.append(
-            AdmissionRequest(
+            ReviewRequest(
                 request_type=req_type,
                 ecosystem=change.get("ecosystem", "unknown"),
                 package_name=change["package"],

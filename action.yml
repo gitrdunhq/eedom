@@ -1,4 +1,4 @@
-name: 'Dependency Admission Control'
+name: 'Dependency Dependency Review'
 description: 'Evaluate dependency changes for security, license, and policy compliance'
 
 inputs:
@@ -45,15 +45,15 @@ runs:
         git diff origin/${{ github.base_ref }}...HEAD > "$RUNNER_TEMP/dep-changes.diff"
         echo "diff-path=$RUNNER_TEMP/dep-changes.diff" >> "$GITHUB_OUTPUT"
 
-    - name: Run admission control
+    - name: Run dependency review
       id: evaluate
       shell: bash
       env:
-        ADMISSION_OPERATING_MODE: ${{ inputs.operating-mode }}
-        ADMISSION_DB_DSN: ${{ inputs.db-dsn }}
-        ADMISSION_EVIDENCE_PATH: ${{ inputs.evidence-path }}
-        ADMISSION_OPA_POLICY_PATH: ${{ inputs.policy-path }}
-        ADMISSION_ENABLED_SCANNERS: ${{ inputs.enabled-scanners }}
+        EEDOM_OPERATING_MODE: ${{ inputs.operating-mode }}
+        EEDOM_DB_DSN: ${{ inputs.db-dsn }}
+        EEDOM_EVIDENCE_PATH: ${{ inputs.evidence-path }}
+        EEDOM_OPA_POLICY_PATH: ${{ inputs.policy-path }}
+        EEDOM_ENABLED_SCANNERS: ${{ inputs.enabled-scanners }}
       run: |
         DECISION_FILE="$RUNNER_TEMP/decision.json"
         MEMO_FILE="$RUNNER_TEMP/memo.md"
@@ -95,14 +95,14 @@ runs:
         MARKER="<!-- eedom-result -->"
         COMMENT_BODY="$MARKER
         <details>
-        <summary>Dependency Admission Control</summary>
+        <summary>Dependency Dependency Review</summary>
 
         $(cat "$MEMO_FILE")
 
         </details>
 
         ---
-        *Posted by [Admission Control](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) at $(date -u +%Y-%m-%dT%H:%M:%SZ)*"
+        *Posted by [Dependency Review](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) at $(date -u +%Y-%m-%dT%H:%M:%SZ)*"
 
         # Upsert: find existing comment or create new
         EXISTING=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
@@ -122,4 +122,4 @@ runs:
       if: inputs.operating-mode == 'advise' && steps.evaluate.outputs.decision == 'reject'
       shell: bash
       run: |
-        echo "::warning::Dependency admission control: REJECT — see PR comment for details"
+        echo "::warning::Dependency dependency review: REJECT — see PR comment for details"

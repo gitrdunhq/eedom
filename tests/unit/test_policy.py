@@ -52,7 +52,7 @@ def _opa_json_output(
                             "warn": warn or [],
                             "decision": decision,
                         },
-                        "text": "data.admission",
+                        "text": "data.policy",
                         "location": {"row": 1, "col": 1},
                     }
                 ]

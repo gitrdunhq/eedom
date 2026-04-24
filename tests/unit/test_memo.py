@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from eedom.core.memo import generate_memo
 from eedom.core.models import (
-    AdmissionDecision,
-    AdmissionRequest,
+    ReviewDecision,
+    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -22,8 +22,8 @@ from eedom.core.models import (
 # ---------------------------------------------------------------------------
 
 
-def _request(mode: str = "advise") -> AdmissionRequest:
-    return AdmissionRequest(
+def _request(mode: str = "advise") -> ReviewRequest:
+    return ReviewRequest(
         request_type=RequestType.new_package,
         ecosystem="npm",
         package_name="lodash",
@@ -81,9 +81,9 @@ def _decision(
     constraints: list[str] | None = None,
     policy_version: str = "0.1.0",
     duration: float = 5.0,
-) -> AdmissionDecision:
+) -> ReviewDecision:
     request = _request()
-    return AdmissionDecision(
+    return ReviewDecision(
         request=request,
         decision=DecisionVerdict(verdict),
         findings=findings or [],
