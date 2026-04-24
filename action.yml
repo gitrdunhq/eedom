@@ -1,4 +1,4 @@
-name: 'Dependency Dependency Review'
+name: 'Dependency Review'
 description: 'Evaluate dependency changes for security, license, and policy compliance'
 
 inputs:
@@ -95,7 +95,7 @@ runs:
         MARKER="<!-- eedom-result -->"
         COMMENT_BODY="$MARKER
         <details>
-        <summary>Dependency Dependency Review</summary>
+        <summary>Dependency Review</summary>
 
         $(cat "$MEMO_FILE")
 
@@ -122,4 +122,4 @@ runs:
       if: inputs.operating-mode == 'advise' && steps.evaluate.outputs.decision == 'reject'
       shell: bash
       run: |
-        echo "::warning::Dependency dependency review: REJECT — see PR comment for details"
+        echo "::warning::Dependency review: REJECT — see PR comment for details"
