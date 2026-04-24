@@ -1,0 +1,125 @@
+name: 'Dependency Admission Control'
+description: 'Evaluate dependency changes for security, license, and policy compliance'
+
+inputs:
+  operating-mode:
+    description: 'monitor (log only) or advise (PR comment + build warning)'
+    required: false
+    default: 'monitor'
+  team:
+    description: 'Team name for the request'
+    required: false
+    default: '${{ github.repository_owner }}'
+  enabled-scanners:
+    description: 'Comma-separated scanner list'
+    required: false
+    default: 'syft,osv-scanner,trivy,scancode'
+  db-dsn:
+    description: 'PostgreSQL DSN (optional — runs without DB if omitted)'
+    required: false
+    default: ''
+  evidence-path:
+    description: 'Path to store evidence bundles'
+    required: false
+    default: './evidence'
+  policy-path:
+    description: 'Path to OPA policy directory'
+    required: false
+    default: './policies'
+
+outputs:
+  decision:
+    description: 'Decision verdict (approve/reject/needs_review/approve_with_constraints)'
+    value: ${{ steps.evaluate.outputs.decision }}
+  memo:
+    description: 'Decision memo text'
+    value: ${{ steps.evaluate.outputs.memo }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate diff
+      id: diff
+      shell: bash
+      run: |
+        git diff origin/${{ github.base_ref }}...HEAD > "$RUNNER_TEMP/dep-changes.diff"
+        echo "diff-path=$RUNNER_TEMP/dep-changes.diff" >> "$GITHUB_OUTPUT"
+
+    - name: Run admission control
+      id: evaluate
+      shell: bash
+      env:
+        ADMISSION_OPERATING_MODE: ${{ inputs.operating-mode }}
+        ADMISSION_DB_DSN: ${{ inputs.db-dsn }}
+        ADMISSION_EVIDENCE_PATH: ${{ inputs.evidence-path }}
+        ADMISSION_OPA_POLICY_PATH: ${{ inputs.policy-path }}
+        ADMISSION_ENABLED_SCANNERS: ${{ inputs.enabled-scanners }}
+      run: |
+        DECISION_FILE="$RUNNER_TEMP/decision.json"
+        MEMO_FILE="$RUNNER_TEMP/memo.md"
+
+        uv run python -m eedom.cli.main evaluate \
+          --repo-path "$GITHUB_WORKSPACE" \
+          --diff "${{ steps.diff.outputs.diff-path }}" \
+          --pr-url "${{ github.event.pull_request.html_url }}" \
+          --team "${{ inputs.team }}" \
+          --operating-mode "${{ inputs.operating-mode }}" \
+          --output-json "$DECISION_FILE" \
+          | tee "$MEMO_FILE"
+
+        if [ -f "$DECISION_FILE" ]; then
+          VERDICT=$(jq -r '.[0].decision // .decision // "unknown"' "$DECISION_FILE" 2>/dev/null || echo "unknown")
+          echo "decision=$VERDICT" >> "$GITHUB_OUTPUT"
+        else
+          echo "decision=unknown" >> "$GITHUB_OUTPUT"
+        fi
+
+        if [ -f "$MEMO_FILE" ] && [ -s "$MEMO_FILE" ]; then
+          echo "memo<<MEMO_EOF" >> "$GITHUB_OUTPUT"
+          cat "$MEMO_FILE" >> "$GITHUB_OUTPUT"
+          echo "MEMO_EOF" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Post PR comment
+      if: inputs.operating-mode == 'advise' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        MEMO_FILE="$RUNNER_TEMP/memo.md"
+        if [ ! -s "$MEMO_FILE" ]; then
+          echo "No memo to post — skipping comment."
+          exit 0
+        fi
+
+        MARKER="<!-- eedom-result -->"
+        COMMENT_BODY="$MARKER
+        <details>
+        <summary>Dependency Admission Control</summary>
+
+        $(cat "$MEMO_FILE")
+
+        </details>
+
+        ---
+        *Posted by [Admission Control](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) at $(date -u +%Y-%m-%dT%H:%M:%SZ)*"
+
+        # Upsert: find existing comment or create new
+        EXISTING=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --jq ".[] | select(.body | contains(\"$MARKER\")) | .id" 2>/dev/null | head -1)
+
+        if [ -n "$EXISTING" ]; then
+          gh api "repos/${{ github.repository }}/issues/comments/$EXISTING" \
+            --method PATCH \
+            --field body="$COMMENT_BODY" > /dev/null
+          echo "Updated existing comment $EXISTING"
+        else
+          gh pr comment "${{ github.event.pull_request.number }}" --body "$COMMENT_BODY"
+          echo "Posted new comment"
+        fi
+
+    - name: Mark check warning on reject
+      if: inputs.operating-mode == 'advise' && steps.evaluate.outputs.decision == 'reject'
+      shell: bash
+      run: |
+        echo "::warning::Dependency admission control: REJECT — see PR comment for details"

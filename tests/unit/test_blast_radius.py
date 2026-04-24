@@ -1,0 +1,269 @@
+"""Tests for blast radius plugin and code graph.
+# tested-by: tests/unit/test_blast_radius.py
+"""
+
+from __future__ import annotations
+
+import textwrap
+
+from eedom.plugins._runners.graph_builder import CodeGraph
+
+SAMPLE_PYTHON = textwrap.dedent("""\
+    import os
+    from pathlib import Path
+
+    class BaseScanner:
+        def scan(self):
+            pass
+
+    class OsvScanner(BaseScanner):
+        def scan(self):
+            result = self._fetch()
+            return self._parse(result)
+
+        def _fetch(self):
+            return {}
+
+        def _parse(self, data):
+            return []
+
+    def run_pipeline(repo_path):
+        scanner = OsvScanner()
+        result = scanner.scan()
+        normalize(result)
+        return result
+
+    def normalize(findings):
+        return sorted(findings)
+
+    def main():
+        run_pipeline("/workspace")
+""")
+
+
+class TestCodeGraph:
+    def test_index_python_finds_functions(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        stats = g.stats()
+        assert stats["symbols"] > 0
+        funcs = g.conn.execute("SELECT name FROM symbols WHERE kind = 'function'").fetchall()
+        names = {r["name"] for r in funcs}
+        assert "run_pipeline" in names
+        assert "normalize" in names
+        assert "main" in names
+
+    def test_index_python_finds_classes(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        classes = g.conn.execute("SELECT name FROM symbols WHERE kind = 'class'").fetchall()
+        names = {r["name"] for r in classes}
+        assert "BaseScanner" in names
+        assert "OsvScanner" in names
+
+    def test_index_python_finds_calls(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        edges = g.conn.execute(
+            "SELECT s.name as src, t.name as tgt"
+            " FROM edges e"
+            " JOIN symbols s ON e.source_id = s.id"
+            " JOIN symbols t ON e.target_id = t.id"
+            " WHERE e.kind = 'calls'"
+        ).fetchall()
+        pairs = {(r["src"], r["tgt"]) for r in edges}
+        assert ("run_pipeline", "normalize") in pairs
+
+    def test_index_python_finds_inheritance(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        edges = g.conn.execute(
+            "SELECT s.name as src, t.name as tgt"
+            " FROM edges e"
+            " JOIN symbols s ON e.source_id = s.id"
+            " JOIN symbols t ON e.target_id = t.id"
+            " WHERE e.kind = 'inherits'"
+        ).fetchall()
+        pairs = {(r["src"], r["tgt"]) for r in edges}
+        assert ("OsvScanner", "BaseScanner") in pairs
+
+    def test_blast_radius_finds_callers(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        radius = g.blast_radius("normalize", max_depth=2)
+        names = {r["name"] for r in radius}
+        assert "run_pipeline" in names
+
+    def test_blast_radius_depth_labels(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        radius = g.blast_radius("normalize", max_depth=3)
+        by_name = {r["name"]: r for r in radius}
+        if "run_pipeline" in by_name:
+            assert by_name["run_pipeline"]["risk"] == "WILL_BREAK"
+
+    def test_run_checks_on_changed_files(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        findings = g.run_checks(["scanner.py"])
+        assert isinstance(findings, list)
+
+    def test_register_custom_check(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        g.register_check(
+            name="too_many_functions",
+            query="""
+                SELECT file, COUNT(*) as func_count
+                FROM symbols
+                WHERE kind = 'function' AND file IN ({changed_files})
+                GROUP BY file
+                HAVING func_count > 3
+            """,
+            severity="medium",
+            description="File has too many functions",
+        )
+        findings = g.run_checks(["scanner.py"])
+        check_names = {f["check"] for f in findings}
+        assert "too_many_functions" in check_names
+
+    def test_builtin_checks_registered(self):
+        g = CodeGraph()
+        checks = g.conn.execute("SELECT name FROM checks").fetchall()
+        names = {r["name"] for r in checks}
+        assert "blast_radius_high" in names
+        assert "circular_dependency" in names
+        assert "orphan_symbol" in names
+        assert "high_fan_out" in names
+
+    def test_stats(self):
+        g = CodeGraph()
+        g.index_file("scanner.py", SAMPLE_PYTHON)
+        g.conn.commit()
+        s = g.stats()
+        assert s["symbols"] > 5
+        assert s["files"] >= 1
+        assert s["checks"] >= 5
+
+    def test_index_javascript(self):
+        js_code = textwrap.dedent("""\
+            import { Router } from 'express';
+            const handler = async (req, res) => {
+                const data = fetchData(req.params.id);
+                res.json(data);
+            };
+            class UserController extends BaseController {
+                getUser() { return {}; }
+            }
+        """)
+        g = CodeGraph()
+        g.index_file("handler.ts", js_code)
+        g.conn.commit()
+        stats = g.stats()
+        assert stats["symbols"] > 0
+        classes = g.conn.execute("SELECT name FROM symbols WHERE kind = 'class'").fetchall()
+        assert any(r["name"] == "UserController" for r in classes)
+
+    def test_empty_changed_files_returns_empty(self):
+        g = CodeGraph()
+        assert g.run_checks([]) == []
+
+    def test_blast_radius_unknown_symbol_returns_empty(self):
+        g = CodeGraph()
+        assert g.blast_radius("nonexistent") == []
+
+    def test_classifies_pass_only(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def noop():\n    pass\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'noop'").fetchone()
+        assert row["body_kind"] == "pass_only"
+
+    def test_classifies_return_none(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def nothing():\n    return None\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'nothing'").fetchone()
+        assert row["body_kind"] == "return_none"
+
+    def test_classifies_stub_ellipsis(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def stub():\n    ...\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'stub'").fetchone()
+        assert row["body_kind"] == "stub"
+
+    def test_classifies_stub_not_implemented(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def stub():\n    raise NotImplementedError\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'stub'").fetchone()
+        assert row["body_kind"] == "stub"
+
+    def test_classifies_log_only(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def logit():\n    print('hi')\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'logit'").fetchone()
+        assert row["body_kind"] == "log_only"
+
+    def test_classifies_real_function(self):
+        g = CodeGraph()
+        g.index_file("t.py", "def real(x):\n    return x * 2\n")
+        g.conn.commit()
+        row = g.conn.execute("SELECT body_kind FROM symbols WHERE name = 'real'").fetchone()
+        assert row["body_kind"] == "real"
+
+    def test_noop_check_finds_stubs(self):
+        g = CodeGraph()
+        g.index_file(
+            "app.py",
+            textwrap.dedent("""\
+            def real_work(x):
+                return x * 2 + 1
+
+            def placeholder():
+                pass
+
+            def todo():
+                raise NotImplementedError
+
+            def log_only():
+                print("called")
+        """),
+        )
+        g.conn.commit()
+        findings = g.run_checks(["app.py"])
+        noop_findings = [f for f in findings if f["check"] == "noop_function"]
+        names = {f["name"] for f in noop_findings}
+        assert "placeholder" in names
+        assert "todo" in names
+        assert "log_only" in names
+        assert "real_work" not in names
+
+    def test_mock_stub_check_skips_test_files(self):
+        g = CodeGraph()
+        g.index_file("test_app.py", "def test_stub():\n    pass\n")
+        g.index_file("src.py", "def prod_stub():\n    pass\n")
+        g.conn.commit()
+        findings = g.run_checks(["test_app.py", "src.py"])
+        mock_findings = [f for f in findings if f["check"] == "mock_stub_in_source"]
+        names = {f["name"] for f in mock_findings}
+        assert "prod_stub" in names
+        assert "test_stub" not in names
+
+    def test_checks_loaded_from_yaml(self):
+        g = CodeGraph()
+        checks = g.conn.execute("SELECT name FROM checks").fetchall()
+        names = {r["name"] for r in checks}
+        assert "noop_function" in names
+        assert "mock_stub_in_source" in names
+        assert len(names) >= 8

@@ -1,0 +1,199 @@
+rules:
+  # ── 1.1 Layer violations ──────────────────────────────────────────────
+
+  - id: org.arch.core-imports-data-private
+    pattern: |
+      from eedom.data.$MODULE import $_
+    paths:
+      include:
+        - src/eedom/core/
+    message: >
+      core/ must not import private symbols from data/.
+      Use public interfaces or dependency injection.
+    severity: ERROR
+    languages: [python]
+
+  # ── 2.1 Raw strings for state ──────────────────────────────────────────
+
+  - id: org.contract.raw-string-status
+    patterns:
+      - pattern: |
+          $X = "approve"
+      - pattern: |
+          $X = "reject"
+      - pattern: |
+          $X = "needs_review"
+      - pattern: |
+          $X = "approve_with_constraints"
+      - pattern: |
+          $X == "approve"
+      - pattern: |
+          $X == "reject"
+    paths:
+      exclude:
+        - tests/
+        - policies/
+    message: >
+      Use DecisionVerdict enum instead of raw verdict strings.
+      Raw strings drift and bypass type checking.
+    severity: WARNING
+    languages: [python]
+
+  # ── 3.1 Unconditional sys.exit(0) ──────────────────────────────────────
+
+  - id: org.reliability.unconditional-exit-zero
+    pattern: sys.exit(0)
+    paths:
+      include:
+        - src/eedom/agent/
+    message: >
+      Unconditional sys.exit(0) in agent code may bypass block-mode enforcement.
+      Check enforcement_mode before exiting clean.
+    severity: ERROR
+    languages: [python]
+
+  # ── 3.2 Subprocess without timeout ─────────────────────────────────────
+
+  - id: org.reliability.subprocess-no-timeout
+    patterns:
+      - pattern: subprocess.run($...ARGS)
+      - pattern-not: subprocess.run($...ARGS, timeout=$T, $...REST)
+      - pattern-not: subprocess.run($...ARGS, $...MID, timeout=$T)
+      - pattern-not: subprocess.run($...ARGS, $...MID, timeout=$T, $...REST)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Every subprocess.run() call must have an explicit timeout.
+      Unbounded subprocesses can hang the pipeline.
+    severity: ERROR
+    languages: [python]
+
+  # ── 4.2 Secrets in logs ────────────────────────────────────────────────
+
+  - id: org.security.secret-in-log
+    patterns:
+      - pattern: logger.$METHOD(..., password=$X, ...)
+      - pattern: logger.$METHOD(..., secret=$X, ...)
+      - pattern: logger.$METHOD(..., token=$X, ...)
+      - pattern: logger.$METHOD(..., api_key=$X, ...)
+      - pattern: logger.$METHOD(..., dsn=$X, ...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Do not log secrets, passwords, tokens, or raw DSNs.
+      Use SecretStr or mask before logging.
+    severity: ERROR
+    languages: [python]
+
+  # ── 6.2 Weak assertions ───────────────────────────────────────────────
+
+  - id: org.testing.weak-assertion-defined
+    pattern: assert $X is not None
+    paths:
+      include:
+        - tests/
+    message: >
+      Assert concrete values, not just existence.
+      A test that passes when the implementation is deleted is worthless.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.testing.weak-assertion-truthy
+    patterns:
+      - pattern: assert $X
+      - pattern-not: assert $X == $Y
+      - pattern-not: assert $X in $Y
+      - pattern-not: assert $X is $Y
+      - pattern-not: assert $X != $Y
+      - pattern-not: assert $X not in $Y
+      - pattern-not: assert $X is not $Y
+      - pattern-not: assert $X >= $Y
+      - pattern-not: assert $X <= $Y
+      - pattern-not: assert $X > $Y
+      - pattern-not: assert $X < $Y
+      - pattern-not: assert isinstance($X, $Y)
+      - pattern-not: assert len($X) $OP $Y
+      - pattern-not: assert not $X
+      - pattern-not: assert any($X)
+      - pattern-not: assert all($X)
+    paths:
+      include:
+        - tests/
+    message: >
+      Bare `assert result` is a weak assertion.
+      Assert specific values, types, or conditions.
+    severity: INFO
+    languages: [python]
+
+  # ── 7.2 Silent pass in fallback ────────────────────────────────────────
+
+  - id: org.reliability.silent-pass-fallback
+    pattern: |
+      except $E:
+          pass
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Silent pass in except block hides failures.
+      Log the error or return a typed degraded result.
+    severity: WARNING
+    languages: [python]
+
+  # ── 9 Banned: print in source ──────────────────────────────────────────
+
+  - id: org.banned.print-in-source
+    pattern: print(...)
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: >
+      Use structlog, not print(). print() is banned in production code.
+    severity: WARNING
+    languages: [python]
+
+  # ── 9 Banned: pickle.load ─────────────────────────────────────────────
+
+  - id: org.security.pickle-load
+    pattern: pickle.loads(...)
+    message: >
+      pickle.loads() is a deserialization vulnerability.
+      Use JSON, orjson, or a safe serialization format.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.pickle-load-file
+    pattern: pickle.load(...)
+    message: >
+      pickle.load() is a deserialization vulnerability.
+      Use JSON, orjson, or a safe serialization format.
+    severity: ERROR
+    languages: [python]
+
+  # ── 9 Banned: eval ────────────────────────────────────────────────────
+
+  - id: org.security.eval-call
+    pattern: eval(...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      eval() executes arbitrary code. Never use on external input.
+    severity: ERROR
+    languages: [python]
+
+  # ── 9 Banned: os.system ───────────────────────────────────────────────
+
+  - id: org.security.os-system
+    pattern: os.system(...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      os.system() is a command injection vector.
+      Use subprocess.run() with explicit args list and timeout.
+    severity: ERROR
+    languages: [python]

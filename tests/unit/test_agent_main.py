@@ -1,0 +1,222 @@
+"""Tests for agent entry point and orchestrator.
+# tested-by: tests/unit/test_agent_main.py
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from eedom.agent.config import AgentSettings, EnforcementMode
+
+
+def _make_settings(**overrides) -> AgentSettings:
+    defaults = {
+        "github_token": "ghp_test_token_123",
+        "enforcement_mode": "warn",
+        "repo_path": "./test_repo",
+    }
+    defaults.update(overrides)
+    return AgentSettings(**defaults)
+
+
+class TestGatekeeperAgent:
+    @pytest.mark.asyncio
+    async def test_run_posts_reviewing_comment_first(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings()
+        agent = GatekeeperAgent(config)
+
+        with (
+            patch.object(
+                agent,
+                "_post_comment",
+                new_callable=AsyncMock,
+            ) as mock_comment,
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                return_value="## 🟢 APPROVED `requests@2.31.0`",
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            await agent.run(
+                diff_text="diff --git a/requirements.txt\n+requests==2.31.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            assert mock_comment.call_count >= 1
+            first_body = mock_comment.call_args_list[0].args[3]
+            assert "⏳" in first_body
+
+    @pytest.mark.asyncio
+    async def test_block_mode_reject_from_structured_data(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings(enforcement_mode="block")
+        agent = GatekeeperAgent(config)
+        agent._decisions_have_reject = True
+
+        with (
+            patch.object(agent, "_post_comment", new_callable=AsyncMock),
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                return_value="## 🔴 REJECTED `evil@0.1.0`\n\n**Decision**: reject",
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            result = await agent.run(
+                diff_text="diff --git a/requirements.txt\n+evil==0.1.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            assert result["exit_code"] == 1
+
+    @pytest.mark.asyncio
+    async def test_warn_mode_reject_exits_zero(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings(enforcement_mode="warn")
+        agent = GatekeeperAgent(config)
+
+        with (
+            patch.object(agent, "_post_comment", new_callable=AsyncMock),
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                return_value="## 🔴 REJECTED `evil@0.1.0`\n\n**Decision**: reject",
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            result = await agent.run(
+                diff_text="diff --git a/requirements.txt\n+evil==0.1.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            assert result["exit_code"] == 0
+            assert result["comments_posted"] > 0
+
+    @pytest.mark.asyncio
+    async def test_log_mode_no_comment_posted(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings(enforcement_mode="log")
+        agent = GatekeeperAgent(config)
+
+        with (
+            patch.object(
+                agent,
+                "_post_comment",
+                new_callable=AsyncMock,
+            ) as mock_comment,
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                return_value="## 🔴 REJECTED `evil@0.1.0`",
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            result = await agent.run(
+                diff_text="diff --git a/requirements.txt\n+evil==0.1.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            assert result["exit_code"] == 0
+            mock_comment.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pipeline_failure_exits_zero(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings()
+        agent = GatekeeperAgent(config)
+
+        with (
+            patch.object(agent, "_post_comment", new_callable=AsyncMock),
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("LLM down"),
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            result = await agent.run(
+                diff_text="diff --git a/requirements.txt\n+requests==2.31.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            assert result["exit_code"] == 0
+
+    @pytest.mark.asyncio
+    async def test_long_comment_is_truncated(self):
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings(max_comment_length=500)
+        agent = GatekeeperAgent(config)
+
+        with (
+            patch.object(
+                agent,
+                "_post_comment",
+                new_callable=AsyncMock,
+            ) as mock_comment,
+            patch.object(
+                agent,
+                "_run_agent_session",
+                new_callable=AsyncMock,
+                return_value="x" * 2000,
+            ),
+            patch.object(agent, "_set_check_status", new_callable=AsyncMock),
+        ):
+            await agent.run(
+                diff_text="diff --git a/requirements.txt\n+requests==2.31.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                pr_number=1,
+                repo_owner="org",
+                repo_name="repo",
+                team="platform",
+            )
+            posted_body = mock_comment.call_args_list[-1].args[3]
+            assert "[truncated]" in posted_body
+            assert len(posted_body) < 2000
+
+
+class TestAgentConfig:
+    def test_default_enforcement_mode_is_warn(self):
+        config = _make_settings()
+        assert config.enforcement_mode == EnforcementMode.warn
+
+    def test_enforcement_mode_block_from_env(self):
+        config = _make_settings(enforcement_mode="block")
+        assert config.enforcement_mode == EnforcementMode.block
+
+    def test_missing_github_token_raises(self):
+        with pytest.raises(Exception):
+            AgentSettings()
+
+    def test_default_db_dsn_triggers_null_repository(self):
+        config = _make_settings()
+        assert "unused" in config.db_dsn

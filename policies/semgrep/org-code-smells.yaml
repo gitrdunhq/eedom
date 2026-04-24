@@ -1,0 +1,185 @@
+rules:
+  - id: org.python.no-bare-except-pass
+    patterns:
+      - pattern: |
+          except:
+              pass
+    message: >
+      Bare `except: pass` swallows all errors silently. Catch specific
+      exception types and handle or re-raise. If intentional, add a comment
+      explaining why.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: correctness
+      source: ai-coding-discipline Rule 2
+
+  - id: org.python.no-broad-except-return-none
+    patterns:
+      - pattern: |
+          try:
+              ...
+          except Exception:
+              return None
+    message: >
+      Catching Exception to return None hides the failure from callers.
+      Let errors propagate or return a typed error result. Catch only at
+      API/controller boundaries.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: correctness
+      source: ai-coding-discipline Rule 2
+
+  - id: org.python.no-print-in-source
+    patterns:
+      - pattern: print(...)
+    paths:
+      exclude:
+        - tests/
+        - test_*
+        - conftest.py
+        - scripts/
+    message: >
+      Use structlog for logging, never print(). Print statements bypass
+      structured logging and are invisible to log aggregation.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: maintainability
+      source: code-standards DPS-6
+
+  - id: org.python.no-hardcoded-localhost
+    pattern-either:
+      - pattern: '"localhost"'
+      - pattern: '"127.0.0.1"'
+      - pattern: '"0.0.0.0"'
+    paths:
+      exclude:
+        - tests/
+        - test_*
+        - conftest.py
+    message: >
+      Hardcoded localhost/127.0.0.1 in non-test code. Use configuration
+      or environment variables for host addresses.
+    languages: [python, typescript, javascript]
+    severity: INFO
+    metadata:
+      category: maintainability
+      source: code-standards
+
+  - id: org.python.no-pickle-load
+    pattern: pickle.load(...)
+    message: >
+      pickle.load() on untrusted data is a deserialization vulnerability.
+      Use JSON, msgpack, or another safe format. If pickle is required,
+      validate the source is trusted.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      source: safeguard.md
+
+  - id: org.python.no-breakpoint
+    pattern: breakpoint()
+    paths:
+      exclude:
+        - tests/
+        - test_*
+    message: >
+      breakpoint() left in non-test code. Remove before merging.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: correctness
+      source: code-standards dev-artifacts
+
+  - id: org.terraform.no-wildcard-iam-action
+    patterns:
+      - pattern: |
+          actions = ["*"]
+    message: >
+      IAM policy with wildcard action ("*") grants full access. Use
+      least-privilege: specify only the actions needed.
+    languages: [hcl]
+    severity: ERROR
+    metadata:
+      category: security
+      source: code-standards DPS-8
+
+  - id: org.terraform.no-open-ingress
+    patterns:
+      - pattern: |
+          cidr_blocks = ["0.0.0.0/0"]
+      - metavariable-pattern:
+          metavariable: $RULE
+          pattern: ingress
+    message: >
+      Security group ingress open to 0.0.0.0/0. Restrict to known
+      CIDR ranges or use a VPN/bastion pattern.
+    languages: [hcl]
+    severity: WARNING
+    metadata:
+      category: security
+      source: code-standards DPS-8
+
+  - id: org.terraform.no-unencrypted-s3
+    patterns:
+      - pattern: |
+          resource "aws_s3_bucket" $NAME {
+            ...
+          }
+      - pattern-not-inside: |
+          resource "aws_s3_bucket_server_side_encryption_configuration" ... {
+            ...
+          }
+    message: >
+      S3 bucket without server-side encryption configuration. Add
+      aws_s3_bucket_server_side_encryption_configuration resource.
+    languages: [hcl]
+    severity: WARNING
+    metadata:
+      category: security
+      source: code-standards DPS-8
+
+  - id: org.kubernetes.no-privileged-container
+    patterns:
+      - pattern: |
+          securityContext:
+            privileged: true
+    message: >
+      Container running in privileged mode. This grants full host access.
+      Remove privileged: true unless absolutely required, and document why.
+    languages: [yaml]
+    severity: ERROR
+    metadata:
+      category: security
+      source: code-standards DPS-8
+
+  - id: org.kubernetes.no-latest-tag
+    patterns:
+      - pattern-regex: "image: .+:latest"
+    message: >
+      Container image using :latest tag. Pin to a specific version or
+      SHA digest for reproducible deployments.
+    languages: [yaml]
+    severity: WARNING
+    metadata:
+      category: reliability
+      source: code-standards dependency-management
+
+  - id: org.ci.no-secret-in-run
+    patterns:
+      - pattern-regex: "\\$\\{\\{\\s*secrets\\."
+      - pattern-inside: |
+          run: |
+            ...
+    message: >
+      Secret referenced directly in a run: block. Use environment variables
+      to pass secrets to scripts instead of inline interpolation, which risks
+      exposure in logs.
+    languages: [yaml]
+    severity: WARNING
+    metadata:
+      category: security
+      source: safeguard.md

@@ -1,0 +1,50 @@
+Evaluates dependency changes on pull requests using the Admission Control
+pipeline (OSV-Scanner, Trivy, Syft, ScanCode, OPA policy engine).
+
+SYNOPSIS
+
+    dependencyAdmission(
+        team:            'platform',       // required — team name for audit trail
+        operatingMode:   'advise',         // 'monitor' (default) | 'advise'
+        enabledScanners: 'syft,osv-scanner,trivy,scancode',
+        pythonCmd:       'uv run python'   // default: 'uv run python'
+    )
+
+OPERATING MODES
+
+    monitor   Log-only. Decisions are recorded to the database and evidence
+              store but no PR comment is posted and the build is never marked
+              unstable. Safe for initial rollout.
+
+    advise    Posts a formatted comment on the PR (updates existing comment if
+              one already exists — identified by the embedded marker). Marks
+              the build UNSTABLE when the decision is 'reject' or
+              'needs_review'. The build is never FAILED by this step.
+
+DEPENDENCY FILES WATCHED
+
+    requirements*.txt, pyproject.toml, setup.cfg, *.lock, Pipfile, setup.py
+
+FAIL-OPEN GUARANTEE
+
+    Any internal error — CLI crash, scanner timeout, database outage, comment
+    posting failure — is logged as a warning and the step returns cleanly.
+    This step will never cause a pipeline failure.
+
+ENVIRONMENT VARIABLES USED
+
+    WORKSPACE     Jenkins workspace path (set automatically by Jenkins).
+    BUILD_NUMBER  Used to namespace scratch files in the workspace.
+    BUILD_URL     Used in PR comment footer link.
+    CHANGE_URL    PR URL (set by Jenkins multibranch pipeline on PR builds).
+    CHANGE_ID     PR number (set by Jenkins multibranch pipeline on PR builds).
+
+PREREQUISITES
+
+    - uv (or a configured pythonCmd) must be available on the Jenkins agent.
+    - The eedom package must be installed in the Python environment.
+    - gh CLI must be available on the Jenkins agent for PR comment posting.
+    - gh must be authenticated (GITHUB_TOKEN or gh auth login).
+    - Scanner binaries (syft, osv-scanner, trivy, scancode, opa) should be
+      pre-installed on the Jenkins agent or its container image.
+      Run `uv run python -m eedom.cli.main check-health` to verify.

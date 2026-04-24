@@ -1,0 +1,159 @@
+checks:
+  - name: blast_radius_high
+    severity: high
+    description: Symbol has >10 direct dependents
+    query: |
+      SELECT s.name, s.file, s.line, COUNT(e.id) as dependents
+      FROM symbols s
+      JOIN edges e ON e.target_id = s.id
+      WHERE s.file IN ({changed_files})
+      GROUP BY s.id
+      HAVING dependents > 10
+      ORDER BY dependents DESC
+
+  - name: blast_radius_critical
+    severity: critical
+    description: Symbol has >25 direct dependents
+    query: |
+      SELECT s.name, s.file, s.line, COUNT(e.id) as dependents
+      FROM symbols s
+      JOIN edges e ON e.target_id = s.id
+      WHERE s.file IN ({changed_files})
+      GROUP BY s.id
+      HAVING dependents > 25
+      ORDER BY dependents DESC
+
+  - name: circular_dependency
+    severity: medium
+    description: File imports form a cycle
+    query: |
+      SELECT DISTINCT s1.file as file_a, s2.file as file_b
+      FROM edges e1
+      JOIN symbols s1 ON e1.source_id = s1.id
+      JOIN symbols s2 ON e1.target_id = s2.id
+      JOIN edges e2 ON e2.source_id = s2.id AND e2.target_id = s1.id
+      WHERE e1.kind = 'imports' AND e2.kind = 'imports'
+        AND s1.file IN ({changed_files})
+
+  - name: orphan_symbol
+    severity: info
+    description: Function with zero callers (potential dead code)
+    query: |
+      SELECT s.name, s.file, s.line, s.kind
+      FROM symbols s
+      LEFT JOIN edges e ON e.target_id = s.id AND e.kind = 'calls'
+      WHERE s.file IN ({changed_files})
+        AND s.kind IN ('function', 'method')
+        AND s.name NOT LIKE '\_%' ESCAPE '\'
+        AND s.name NOT IN ('main', '__init__', 'setup', 'teardown')
+        AND e.id IS NULL
+
+  - name: high_fan_out
+    severity: medium
+    description: Function calls >8 other functions (god function)
+    query: |
+      SELECT s.name, s.file, s.line, COUNT(e.id) as calls_out
+      FROM symbols s
+      JOIN edges e ON e.source_id = s.id AND e.kind = 'calls'
+      WHERE s.file IN ({changed_files})
+      GROUP BY s.id
+      HAVING calls_out > 8
+      ORDER BY calls_out DESC
+
+  - name: deep_inheritance
+    severity: medium
+    description: Class inheritance chain deeper than 3 levels
+    query: |
+      WITH RECURSIVE chain(id, depth) AS (
+        SELECT s.id, 0
+        FROM symbols s
+        WHERE s.file IN ({changed_files}) AND s.kind = 'class'
+        UNION ALL
+        SELECT e.target_id, chain.depth + 1
+        FROM chain
+        JOIN edges e ON e.source_id = chain.id AND e.kind = 'inherits'
+        WHERE chain.depth < 10
+      )
+      SELECT s.name, s.file, s.line, MAX(chain.depth) as depth
+      FROM chain
+      JOIN symbols s ON chain.id = s.id
+      GROUP BY chain.id
+      HAVING depth > 3
+
+  - name: noop_function
+    severity: medium
+    description: Function that accomplishes nothing (pass, return None, stub)
+    query: |
+      SELECT s.name, s.file, s.line, s.body_kind, s.stmt_count
+      FROM symbols s
+      WHERE s.file IN ({changed_files})
+        AND s.kind IN ('function', 'method')
+        AND s.body_kind IN ('noop', 'pass_only', 'return_none', 'stub', 'log_only')
+        AND s.name NOT LIKE 'test_%'
+        AND s.name NOT IN ('__init__', 'setUp', 'tearDown', 'setup', 'teardown')
+      ORDER BY s.file, s.line
+
+  - name: mock_stub_in_source
+    severity: high
+    description: Stub/mock pattern found in non-test source file
+    query: |
+      SELECT s.name, s.file, s.line, s.body_kind
+      FROM symbols s
+      WHERE s.file IN ({changed_files})
+        AND s.kind IN ('function', 'method')
+        AND s.body_kind IN ('stub', 'noop', 'pass_only')
+        AND s.file NOT LIKE 'test%'
+        AND s.file NOT LIKE '%/test_%'
+        AND s.file NOT LIKE '%_test.%'
+        AND s.name NOT LIKE '\\_\\_%' ESCAPE '\'
+
+  - name: layer_violation
+    severity: high
+    description: core/ symbol imports from data/ (tier violation)
+    query: |
+      SELECT s.name, s.file, s.line, t.name as imported
+      FROM edges e
+      JOIN symbols s ON e.source_id = s.id
+      JOIN symbols t ON e.target_id = t.id
+      WHERE e.kind = 'imports'
+        AND s.file IN ({changed_files})
+        AND s.file LIKE '%/core/%'
+        AND t.file LIKE '%/data/%'
+
+  - name: missing_tested_by
+    severity: medium
+    description: Source file has no tested-by annotation
+    query: |
+      SELECT DISTINCT s.file
+      FROM symbols s
+      WHERE s.file IN ({changed_files})
+        AND s.file LIKE '%.py'
+        AND s.file NOT LIKE 'test%'
+        AND s.file NOT LIKE '%/test_%'
+        AND s.file NOT LIKE '%__init__%'
+      GROUP BY s.file
+
+  - name: srp_high_fan_out_imports
+    severity: medium
+    description: Module imports from 4+ distinct packages (SRP violation signal)
+    query: |
+      SELECT s.file AS name, s.file AS file, COUNT(DISTINCT t.file) AS import_count
+      FROM edges e
+      JOIN symbols s ON e.source_id = s.id
+      JOIN symbols t ON e.target_id = t.id
+      WHERE e.kind = 'imports'
+        AND s.file IN ({changed_files})
+      GROUP BY s.file
+      HAVING COUNT(DISTINCT t.file) >= 4
+
+  - name: srp_large_class
+    severity: medium
+    description: Class has >15 methods (SRP violation signal)
+    query: |
+      SELECT c.name, c.file, COUNT(*) AS method_count
+      FROM symbols c
+      JOIN symbols m ON m.file = c.file AND m.kind = 'function' AND m.line > c.line AND m.line <= COALESCE(c.end_line, 99999)
+      WHERE c.kind = 'class'
+        AND c.file IN ({changed_files})
+      GROUP BY c.name, c.file
+      HAVING COUNT(*) > 15

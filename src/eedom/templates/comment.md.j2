@@ -1,0 +1,35 @@
+## 🦅 Eagle Eyed Dom — {{ repo }}#{{ pr_num }}
+**{{ title }}**
+
+{% if verdict == "blocked" %}
+> 🔴 **BLOCKED**
+{% elif verdict == "incomplete" %}
+> 🟡 **INCOMPLETE** — one or more scanners failed
+{% elif verdict == "warnings" %}
+> 🟠 **PASS WITH WARNINGS**
+{% else %}
+> 🟢 **ALL CLEAR**
+{% endif %}
+
+{% if severity_score is not none and severity_score < 100 %}
+> **Health Score: {{ severity_score | int }}/100**
+{% endif %}
+{% if mi_grade %}
+> **Maintainability: {{ mi_icon }} {{ mi_grade }} ({{ mi_score }}/100)** · CCN avg {{ avg_ccn }}{% if hi_ccn %} · ⚠️ {{ hi_ccn }} high-complexity{% endif %}{% if mi_c_count %} · 🔴 {{ mi_c_count }} grade-C{% endif %}
+
+{% endif %}
+| Plugin | Findings |
+|--------|----------|
+| Files scanned | {{ file_count }} |
+{% for key, value in summary_rows %}
+| {{ key }} | {{ value }} |
+{% endfor %}
+{% if mi_grade %}
+| Maintainability | {{ mi_icon }} {{ mi_grade }} ({{ mi_score }}/100) |
+{% endif %}
+
+{% for section in sections %}
+{{ section }}
+{% endfor %}
+---
+*Eagle Eyed Dom v{{ version }} · {{ footer_stats }}*

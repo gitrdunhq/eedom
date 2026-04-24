@@ -1,0 +1,365 @@
+"""Tests for eedom.core.manifest_discovery — PackageUnit + discover_packages().
+
+TDD red-green: every test was written before the implementation.
+"""
+
+# tested-by: tests/unit/test_manifest_discovery.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from eedom.core.manifest_discovery import PackageUnit, discover_packages
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _write(path: Path, content: str = "") -> None:
+    """Create parent dirs and write a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
+# ---------------------------------------------------------------------------
+# Test: single manifest at repo root
+# ---------------------------------------------------------------------------
+
+
+class TestSingleManifestAtRoot:
+    def test_returns_one_package_unit(self, tmp_path: Path) -> None:
+        """A single package.json at the repo root yields exactly one PackageUnit."""
+        _write(tmp_path / "package.json", '{"name": "my-pkg"}')
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        unit = result[0]
+        assert unit.root == tmp_path
+        assert unit.manifest == tmp_path / "package.json"
+        assert unit.ecosystem == "npm"
+        assert unit.lockfile is None
+
+    def test_single_pyproject_at_root(self, tmp_path: Path) -> None:
+        """A single pyproject.toml at root yields one PackageUnit with python ecosystem."""
+        _write(tmp_path / "pyproject.toml", "[tool.poetry]\nname = 'my-lib'\n")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].ecosystem == "python"
+
+
+# ---------------------------------------------------------------------------
+# Test: monorepo with multiple manifests
+# ---------------------------------------------------------------------------
+
+
+class TestMonorepoMultipleManifests:
+    def test_two_manifests_in_different_dirs(self, tmp_path: Path) -> None:
+        """Manifests at apps/web/package.json and libs/core/pyproject.toml → 2 units."""
+        _write(tmp_path / "apps" / "web" / "package.json", "{}")
+        _write(tmp_path / "libs" / "core" / "pyproject.toml", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 2
+        roots = {unit.root for unit in result}
+        assert tmp_path / "apps" / "web" in roots
+        assert tmp_path / "libs" / "core" in roots
+
+    def test_results_sorted_by_root(self, tmp_path: Path) -> None:
+        """Results are sorted by root path for deterministic output."""
+        _write(tmp_path / "z_pkg" / "package.json", "{}")
+        _write(tmp_path / "a_pkg" / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        roots = [unit.root for unit in result]
+        assert roots == sorted(roots)
+
+
+# ---------------------------------------------------------------------------
+# Test: lockfile pairing
+# ---------------------------------------------------------------------------
+
+
+class TestLockfilePairing:
+    def test_lockfile_paired_with_manifest(self, tmp_path: Path) -> None:
+        """package-lock.json sibling of package.json → lockfile is set on the unit."""
+        _write(tmp_path / "apps" / "web" / "package.json", "{}")
+        _write(tmp_path / "apps" / "web" / "package-lock.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        unit = result[0]
+        assert unit.lockfile == tmp_path / "apps" / "web" / "package-lock.json"
+
+    def test_yarn_lock_paired(self, tmp_path: Path) -> None:
+        """yarn.lock sibling of package.json is detected."""
+        _write(tmp_path / "package.json", "{}")
+        _write(tmp_path / "yarn.lock", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == tmp_path / "yarn.lock"
+
+    def test_uv_lock_paired_with_pyproject(self, tmp_path: Path) -> None:
+        """uv.lock sibling of pyproject.toml is detected."""
+        _write(tmp_path / "pyproject.toml", "")
+        _write(tmp_path / "uv.lock", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == tmp_path / "uv.lock"
+
+    def test_poetry_lock_paired_with_pyproject(self, tmp_path: Path) -> None:
+        """poetry.lock sibling of pyproject.toml is detected."""
+        _write(tmp_path / "pyproject.toml", "")
+        _write(tmp_path / "poetry.lock", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == tmp_path / "poetry.lock"
+
+    def test_cargo_lock_paired(self, tmp_path: Path) -> None:
+        """Cargo.lock sibling of Cargo.toml is detected."""
+        _write(tmp_path / "Cargo.toml", "")
+        _write(tmp_path / "Cargo.lock", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == tmp_path / "Cargo.lock"
+
+    def test_go_sum_paired(self, tmp_path: Path) -> None:
+        """go.sum sibling of go.mod is detected."""
+        _write(tmp_path / "go.mod", "")
+        _write(tmp_path / "go.sum", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == tmp_path / "go.sum"
+
+
+# ---------------------------------------------------------------------------
+# Test: no lockfile
+# ---------------------------------------------------------------------------
+
+
+class TestNoLockfile:
+    def test_no_lockfile_gives_none(self, tmp_path: Path) -> None:
+        """pyproject.toml with no adjacent lockfile → lockfile is None."""
+        _write(tmp_path / "libs" / "core" / "pyproject.toml", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile is None
+
+
+# ---------------------------------------------------------------------------
+# Test: node_modules is skipped
+# ---------------------------------------------------------------------------
+
+
+class TestNodeModulesSkipped:
+    def test_node_modules_pkg_not_discovered(self, tmp_path: Path) -> None:
+        """package.json inside node_modules/ is not discovered."""
+        _write(tmp_path / "node_modules" / "some-pkg" / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert result == []
+
+    def test_real_manifest_alongside_node_modules(self, tmp_path: Path) -> None:
+        """Manifest at root is found; nested node_modules is ignored."""
+        _write(tmp_path / "package.json", "{}")
+        _write(tmp_path / "node_modules" / "dep" / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].root == tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Test: .git directory is skipped
+# ---------------------------------------------------------------------------
+
+
+class TestGitDirSkipped:
+    def test_git_dir_is_skipped(self, tmp_path: Path) -> None:
+        """Files inside .git/ are never returned."""
+        _write(tmp_path / ".git" / "some-nested" / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Test: empty repo
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyRepo:
+    def test_empty_repo_returns_empty_list(self, tmp_path: Path) -> None:
+        """A directory with no known manifest files returns an empty list."""
+        result = discover_packages(tmp_path)
+
+        assert result == []
+
+    def test_only_non_manifest_files_returns_empty(self, tmp_path: Path) -> None:
+        """A repo containing only README.md returns empty list."""
+        _write(tmp_path / "README.md", "# Hello")
+
+        result = discover_packages(tmp_path)
+
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Test: ecosystem detection
+# ---------------------------------------------------------------------------
+
+
+class TestEcosystemDetection:
+    @pytest.mark.parametrize(
+        "filename,expected_ecosystem",
+        [
+            ("package.json", "npm"),
+            ("pyproject.toml", "python"),
+            ("requirements.txt", "python"),
+            ("Cargo.toml", "rust"),
+            ("go.mod", "go"),
+            ("Gemfile", "ruby"),
+            ("pom.xml", "java"),
+            ("build.gradle", "gradle"),
+        ],
+    )
+    def test_manifest_maps_to_correct_ecosystem(
+        self, tmp_path: Path, filename: str, expected_ecosystem: str
+    ) -> None:
+        """Each manifest filename maps to the correct ecosystem string."""
+        _write(tmp_path / filename, "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].ecosystem == expected_ecosystem
+
+
+# ---------------------------------------------------------------------------
+# Test: multiple Python manifests in the same directory
+# ---------------------------------------------------------------------------
+
+
+class TestMultiplePythonManifestsInSameDir:
+    def test_requirements_and_pyproject_both_returned(self, tmp_path: Path) -> None:
+        """requirements.txt and pyproject.toml in the same dir → two PackageUnits."""
+        _write(tmp_path / "requirements.txt", "requests==2.31.0\n")
+        _write(tmp_path / "pyproject.toml", "[tool.poetry]\nname = 'svc'\n")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 2
+        filenames = {unit.manifest.name for unit in result}
+        assert "requirements.txt" in filenames
+        assert "pyproject.toml" in filenames
+        for unit in result:
+            assert unit.ecosystem == "python"
+
+
+# ---------------------------------------------------------------------------
+# Test: deeply nested manifest
+# ---------------------------------------------------------------------------
+
+
+class TestDeeplyNestedManifest:
+    def test_deeply_nested_package_json(self, tmp_path: Path) -> None:
+        """A manifest at packages/scope/pkg/package.json is discovered correctly."""
+        nested_dir = tmp_path / "packages" / "scope" / "pkg"
+        _write(nested_dir / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        unit = result[0]
+        assert unit.root == nested_dir
+        assert unit.manifest == nested_dir / "package.json"
+        assert unit.ecosystem == "npm"
+
+    def test_three_levels_deep_with_lockfile(self, tmp_path: Path) -> None:
+        """Deep manifest with sibling lockfile: lockfile is correctly paired."""
+        nested_dir = tmp_path / "packages" / "scope" / "pkg"
+        _write(nested_dir / "package.json", "{}")
+        _write(nested_dir / "yarn.lock", "")
+
+        result = discover_packages(tmp_path)
+
+        assert len(result) == 1
+        assert result[0].lockfile == nested_dir / "yarn.lock"
+
+
+# ---------------------------------------------------------------------------
+# Test: additional skip directories
+# ---------------------------------------------------------------------------
+
+
+class TestSkipDirectories:
+    @pytest.mark.parametrize(
+        "skip_dir",
+        ["vendor", "__pycache__", ".venv", ".claude", ".eedom", ".dogfood"],
+    )
+    def test_known_skip_dirs_are_excluded(self, tmp_path: Path, skip_dir: str) -> None:
+        """Known skip directories are never traversed."""
+        _write(tmp_path / skip_dir / "package.json", "{}")
+
+        result = discover_packages(tmp_path)
+
+        assert result == [], f"Expected {skip_dir}/ to be skipped"
+
+    def test_custom_ignore_pattern_skips_dir(self, tmp_path: Path) -> None:
+        """A custom ignore pattern passed to discover_packages is respected."""
+        _write(tmp_path / "generated" / "package.json", "{}")
+
+        result = discover_packages(tmp_path, ignore_patterns=["generated/"])
+
+        assert result == []
+
+    def test_real_manifest_not_caught_by_custom_pattern(self, tmp_path: Path) -> None:
+        """Custom ignore pattern only skips matching dirs; others are still found."""
+        _write(tmp_path / "src" / "package.json", "{}")
+        _write(tmp_path / "generated" / "package.json", "{}")
+
+        result = discover_packages(tmp_path, ignore_patterns=["generated/"])
+
+        assert len(result) == 1
+        assert result[0].root == tmp_path / "src"
+
+
+# ---------------------------------------------------------------------------
+# Test: PackageUnit is frozen (immutable)
+# ---------------------------------------------------------------------------
+
+
+class TestPackageUnitFrozen:
+    def test_package_unit_is_frozen(self, tmp_path: Path) -> None:
+        """PackageUnit is immutable — assigning to a field raises ValidationError."""
+        from pydantic import ValidationError
+
+        unit = PackageUnit(
+            root=tmp_path,
+            manifest=tmp_path / "package.json",
+            ecosystem="npm",
+        )
+        with pytest.raises((ValidationError, TypeError)):
+            unit.ecosystem = "rust"  # type: ignore[misc]

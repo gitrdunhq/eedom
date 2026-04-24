@@ -1,0 +1,102 @@
+"""Configuration module for Admission Control.
+
+All configuration is loaded from environment variables with the ADMISSION_ prefix.
+# tested-by: tests/unit/test_config.py
+Uses Pydantic BaseSettings for validation and type coercion.
+"""
+
+from typing import Any
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources.providers.env import EnvSettingsSource
+
+from eedom.core.models import OperatingMode
+
+_SCANNERS_DEFAULT = ["syft", "osv-scanner", "trivy", "scancode"]
+
+
+class _CommaSeparatedEnvSource(EnvSettingsSource):
+    """Custom env source that splits comma-separated strings for list fields.
+
+    pydantic-settings' default EnvSettingsSource tries json.loads() on complex
+    types. For list[str] fields where the env var is a plain comma-separated
+    string (e.g. "syft,trivy"), this fails. This source catches the
+    JSONDecodeError and falls back to comma-splitting.
+    """
+
+    def decode_complex_value(self, field_name: str, field: Any, value: str) -> Any:  # noqa: ANN401
+        """Try JSON first; fall back to comma-split for list fields."""
+        import json
+
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            # Comma-separated fallback for simple list[str] fields
+            if isinstance(value, str) and "," in value:
+                return [s.strip() for s in value.split(",") if s.strip()]
+            return value
+
+
+class AdmissionSettings(BaseSettings):
+    """Admission Control configuration loaded from ADMISSION_* env vars.
+
+    Required fields:
+        db_dsn: PostgreSQL connection string — must be provided, no default.
+
+    All timeout values match architecture doc Section 14.3.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ADMISSION_",
+        case_sensitive=False,
+    )
+
+    # Operating mode
+    operating_mode: OperatingMode = OperatingMode.monitor
+
+    # Database (required — no default)
+    db_dsn: str
+
+    # Evidence storage
+    evidence_path: str = "./evidence"
+
+    # Timeout values per Section 14.3
+    scanner_timeout: int = 60
+    combined_scanner_timeout: int = 180
+    opa_timeout: int = 10
+    llm_timeout: int = 30
+    pipeline_timeout: int = 300
+    pypi_timeout: int = 10
+
+    # OPA policy path
+    opa_policy_path: str = "./policies"
+
+    # Enabled scanners (comma-separated in env, e.g. "syft,trivy,osv-scanner")
+    enabled_scanners: list[str] = Field(default=_SCANNERS_DEFAULT)
+
+    # LLM task-fit advisory settings
+    llm_enabled: bool = False
+    llm_endpoint: str | None = None
+    llm_model: str | None = None
+    llm_api_key: SecretStr | None = None  # F-021: use SecretStr to prevent accidental logging
+
+    # Alternatives catalog
+    alternatives_path: str = "./alternatives.json"
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: Any,  # noqa: ANN401
+        env_settings: Any,  # noqa: ANN401
+        dotenv_settings: Any,  # noqa: ANN401
+        file_secret_settings: Any,  # noqa: ANN401
+    ) -> tuple[Any, ...]:
+        """Replace default env source with one that handles comma-separated lists."""
+        return (
+            init_settings,
+            _CommaSeparatedEnvSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )

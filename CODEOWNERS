@@ -1,0 +1,12 @@
+# Default owners for everything
+* @samfakhreddine
+
+# Agent module
+src/admission_control/agent/ @samfakhreddine
+
+# OPA policies
+policies/ @samfakhreddine
+
+# GitHub Actions
+.github/ @samfakhreddine
+action.yml @samfakhreddine

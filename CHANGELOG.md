@@ -1,0 +1,175 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
+
+Releases are managed by [release-please](https://github.com/googleapis/release-please).
+
+## [Unreleased]
+
+### Added
+
+**GATEKEEPER Copilot Agent — reactive PR review**
+- New `src/eedom/agent/` module: GitHub Copilot Agent that wraps the existing admission pipeline for reactive PR review
+- 8-tool scanning suite (all deterministic, no LLM in the scanning pipeline):
+  - Syft (SBOM generation, 18 ecosystems)
+  - OSV-Scanner (CVE/GHSA database lookup)
+  - Trivy (vulnerability scanning)
+  - ScanCode (license analysis)
+  - OPA (deterministic policy enforcement, 6 rules)
+  - Semgrep (AST pattern matching, dynamic rulesets + pinned rules + org custom rules)
+  - PMD CPD (token-based copy-paste detection)
+  - kube-linter (Kubernetes/Helm manifest validation)
+- Multi-ecosystem dependency support via SBOM path: npm, Cargo, Go, Ruby, Maven, NuGet, Dart, PHP, Elixir, Swift, CocoaPods (18 total)
+- Configurable enforcement modes: `block` (fail build), `warn` (comment only), `log` (silent)
+- GitHub Action workflow (`.github/workflows/gatekeeper.yml`) for self-hosted runners
+- Custom Semgrep org rules (`policies/semgrep/org-code-smells.yaml`)
+- Dynamic Semgrep ruleset selection based on file types in the PR diff
+- Pinned Semgrep rules from local `semgrep-rules` repo clone (supply chain protection)
+- 8-dimension task-fit rubric embedded in agent system prompt (NECESSITY, MINIMALITY, MAINTENANCE, SECURITY, EXPOSURE, BLAST_RADIUS, ALTERNATIVES, BEHAVIORAL)
+- Dependency tree summary with direct/transitive/shared package breakdown
+- Per-package PR comments with grouped policy verdicts
+- Stress test scripts (`scripts/gauntlet.py`) tested against 12 real PRs
+
+**Plugin architecture — 15 plugins with auto-discovery**
+- `ScannerPlugin` ABC with `run()`, `can_run()`, `render()` contract
+- `PluginRegistry` with `discover_plugins()` auto-discovery from `plugins/` directory
+- `eedom review` CLI command — runs all plugins via registry
+- `eedom plugins` CLI command — lists registered plugins
+- Blast radius plugin: AST-to-SQLite code graph, 8 SQL checks
+- Supply chain plugin: unpinned deps, lockfile integrity, floating version detection
+- ClamAV plugin: malware/virus scanning
+- Gitleaks plugin: secret/credential detection, 800+ patterns, secrets never in output
+- Complexity plugin: Lizard + Radon cyclomatic complexity and maintainability index
+- cspell plugin: code-aware spell checking (en-CA, 11 dictionaries)
+- ls-lint plugin: file naming convention enforcement
+- Centralized error codes (`ErrorCode` enum, uniform across all plugins and runners)
+- 14 Semgrep coding standards rules derived from CODING-STANDARDS.md
+- Jinja2 template renderer with verdict logic (BLOCKED / INCOMPLETE / WARNINGS / ALL CLEAR)
+
+**Architecture decisions**
+- ADR-001: Agent module as separate presentation-tier entry point
+- ADR-002: Agent IS the task-fit LLM (rubric in system prompt, no separate call)
+- ADR-003: GitHub Copilot SDK for agent framework
+- ADR-004: Semgrep as agent tool, not Scanner ABC subclass
+
+**Repo best practices**
+- LICENSE (PolyForm Shield 1.0.0)
+- THIRD-PARTY-NOTICES.md listing all 14 upstream scanner tools and their licenses
+- SECURITY.md (vulnerability reporting policy)
+- CODEOWNERS
+- `.editorconfig`
+- `src/eedom/py.typed` (PEP 561)
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/ISSUE_TEMPLATE/bug_report.md`, `see_something.md`
+- release-please GitHub Action for automated CHANGELOG and version management
+
+### Changed
+
+- License changed from MIT to PolyForm Shield 1.0.0
+- `ARCHITECTURE.md` updated with agent module in presentation tier
+- `CLAUDE.md` updated with GATEKEEPER section and GitHub templates guidance
+- `.gitignore` reorganized by category, added `.DS_Store`, `.zip`
+- `Dockerfile` extended with Semgrep binary + agent entry point comment
+- Planning artifacts (`TASKS.md`, `VALIDATE.md`, `VALIDATE-v2.md`) moved to `docs/`
+
+### Security
+
+- Reject detection uses structured OPA verdicts, not LLM prose parsing (prevents prompt injection bypass of block mode)
+- Diff content wrapped in `<diff>` XML tags with system prompt marking it as untrusted data
+- Exception messages replaced with stable error codes — no credential leakage in PR comments
+- Path traversal guard on Semgrep `--include` file paths
+- Input validation on `check_package` name/version (regex allowlist)
+- `SecretStr` for `github_token` in `AgentSettings`
+
+## [0.1.0] - 2026-04-23
+
+### Added
+
+**Phase 0 — Jenkins PoC foundation**
+- `AdmissionPipeline` entry point: evaluates dependency changes on PRs via Jenkins
+- CLI (`src/eedom/cli/main.py`) with `monitor` and `advise` operating modes
+- Jenkins shared library (`jenkins/vars/dependencyAdmission.groovy`) with `withEnv`-based parameter passing
+
+**Scanners**
+- `OsvScanner` — OSV-Scanner CVE detection; non-recursive invocation to avoid recursive scanning on monorepos
+- `TrivyScanner` — Trivy vulnerability scan with severity normalization
+- `SyftScanner` — SBOM generation (CycloneDX JSON); used for dependency diffing and transitive count
+- `ScanCodeScanner` — ScanCode license analysis
+
+**Core pipeline**
+- `ScanOrchestrator` with `ThreadPoolExecutor` for parallel scanner execution (4 scanners × 60s budget)
+- Wall-clock pipeline timeout enforcement (300s cap) with per-package break logic
+- `DependencyDiffDetector` — unified-diff parsing via `extract_file_content_from_diff()`; supports `requirements.txt` and `pyproject.toml` formats
+- SBOM-based ecosystem-agnostic dependency diffing (`sbom_diff.py`) via Syft; detects added/removed/upgraded packages across any package ecosystem
+- `FindingNormalizer` — cross-scanner deduplication; highest severity wins on disagreement; dedup key includes finding category to prevent non-vuln collapses
+
+**Policy**
+- OPA `admission.rego` policy with deny rules for critical CVEs, license violations, package age, and transitive dependency depth
+- `package_metadata` populated from PyPI client (`first_published_date`) and Syft SBOM (`transitive_dep_count`) so age and depth rules fire
+- CVSS base score parsing with vector heuristic fallback — no more silent `info` rating for untagged vulns
+
+**Evidence and audit**
+- `EvidenceStore` — per-run artifact storage keyed by commit SHA + timestamp (not random UUID), ensuring reproducible lookups
+- Parquet audit lake (`parquet_writer.py`) — append-only columnar evidence store; queryable via DuckDB or any Parquet reader
+- Decision memo assembly (`memo.py`) with structured rationale for PR comments
+
+**Org intelligence**
+- `CatalogClient` — org package catalog with semantic search for alternative package suggestions
+- `TaskfitValidator` — LLM-based semantic fit check with structured role-separation prompting (system/user) to prevent prompt injection from PyPI metadata fields
+- Input sanitization for all PyPI-sourced fields before LLM prompt construction
+
+**Data layer**
+- `DecisionRepository` (PostgreSQL) and `NullRepository` (in-memory) sharing a common `RepositoryProtocol`
+- DB DSN password masking via `_safe_dsn()` — no plaintext credentials in logs
+- `db_dsn` typed as `pydantic.SecretStr` to prevent accidental string serialization of credentials
+
+**Configuration**
+- All timeouts configurable via `AdmissionConfig`; no hardcoded values in business logic
+- Startup validation fails fast on missing critical config fields
+
+### Fixed
+
+**Dogfood bugs (caught post-initial-commit)**
+- `OsvScanner` was invoked with `--recursive` flag, causing it to re-scan nested `node_modules` and virtualenvs; removed flag and scoped scan to project root
+- OPA reserved word collision: renamed `input.package` to `input.pkg` in `admission.rego` (reserved word in Rego)
+- DB connection timeout mis-configured as string instead of int; `psycopg2` rejected the value silently and fell back to no timeout
+
+**Review Pass 1 — 15 critical/high findings (all fixed)**
+- `_parse_changes` was calling parsers with hardcoded empty strings; `diff_text` was received but never forwarded — pipeline always returned "No dependency changes detected" regardless of PR content (F-001)
+- `ScanOrchestrator` raised `TypeError` on every run due to unrecognised `individual_timeout` kwarg (F-002)
+- `OsvScanner` raised `TypeError`: constructor does not accept `evidence_dir` (F-003)
+- `TrivyScanner` raised `TypeError`: no custom `__init__`, no kwargs accepted (F-004)
+- Scanner orchestration was inside the per-package for-loop; 50 packages → 50× full scanner execution; hoisted above loop (F-005)
+- `sys.exit(0)` was unconditional; Jenkins always saw success even on crash; now exits 1 on unexpected errors (F-006)
+- Pipeline timeout was loaded from config but never enforced; wall-clock guard added (F-007)
+- Jenkins shell injection: `team`, `operatingMode`, `prUrl` were string-interpolated into shell command; replaced with `withEnv` (F-008)
+- Full PostgreSQL DSN with plaintext password logged at INFO/ERROR level; masked with `_safe_dsn()` (F-009)
+- OSV CVSS severity fallback was `pass`; all untagged vulns rated `info`, bypassing OPA deny rules; score parsing added (F-010)
+- Scanner execution was sequential; parallelised with `ThreadPoolExecutor` (F-011)
+- OPA `package_age` and `transitive_count` rules were permanently bypassed due to missing metadata keys (F-012)
+- LLM prompt injection: PyPI name/description concatenated directly into prompt; structured messages + sanitization applied (F-013)
+- `str`/`Path` type mismatch on `evidence_dir`; `.mkdir()` raised `AttributeError`; `Path()` coercion added (F-014)
+- `core/orchestrator.py` imported private `_make_failed_result` from `data/scanners/base.py` (tier inversion); moved to `ScanResult` factory class methods in `core/models.py` (F-015)
+
+**Review Pass 2 — regressions caught mid-review**
+- `EvidenceStore.store_file()` missing path traversal guard on `artifact_name`; `..` traversal now rejected
+- Version comparison in `diff.py` used lexicographic ordering (`"1.9" > "1.10"`); replaced with `packaging.version.Version`
+- Config failure showed misleading "No dependency changes detected" message; now shows explicit config error
+
+### Security
+
+- Jenkins shell injection via string interpolation → `withEnv` parameter passing (F-008)
+- Plaintext DSN passwords in logs → `_safe_dsn()` masking (F-009)
+- Path traversal in `EvidenceStore` via unvalidated `artifact_name` → guard added (F-022)
+- LLM prompt injection from PyPI metadata fields → structured role separation + sanitization (F-013)
+- LLM API key stored as `str` → `pydantic.SecretStr` (F-021)
+- `db_dsn` exposed as plain string → `SecretStr` in `AdmissionConfig`
+
+### Changed
+
+- Pipeline logic extracted from CLI presentation layer into `AdmissionPipeline` in `core/pipeline.py`; `main.py` is now a thin adapter (F-024)
+- Evidence keyed by commit SHA + timestamp instead of random UUID — enables deterministic replay and audit correlation
+- Scanner result factory functions moved from `data/scanners/base.py` to `core/models.py` to fix tier inversion

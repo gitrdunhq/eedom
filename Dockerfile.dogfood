@@ -1,0 +1,110 @@
+# Eagle Eyed Dom — multi-stage, DHI hardened runtime
+#
+# Build:  podman build -f Dockerfile.dogfood -t eedom-dogfood:latest .
+# Run:    podman run --rm -v $(pwd):/workspace eedom-dogfood:latest
+#
+# Stage 1 (builder): slim-bookworm installs all scanner binaries + eedom
+# Stage 2 (runtime): dhi.io/python:3.13 hardened base, binaries copied in
+#
+# DHI login: docker login dhi.io (free Docker Hub account)
+
+# ── Stage 1: Builder ───────────────────────────────────────────────────
+FROM python:3.13-slim-bookworm AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git jq \
+    clamav clamav-freshclam \
+    pkg-config libicu-dev build-essential python3-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG TARGETARCH=arm64
+ARG SYFT_VERSION=1.21.0
+ARG TRIVY_VERSION=0.70.0
+ARG OSV_SCANNER_VERSION=2.0.1
+ARG OPA_VERSION=1.4.2
+ARG SEMGREP_VERSION=1.67.0
+ARG SCANCODE_VERSION=32.3.0
+ARG GITLEAKS_VERSION=8.24.3
+
+WORKDIR /tmp/scanners
+
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+    | sh -s -- -b /staging/bin v${SYFT_VERSION}
+
+RUN curl -sSfL -o trivy.tar.gz \
+    "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz" \
+    && tar -xzf trivy.tar.gz trivy && mv trivy /staging/bin/ && rm trivy.tar.gz
+
+RUN mkdir -p /staging/bin \
+    && curl -sSfL -o /staging/bin/osv-scanner \
+    "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_arm64" \
+    && chmod +x /staging/bin/osv-scanner
+
+RUN curl -sSfL -o /staging/bin/opa \
+    "https://github.com/open-policy-agent/opa/releases/download/v${OPA_VERSION}/opa_linux_arm64_static" \
+    && chmod +x /staging/bin/opa
+
+RUN curl -sSfL -o gitleaks.tar.gz \
+    "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_arm64.tar.gz" \
+    && tar -xzf gitleaks.tar.gz gitleaks && mv gitleaks /staging/bin/ && rm gitleaks.tar.gz
+
+# DHI Python lives at /opt/python — install deps into its site-packages
+ARG DHI_SITE=/opt/python/lib/python3.13/site-packages
+
+# Semgrep (Python package + CLI binary)
+RUN pip install --no-cache-dir --target=${DHI_SITE} semgrep==${SEMGREP_VERSION} \
+    && cp $(which semgrep) /staging/bin/semgrep
+
+# ScanCode (Python package + CLI binary)
+RUN pip install --no-cache-dir --target=${DHI_SITE} scancode-toolkit==${SCANCODE_VERSION} \
+    && cp $(which scancode) /staging/bin/scancode
+
+# eedom — install DEPENDENCIES only into DHI site-packages, source via PYTHONPATH
+WORKDIR /opt/eedom
+COPY pyproject.toml ./
+COPY src/ src/
+COPY policies/ policies/
+RUN pip install --no-cache-dir --target=${DHI_SITE} pydantic pydantic-settings structlog click orjson httpx PyYAML pyarrow watchdog
+
+# ClamAV database
+RUN mkdir -p /staging/clamav \
+    && freshclam --datadir=/staging/clamav --quiet || echo "freshclam update attempted"
+
+RUN rm -rf /tmp/scanners
+
+# ── Stage 2: DHI Hardened Runtime ──────────────────────────────────────
+FROM dhi.io/python:3.13
+
+# Scanner binaries — static CLIs + semgrep/scancode console scripts
+COPY --from=builder /staging/bin/ /usr/local/bin/
+
+# Python deps (pydantic, structlog, etc.) in DHI's site-packages
+COPY --from=builder /opt/python/lib/python3.13/site-packages/ /opt/python/lib/python3.13/site-packages/
+
+# eedom source (NOT pip-installed — loaded via PYTHONPATH so templates resolve)
+COPY --from=builder /opt/eedom/src/ /opt/eedom/src/
+COPY --from=builder /opt/eedom/policies/ /opt/eedom/policies/
+
+# Git (needed for repo scanning — git rev-parse, etc.)
+COPY --from=builder /usr/bin/git /usr/bin/git
+COPY --from=builder /usr/lib/git-core/ /usr/lib/git-core/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libpcre2* /usr/lib/aarch64-linux-gnu/
+
+# ClamAV binary + database
+COPY --from=builder /usr/bin/clamscan /usr/bin/clamscan
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libclamav* /usr/lib/aarch64-linux-gnu/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libmspack* /usr/lib/aarch64-linux-gnu/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libjson-c* /usr/lib/aarch64-linux-gnu/
+COPY --from=builder /staging/clamav /var/lib/clamav
+
+# jq for OPA output parsing
+COPY --from=builder /usr/bin/jq /usr/bin/jq
+
+ENV PATH="/opt/python/bin:/usr/local/bin:${PATH}" \
+    PYTHONPATH="/opt/eedom/src"
+
+WORKDIR /workspace
+ENTRYPOINT ["/opt/python/bin/python3", "-m", "eedom.cli.main"]
+CMD ["review", "--repo-path", ".", "--all"]

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+
+# Testing & coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.mypy_cache/
+
+# Linting & formatting
+.ruff_cache/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# WFC pipeline state
+.runs/
+.temp/
+.wfc/
+
+# Node (used only for tooling, not runtime)
+node_modules/
+package.json
+package-lock.json
+
+# Runtime artifacts (generated, not committed)
+evidence/
+diagrams/
+*.svg
+!assets/*.svg
+*.zip
+.eedom/
+.dogfood/
+.claude/worktrees/

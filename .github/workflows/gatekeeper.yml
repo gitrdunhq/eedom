@@ -1,0 +1,98 @@
+name: GATEKEEPER — Dependency & Code Review
+
+on:
+  pull_request:
+    paths:
+      # Python
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "setup.py"
+      - "setup.cfg"
+      - "Pipfile*"
+      # JavaScript/TypeScript
+      - "package.json"
+      - "package-lock.json"
+      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      # Rust
+      - "Cargo.toml"
+      - "Cargo.lock"
+      # Go
+      - "go.mod"
+      - "go.sum"
+      # Ruby
+      - "Gemfile"
+      - "Gemfile.lock"
+      # .NET
+      - "*.csproj"
+      - "packages.config"
+      - "Directory.Packages.props"
+      # Dart/Flutter
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      # PHP
+      - "composer.json"
+      - "composer.lock"
+      # Elixir
+      - "mix.exs"
+      - "mix.lock"
+      # Source code (for Semgrep)
+      - "**/*.py"
+      - "**/*.js"
+      - "**/*.ts"
+      - "**/*.go"
+      - "**/*.rs"
+      - "**/*.java"
+      - "**/*.rb"
+
+  workflow_dispatch:
+    inputs:
+      enforcement_mode:
+        description: "Enforcement mode (block, warn, log)"
+        required: false
+        default: "warn"
+        type: choice
+        options:
+          - block
+          - warn
+          - log
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  gatekeeper:
+    name: GATEKEEPER Review
+    runs-on: self-hosted
+    timeout-minutes: 10
+    container:
+      image: eedom:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate PR diff
+        id: diff
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.temp"
+          git diff ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} > "$GITHUB_WORKSPACE/.temp/pr.diff"
+
+      - name: Run GATEKEEPER agent
+        env:
+          GATEKEEPER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATEKEEPER_ENFORCEMENT_MODE: ${{ inputs.enforcement_mode || 'warn' }}
+          GATEKEEPER_DIFF_PATH: ${{ github.workspace }}/.temp/pr.diff
+          GATEKEEPER_PR_URL: ${{ github.event.pull_request.html_url }}
+          GATEKEEPER_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GATEKEEPER_REPO_OWNER: ${{ github.repository_owner }}
+          GATEKEEPER_REPO_NAME: ${{ github.event.repository.name }}
+          GATEKEEPER_TEAM: ${{ vars.OWNING_TEAM || github.repository_owner }}
+          GATEKEEPER_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          GATEKEEPER_REPO_PATH: ${{ github.workspace }}
+        run: |
+          uv run python -m eedom.agent.main
