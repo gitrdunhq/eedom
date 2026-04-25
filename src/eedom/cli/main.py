@@ -227,9 +227,9 @@ def check_health() -> None:
 )
 @click.option(
     "--pr",
-    type=int,
+    type=click.IntRange(min=1),
     default=None,
-    help="Post findings as inline PR review comments via GitHub API.",
+    help="Post findings as inline PR review comments via GitHub API. Requires gh CLI.",
 )
 @click.option(
     "--repo",
@@ -337,7 +337,7 @@ def review(
             package_units=package_units,
         )
 
-        if output_format == "sarif" or pr:
+        if output_format == "sarif" or pr is not None:
             import orjson
 
             from eedom.core.sarif import to_sarif
@@ -346,7 +346,7 @@ def review(
                 results, repo_path=str(repo), max_findings_per_run=sarif_max_findings
             )
 
-            if pr:
+            if pr is not None:
                 from eedom.core.pr_review import (
                     detect_gh_repo,
                     get_pr_diff_files,
@@ -359,7 +359,11 @@ def review(
                     click.echo("Could not detect GitHub repo. Use --repo owner/name.", err=True)
                     sys.exit(1)
 
-                diff_files = get_pr_diff_files(target_repo, pr)
+                try:
+                    diff_files = get_pr_diff_files(target_repo, pr)
+                except RuntimeError as exc:
+                    click.echo(str(exc), err=True)
+                    sys.exit(1)
                 pr_review = sarif_to_review(sarif_doc, diff_files)
                 ok = post_review(target_repo, pr, pr_review)
                 click.echo(

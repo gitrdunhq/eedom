@@ -290,3 +290,24 @@ rules:
       Add OSError to the except clause or use a broad Exception handler.
     severity: WARNING
     languages: [python]
+
+  # ── 10.4 subprocess.run without exception handling ────────────────────
+
+  - id: org.reliability.subprocess-run-unhandled-exceptions
+    patterns:
+      - pattern: |
+          $RESULT = subprocess.run(...)
+      - pattern-not-inside: |
+          try:
+              ...
+          except ...:
+              ...
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: >
+      subprocess.run() can raise FileNotFoundError (binary missing) and
+      TimeoutExpired. Wrap in try/except or use a helper that handles both.
+    severity: WARNING
+    languages: [python]
