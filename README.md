@@ -461,6 +461,8 @@ When `--pr` is passed, eedom maps SARIF findings to the PR diff and posts a prop
 
 In CI, this replaces the big markdown comment with native GitHub review UX — reviewers see findings in the diff view, not buried in a comment.
 
+**Prerequisite:** `--pr` requires the [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated (`gh auth login`). The token needs `pull-requests: write` scope.
+
 ---
 
 ## Watch Mode

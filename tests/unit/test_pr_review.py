@@ -42,7 +42,7 @@ def _finding(
 
 
 class TestSarifToReview:
-    def test_empty_sarif_produces_approve(self):
+    def test_empty_sarif_produces_comment_no_findings(self):
         review = sarif_to_review(_sarif([]), diff_files=set())
         assert review.event == "COMMENT"
         assert "No findings" in review.body

@@ -114,7 +114,7 @@ def sarif_to_review(sarif: dict, diff_files: set[str]) -> PRReview:
         body_lines.append("| File | Line | Rule | Level | Message |")
         body_lines.append("|------|------|------|-------|---------|")
         for f in outside:
-            msg_short = f["message"][:80].replace("|", "\\|")
+            msg_short = f["message"][:80].replace("\n", " ").replace("\r", "").replace("|", "\\|")
             body_lines.append(
                 f"| `{f['file']}` | {f['line']} | {f['rule']} | {f['level']} | {msg_short} |"
             )
@@ -133,12 +133,19 @@ def detect_gh_repo() -> str | None:
     """Auto-detect GitHub owner/repo from git remote."""
     import re
 
-    result = subprocess.run(
-        ["git", "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except FileNotFoundError:
+        logger.warning("pr_review.detect_repo_git_not_found")
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning("pr_review.detect_repo_timeout")
+        return None
     if result.returncode != 0:
         return None
     url = result.stdout.strip()
@@ -162,8 +169,8 @@ def get_pr_diff_files(repo: str, pr_number: int) -> set[str]:
         timeout=30,
     )
     if result.returncode != 0:
-        logger.warning("pr_review.diff_files_failed", stderr=result.stderr[:200])
-        return set()
+        stderr = result.stderr.strip()
+        raise RuntimeError(f"Failed to fetch PR diff files for {repo}#{pr_number}: {stderr[:200]}")
     return {f.strip() for f in result.stdout.strip().split("\n") if f.strip()}
 
 
