@@ -11,9 +11,9 @@ import structlog
 
 from eedom.core.diff import DependencyDiffDetector
 from eedom.core.models import (
-    ReviewRequest,
     OperatingMode,
     RequestType,
+    ReviewRequest,
     ScanResult,
     ScanResultStatus,
 )
@@ -33,7 +33,7 @@ def resolve_git_sha(repo_path: Path) -> str | None:
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception:
-        pass
+        logger.debug("resolve_git_sha.failed", repo_path=str(repo_path))
     return None
 
 

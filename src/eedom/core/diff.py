@@ -14,9 +14,9 @@ import structlog
 from packaging.version import InvalidVersion, Version  # noqa: F401
 
 from eedom.core.models import (
-    ReviewRequest,
     OperatingMode,
     RequestType,
+    ReviewRequest,
 )
 
 logger = structlog.get_logger(__name__)

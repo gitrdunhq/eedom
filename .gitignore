@@ -46,3 +46,8 @@ diagrams/
 .eedom/
 .eedom/reports/
 .claude/worktrees/
+
+# Local infrastructure (never commit, never delete)
+.dogfood/
+.dogood/
+docs/pitch-page/

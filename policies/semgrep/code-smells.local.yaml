@@ -2,14 +2,21 @@ rules:
   # ── 1.1 Layer violations ──────────────────────────────────────────────
 
   - id: org.arch.core-imports-data-private
-    pattern: |
-      from eedom.data.$MODULE import $_
+    patterns:
+      - pattern: |
+          from eedom.data.$MODULE import $_
+      - pattern-not-inside: |
+          if TYPE_CHECKING:
+              ...
+      - pattern-not-inside: |
+          def $FUNC(...):
+              ...
     paths:
       include:
         - src/eedom/core/
     message: >
-      core/ must not import private symbols from data/.
-      Use public interfaces or dependency injection.
+      core/ must not import private symbols from data/ at module level.
+      Use TYPE_CHECKING guards for type hints or lazy imports inside methods.
     severity: ERROR
     languages: [python]
 

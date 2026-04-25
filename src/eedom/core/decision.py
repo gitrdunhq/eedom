@@ -5,10 +5,10 @@
 from __future__ import annotations
 
 from eedom.core.models import (
-    ReviewDecision,
-    ReviewRequest,
     Finding,
     PolicyEvaluation,
+    ReviewDecision,
+    ReviewRequest,
     ScanResult,
 )
 

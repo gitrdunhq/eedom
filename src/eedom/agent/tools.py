@@ -169,8 +169,8 @@ def _build_dep_summary(raw_sbom: dict, repo_path: str) -> dict:
             pkg = json.loads(pkg_json.read_text())
             for section in ("dependencies", "devDependencies", "peerDependencies"):
                 direct_names.update(pkg.get(section, {}).keys())
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("package_json.parse_error", path=str(pkg_json), error=str(exc))
 
     direct: list[dict] = []
     for name in sorted(direct_names):

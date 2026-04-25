@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from eedom.core.plugin import PluginResult
-from eedom.core.renderer import calculate_severity_score, render_comment
+from eedom.core.renderer import _VERSION, calculate_severity_score, render_comment  # noqa: PLC2701
 
 
 def _vuln_result() -> PluginResult:
@@ -164,7 +164,7 @@ class TestRenderComment:
             pr_num=1,
             title="test",
         )
-        assert "Eagle Eyed Dom v0.1.0" in md
+        assert f"Eagle Eyed Dom v{_VERSION}" in md
 
     def test_truncation_at_65k(self):
         class VerbosePlugin:

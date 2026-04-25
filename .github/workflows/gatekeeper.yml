@@ -217,3 +217,39 @@ jobs:
           VERDICT: ${{ steps.verdict.outputs.verdict }}
           ERRORS: ${{ steps.verdict.outputs.errors }}
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
+
+      - name: Hand off to Copilot
+        if: github.event_name == 'pull_request'
+        run: |
+          MARKER="<!-- eedom-copilot-handoff -->"
+          HANDOFF="${MARKER}
+          **Copilot context from Eagle Eyed Dom:**
+
+          Dom scanned this PR with 15 deterministic plugins:
+          - **${ERRORS} error-level** findings (critical/high)
+          - **${WARNINGS} warning-level** findings (medium)
+          - **Verdict: ${VERDICT}**
+
+          Dom already covers: CVEs, licenses, secrets, supply chain, complexity, duplication, spelling, naming conventions, K8s, AST patterns, blast radius, OPA policy.
+
+          **Your focus:** business logic, API design, concurrency, error handling strategy, performance, test quality, authz/authn, migration safety, backwards compat.
+
+          Full instructions: \`.github/copilot-review-instructions.md\`"
+
+          EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUM}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${REPO}/issues/comments/${EXISTING}" \
+              --method PATCH --field body="$HANDOFF" > /dev/null
+          else
+            gh pr comment "$PR_NUM" --body "$HANDOFF"
+          fi
+
+          gh pr edit "$PR_NUM" --add-reviewer @copilot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          ERRORS: ${{ steps.verdict.outputs.errors }}
+          WARNINGS: ${{ steps.verdict.outputs.warnings }}

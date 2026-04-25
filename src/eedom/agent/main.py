@@ -178,8 +178,8 @@ class GatekeeperAgent:
                     if isinstance(d, dict) and d.get("decision") in ("reject", "needs_review"):
                         self._decisions_have_reject = True
                         return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("extract_reject.parse_error", error=str(exc))
 
     def _github_headers(self) -> dict[str, str]:
         """Build GitHub API headers."""
