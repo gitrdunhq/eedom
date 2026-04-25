@@ -73,9 +73,12 @@ class ClamAvPlugin(ScannerPlugin):
         stderr = r.stderr or ""
 
         if r.returncode == 2:
+            stderr_detail = stderr.strip()
+            base_error = error_msg(ErrorCode.BINARY_CRASHED, "clamscan", exit_code=2)
+            full_error = f"{base_error}: {stderr_detail}" if stderr_detail else base_error
             return PluginResult(
                 plugin_name=self.name,
-                error=error_msg(ErrorCode.BINARY_CRASHED, "clamscan", exit_code=2),
+                error=full_error,
             )
 
         findings = self._parse_output(output + stderr)

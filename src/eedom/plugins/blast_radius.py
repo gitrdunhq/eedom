@@ -7,6 +7,7 @@ Extensible via custom SQL checks: graph.register_check(name, query).
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import structlog
@@ -37,7 +38,14 @@ class BlastRadiusPlugin(ScannerPlugin):
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
         db_dir = repo_path / ".eedom"
-        db_dir.mkdir(exist_ok=True)
+        try:
+            db_dir.mkdir(exist_ok=True)
+        except OSError:
+            logger.warning(
+                "blast-radius: cannot create .eedom in repo_path (read-only?), using temp dir",
+                repo_path=str(repo_path),
+            )
+            db_dir = Path(tempfile.mkdtemp(prefix="eedom-blast-radius-"))
         db_path = str(db_dir / "code_graph.sqlite")
 
         graph = CodeGraph(db_path=db_path)

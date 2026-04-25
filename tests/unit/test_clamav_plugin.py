@@ -7,9 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from eedom.plugins.clamav import ClamAvPlugin
-
 from eedom.core.plugin import PluginCategory, PluginResult
+from eedom.plugins.clamav import ClamAvPlugin
 
 CLEAN_OUTPUT = """\
 /workspace/src/app.py: OK
@@ -109,3 +108,24 @@ class TestClamAvPlugin:
         )
         md = p.render(result)
         assert "not installed" in md
+
+    @patch("eedom.plugins.clamav.subprocess.run")
+    def test_clamscan_exit2_includes_stderr(self, mock_run):
+        mock_run.return_value.returncode = 2
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = "LibClamAV Error: cl_load() error: No such file or directory"
+        p = ClamAvPlugin()
+        result = p.run(["src/app.py"], Path("/workspace"))
+        assert "BINARY_CRASHED" in result.error
+        assert "LibClamAV Error" in result.error
+
+    @patch("eedom.plugins.clamav.subprocess.run")
+    def test_clamscan_exit2_no_stderr(self, mock_run):
+        mock_run.return_value.returncode = 2
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        p = ClamAvPlugin()
+        result = p.run(["src/app.py"], Path("/workspace"))
+        assert "BINARY_CRASHED" in result.error
+        # No trailing colon when stderr is empty
+        assert not result.error.endswith(":")
