@@ -243,7 +243,6 @@ jobs:
             gh pr comment "$PR_NUM" --body "$HANDOFF"
           fi
 
-          gh pr edit "$PR_NUM" --add-reviewer @copilot
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
