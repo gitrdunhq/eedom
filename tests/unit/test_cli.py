@@ -813,3 +813,103 @@ class TestReviewRepoConfigWiring:
         result = runner.invoke(cli, ["review", "--help"])
         assert result.exit_code == 0
         assert "--package" in result.output
+
+
+class TestReviewPRMode:
+    """Tests for --pr inline review posting mode."""
+
+    _REG_PATCH = "eedom.cli.main.get_default_registry"
+
+    def _mock_registry(self) -> MagicMock:
+        mock_reg = MagicMock()
+        mock_reg.run_all.return_value = []
+        mock_reg.list.return_value = []
+        return mock_reg
+
+    def test_pr_zero_rejected_by_intrange(self) -> None:
+        """--pr 0 is rejected by IntRange(min=1) validation."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--repo-path", ".", "--pr", "0"])
+        assert result.exit_code != 0
+        assert "0" in result.output or "Invalid" in result.output or "invalid" in result.output
+
+    def test_pr_success_posts_review(self) -> None:
+        """--pr with valid repo posts review and exits 0."""
+        mock_reg = self._mock_registry()
+        mock_review = MagicMock()
+        mock_review.event = "COMMENT"
+        mock_review.comments = []
+        mock_review.outside_diff = []
+
+        with (
+            patch(self._REG_PATCH, return_value=mock_reg),
+            patch("eedom.core.pr_review.detect_gh_repo", return_value="org/repo"),
+            patch("eedom.core.pr_review.get_pr_diff_files", return_value={"src/app.py"}),
+            patch("eedom.core.pr_review.sarif_to_review", return_value=mock_review),
+            patch("eedom.core.pr_review.post_review", return_value=True) as mock_post,
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli, ["review", "--repo-path", ".", "--pr", "42", "--repo", "org/repo"]
+            )
+
+        assert result.exit_code == 0
+        assert "Posted" in result.output
+        mock_post.assert_called_once()
+
+    def test_pr_no_repo_detected_exits_1(self) -> None:
+        """--pr without --repo and no git remote exits 1."""
+        mock_reg = self._mock_registry()
+
+        with (
+            patch(self._REG_PATCH, return_value=mock_reg),
+            patch("eedom.core.pr_review.detect_gh_repo", return_value=None),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["review", "--repo-path", ".", "--pr", "42"])
+
+        assert result.exit_code == 1
+        assert "Could not detect" in result.output
+
+    def test_pr_post_failure_exits_1(self) -> None:
+        """--pr exits 1 when post_review returns False."""
+        mock_reg = self._mock_registry()
+        mock_review = MagicMock()
+        mock_review.event = "COMMENT"
+        mock_review.comments = []
+        mock_review.outside_diff = []
+
+        with (
+            patch(self._REG_PATCH, return_value=mock_reg),
+            patch("eedom.core.pr_review.detect_gh_repo", return_value="org/repo"),
+            patch("eedom.core.pr_review.get_pr_diff_files", return_value=set()),
+            patch("eedom.core.pr_review.sarif_to_review", return_value=mock_review),
+            patch("eedom.core.pr_review.post_review", return_value=False),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli, ["review", "--repo-path", ".", "--pr", "42", "--repo", "org/repo"]
+            )
+
+        assert result.exit_code == 1
+        assert "Failed" in result.output
+
+    def test_pr_diff_fetch_error_exits_1(self) -> None:
+        """--pr exits 1 when get_pr_diff_files raises RuntimeError."""
+        mock_reg = self._mock_registry()
+
+        with (
+            patch(self._REG_PATCH, return_value=mock_reg),
+            patch("eedom.core.pr_review.detect_gh_repo", return_value="org/repo"),
+            patch(
+                "eedom.core.pr_review.get_pr_diff_files",
+                side_effect=RuntimeError("API error: 404"),
+            ),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli, ["review", "--repo-path", ".", "--pr", "42", "--repo", "org/repo"]
+            )
+
+        assert result.exit_code == 1
+        assert "API error" in result.output
