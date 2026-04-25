@@ -68,6 +68,41 @@ Port range 12000-13000 only. Never use common ports.
 
 Every source file has a `# tested-by: tests/unit/test_X.py` comment. TDD red-green is mandatory. Hypothesis property-based tests cover boundary invariants.
 
+### Property-Based Testing (DPS-12)
+
+Code at security, cryptographic, state, or trust boundaries requires formal property domain mapping. Each test maps to a named domain and formal property type: SAFETY (bad thing never happens), LIVENESS (good thing eventually happens), INVARIANT (always true), PERFORMANCE (within bounds).
+
+**Core domains** (security/crypto):
+
+| Domain | Type | Property |
+|--------|------|----------|
+| Integrity | SAFETY | Tampering never succeeds |
+| Confidentiality | SAFETY | Secrets never leak to output |
+| Determinism | INVARIANT | Same inputs → same output |
+| Uniqueness | INVARIANT | Different inputs → different outputs |
+| Availability | LIVENESS | Valid operations eventually succeed |
+
+**Stateful domains** (state machines, workflows, pipelines):
+
+| Domain | Type | Property |
+|--------|------|----------|
+| Non-repudiation | INVARIANT | Proof of action always exists once created |
+| Idempotency | INVARIANT | Repeat always produces same result |
+| Atomicity | SAFETY | Partial state never visible |
+| Monotonicity | SAFETY | State never moves backward |
+
+**System domains** (concurrency, resources, lifecycle):
+
+| Domain | Type | Property |
+|--------|------|----------|
+| Ordering | SAFETY | Out-of-sequence never happens |
+| Isolation | SAFETY | Parallel ops never interfere |
+| Boundedness | PERFORMANCE | Resources stay within finite limits |
+| Linearity | SAFETY | Token/resource never consumed twice |
+| Reversibility | LIVENESS | Failed operations eventually clean up |
+
+Not every module needs all 14. Pick the domains that match your boundary. Group property tests in a `TestProperties` class. If you can't state the domain and property type, the test is incomplete.
+
 ## Code Conventions
 
 - structlog for logging, never print()
