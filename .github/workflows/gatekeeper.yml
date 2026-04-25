@@ -283,6 +283,7 @@ jobs:
           if command -v gitleaks &>/dev/null; then
             CONFIG_FLAG=""
             [ -f ".eedom/gitleaks.toml" ] && CONFIG_FLAG="--config .eedom/gitleaks.toml"
+            # intentional: scan HEAD commit only in CI, weekly dogfood does full history
             gitleaks detect --log-opts "--all -1" $CONFIG_FLAG
           else
             echo "gitleaks not installed — skipping"
