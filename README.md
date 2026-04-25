@@ -113,6 +113,9 @@ uv run eedom review --repo-path . --category code
 
 # List available plugins
 uv run eedom plugins
+
+# Post findings as inline PR review comments
+uv run eedom review --repo-path . --all --pr 42
 ```
 
 ### Full pipeline evaluation (native)
@@ -435,6 +438,28 @@ Upload in GitHub Actions:
 ```
 
 SARIF output follows the [SARIF 2.1.0 schema](https://docs.oasis-open.org/sarif/sarif/v2.1.0/). Each plugin maps to a SARIF `tool.driver` — findings are `result` objects with `locations`, `level`, and `ruleId`.
+
+---
+
+## PR Review Posting
+
+Post findings as inline GitHub PR review comments — on the exact lines, not one big comment:
+
+```bash
+# Post inline review comments on PR #42
+uv run eedom review --repo-path . --all --pr 42
+
+# Specify repo explicitly (auto-detected from git remote by default)
+uv run eedom review --repo-path . --all --pr 42 --repo org/repo
+```
+
+When `--pr` is passed, eedom maps SARIF findings to the PR diff and posts a proper GitHub review:
+
+- Findings on changed files become **inline comments** on the right lines
+- Findings outside the diff go in a **collapsed table** in the review summary
+- Uses `REQUEST_CHANGES` when error-level findings exist, `COMMENT` otherwise
+
+In CI, this replaces the big markdown comment with native GitHub review UX — reviewers see findings in the diff view, not buried in a comment.
 
 ---
 
