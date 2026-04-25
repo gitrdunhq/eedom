@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from eedom.core.pr_review import sarif_to_review
+from eedom.core.pr_review import line_in_hunks, parse_hunk_ranges, sarif_to_review
 
 
 def _sarif(results: list[dict], tool: str = "test-tool") -> dict:
@@ -119,3 +119,116 @@ class TestSarifToReview:
 
         assert len(review.comments) == 0
         assert review.event == "COMMENT"
+
+
+class TestParseHunkRanges:
+    def test_single_hunk(self):
+        patch = "@@ -1,3 +1,5 @@\n+added\n context\n"
+        ranges = parse_hunk_ranges(patch)
+        assert ranges == [(1, 5)]
+
+    def test_multiple_hunks(self):
+        patch = "@@ -1,3 +1,4 @@\n context\n+added\n@@ -20,3 +21,6 @@\n context\n+more\n"
+        ranges = parse_hunk_ranges(patch)
+        assert ranges == [(1, 4), (21, 26)]
+
+    def test_no_hunks(self):
+        assert parse_hunk_ranges("") == []
+        assert parse_hunk_ranges("no hunks here") == []
+
+    def test_single_line_hunk(self):
+        patch = "@@ -5,0 +5 @@\n+single line\n"
+        ranges = parse_hunk_ranges(patch)
+        assert ranges == [(5, 5)]
+
+
+class TestLineInHunks:
+    def test_line_inside_hunk(self):
+        assert line_in_hunks(3, [(1, 5)]) is True
+
+    def test_line_at_hunk_boundary(self):
+        assert line_in_hunks(1, [(1, 5)]) is True
+        assert line_in_hunks(5, [(1, 5)]) is True
+
+    def test_line_outside_hunk(self):
+        assert line_in_hunks(6, [(1, 5)]) is False
+        assert line_in_hunks(0, [(1, 5)]) is False
+
+    def test_line_in_second_hunk(self):
+        assert line_in_hunks(25, [(1, 5), (20, 30)]) is True
+
+    def test_empty_hunks(self):
+        assert line_in_hunks(1, []) is False
+
+
+class TestSarifToReviewWithHunks:
+    def test_finding_on_valid_hunk_line_becomes_inline(self):
+        sarif = _sarif([_finding(file="src/app.py", line=3, level="error")])
+        diff_hunks = {"src/app.py": [(1, 10)]}
+        review = sarif_to_review(sarif, diff_files={"src/app.py"}, diff_hunks=diff_hunks)
+
+        assert len(review.comments) == 1
+        assert review.comments[0].line == 3
+
+    def test_finding_outside_hunk_goes_to_summary(self):
+        sarif = _sarif([_finding(file="src/app.py", line=50, level="error")])
+        diff_hunks = {"src/app.py": [(1, 10)]}
+        review = sarif_to_review(sarif, diff_files={"src/app.py"}, diff_hunks=diff_hunks)
+
+        assert len(review.comments) == 0
+        assert len(review.outside_diff) == 1
+
+    def test_no_hunks_provided_falls_back_to_file_check(self):
+        sarif = _sarif([_finding(file="src/app.py", line=50, level="error")])
+        review = sarif_to_review(sarif, diff_files={"src/app.py"})
+
+        assert len(review.comments) == 1
+
+    def test_smart_comment_has_rule_and_action(self):
+        sarif = _sarif(
+            [
+                _finding(
+                    file="src/app.py",
+                    line=5,
+                    level="error",
+                    rule="sql-injection",
+                    msg="User input concatenated into SQL query",
+                )
+            ]
+        )
+        diff_hunks = {"src/app.py": [(1, 10)]}
+        review = sarif_to_review(sarif, diff_files={"src/app.py"}, diff_hunks=diff_hunks)
+
+        body = review.comments[0].body
+        assert "sql-injection" in body
+        assert "error" in body
+        assert "User input concatenated" in body
+
+    def test_smart_comment_includes_fix_hint_when_available(self):
+        sarif_data = _sarif(
+            [
+                {
+                    "ruleId": "hardcoded-secret",
+                    "level": "error",
+                    "message": {"text": "Hardcoded password detected"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": "src/app.py"},
+                                "region": {"startLine": 5},
+                            }
+                        }
+                    ],
+                    "fixes": [
+                        {
+                            "description": {"text": "Use environment variable instead"},
+                        }
+                    ],
+                }
+            ]
+        )
+        diff_hunks = {"src/app.py": [(1, 10)]}
+        review = sarif_to_review(sarif_data, diff_files={"src/app.py"}, diff_hunks=diff_hunks)
+
+        body = review.comments[0].body
+        assert "environment variable" in body.lower()

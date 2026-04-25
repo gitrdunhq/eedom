@@ -9,12 +9,31 @@ go in a collapsed section in the summary body.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+
+
+def parse_hunk_ranges(patch: str) -> list[tuple[int, int]]:
+    """Extract (start, end) line ranges from a unified diff patch string."""
+    ranges: list[tuple[int, int]] = []
+    for m in _HUNK_RE.finditer(patch):
+        start = int(m.group(1))
+        length = int(m.group(2)) if m.group(2) is not None else 1
+        end = start + length - 1 if length > 0 else start
+        ranges.append((start, end))
+    return ranges
+
+
+def line_in_hunks(line: int, hunks: list[tuple[int, int]]) -> bool:
+    """Return True if line falls within any of the hunk ranges."""
+    return any(start <= line <= end for start, end in hunks)
 
 
 @dataclass
@@ -33,11 +52,33 @@ class PRReview:
     outside_diff: list[dict] = field(default_factory=list)
 
 
-def sarif_to_review(sarif: dict, diff_files: set[str]) -> PRReview:
+def _build_smart_comment(rule_id: str, level: str, msg: str, result: dict) -> str:
+    """Build a SMART inline comment: Specific, Measurable, Actionable, Relevant, Targeted."""
+    icon = {"error": "🔴", "warning": "🟡", "note": "🔵"}.get(level, "⚪")
+    parts = [f"{icon} **{rule_id}** (`{level}`)"]
+    parts.append("")
+    parts.append(msg)
+
+    fixes = result.get("fixes", [])
+    if fixes:
+        fix_text = fixes[0].get("description", {}).get("text", "")
+        if fix_text:
+            parts.append("")
+            parts.append(f"**Fix:** {fix_text}")
+
+    return "\n".join(parts)
+
+
+def sarif_to_review(
+    sarif: dict,
+    diff_files: set[str],
+    diff_hunks: dict[str, list[tuple[int, int]]] | None = None,
+) -> PRReview:
     """Convert SARIF findings into a PRReview with inline comments.
 
-    Findings on files in the PR diff become inline comments.
-    Findings on files outside the diff go in the summary body.
+    Findings on files in the PR diff become inline comments, but only when
+    the finding's line falls within an actual diff hunk (when diff_hunks is
+    provided). Findings outside hunks or outside the diff go in the summary.
     """
     comments: list[ReviewComment] = []
     outside: list[dict] = []
@@ -66,10 +107,14 @@ def sarif_to_review(sarif: dict, diff_files: set[str]) -> PRReview:
                 file_path = phys.get("artifactLocation", {}).get("uri", "")
                 line_num = phys.get("region", {}).get("startLine", 1)
 
-            icon = {"error": "🔴", "warning": "🟡", "note": "🔵"}.get(level, "⚪")
-            comment_body = f"{icon} **{rule_id}** ({level})\n\n{msg}"
+            comment_body = _build_smart_comment(rule_id, level, msg, result)
 
-            if file_path and file_path in diff_files:
+            in_diff = file_path and file_path in diff_files
+            in_hunk = True
+            if in_diff and diff_hunks and file_path in diff_hunks:
+                in_hunk = line_in_hunks(line_num, diff_hunks[file_path])
+
+            if in_diff and in_hunk:
                 comments.append(
                     ReviewComment(
                         path=file_path,
@@ -131,8 +176,6 @@ def sarif_to_review(sarif: dict, diff_files: set[str]) -> PRReview:
 
 def detect_gh_repo() -> str | None:
     """Auto-detect GitHub owner/repo from git remote."""
-    import re
-
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
@@ -172,6 +215,37 @@ def get_pr_diff_files(repo: str, pr_number: int) -> set[str]:
         stderr = result.stderr.strip()
         raise RuntimeError(f"Failed to fetch PR diff files for {repo}#{pr_number}: {stderr[:200]}")
     return {f.strip() for f in result.stdout.strip().split("\n") if f.strip()}
+
+
+def get_pr_diff_hunks(repo: str, pr_number: int) -> dict[str, list[tuple[int, int]]]:
+    """Fetch per-file hunk ranges from a PR via gh CLI.
+
+    Returns {filename: [(start, end), ...]} for each file with a patch.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/pulls/{pr_number}/files",
+            "--paginate",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(f"Failed to fetch PR diff hunks for {repo}#{pr_number}: {stderr[:200]}")
+
+    hunks: dict[str, list[tuple[int, int]]] = {}
+    for file_entry in json.loads(result.stdout):
+        filename = file_entry.get("filename", "")
+        patch = file_entry.get("patch", "")
+        if filename and patch:
+            ranges = parse_hunk_ranges(patch)
+            if ranges:
+                hunks[filename] = ranges
+    return hunks
 
 
 def post_review(repo: str, pr_number: int, review: PRReview) -> bool:
