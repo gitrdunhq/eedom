@@ -324,7 +324,7 @@ def review(
                             files.append(str(full))
             return files
         files = []
-        for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml"):
+        for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
             files.extend(
                 str(p)
                 for p in repo.rglob(ext)

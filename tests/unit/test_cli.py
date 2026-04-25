@@ -815,6 +815,39 @@ class TestReviewRepoConfigWiring:
         assert "--package" in result.output
 
 
+class TestBuildFileListJsonDiscovery:
+    """Verify _build_file_list includes .json files in --all mode (issue #55)."""
+
+    _REG_PATCH = "eedom.cli.main.get_default_registry"
+
+    def test_json_cfn_template_appears_in_file_list(self, tmp_path: Path) -> None:
+        """A .json file in the repo is included in the files passed to run_all.
+
+        cfn-nag's can_run() filters non-CFN JSON internally, so the discovery
+        layer must not exclude .json by extension.
+        """
+        (tmp_path / "template.json").write_text(
+            '{"AWSTemplateFormatVersion": "2010-09-09", "Resources": {}}'
+        )
+
+        mock_registry = MagicMock()
+        mock_registry.run_all.return_value = []
+        mock_registry.list.return_value = []
+
+        with patch(self._REG_PATCH, return_value=mock_registry):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["review", "--all", "--repo-path", str(tmp_path)])
+
+        assert result.exit_code == 0
+        call_args = mock_registry.run_all.call_args
+        files: list[str] = (
+            call_args.args[0] if call_args.args else call_args.kwargs.get("files", [])
+        )
+        assert any(
+            "template.json" in f for f in files
+        ), f"Expected template.json in file list but got: {files}"
+
+
 class TestReviewPRMode:
     """Tests for --pr inline review posting mode."""
 
