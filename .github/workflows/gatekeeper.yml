@@ -196,6 +196,38 @@ jobs:
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
           CRASHED: ${{ steps.verdict.outputs.crashed }}
 
+      - name: File issue on incomplete review
+        if: github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
+        run: |
+          TITLE="[eedom-crash] ${CRASHED} plugin(s) crashed reviewing PR #${PR_NUM}"
+          EXISTING=$(gh issue list --search "\"$TITLE\" in:title" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already open — skipping"
+          else
+            gh issue create \
+              --title "$TITLE" \
+              --label "bug" \
+              --body "## Eedom review incomplete
+
+          **PR:** #${PR_NUM} (${{ github.event.pull_request.html_url }})
+          **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          **Crashed plugins:** ${CRASHED} out of ${TOTAL} total
+
+          The review passed with \`dom: incomplete\` because too many plugins failed to produce results. This means the PR has no meaningful security/quality signal from eedom.
+
+          ### Action required
+          1. Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) logs for NOT_INSTALLED / TIMEOUT / filesystem errors
+          2. Fix the runner environment or container image
+          3. Re-run the workflow on PR #${PR_NUM}
+
+          Until this is resolved, PR #${PR_NUM} should not be merged — the \`dom: incomplete\` label blocks it."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          CRASHED: ${{ steps.verdict.outputs.crashed }}
+          TOTAL: ${{ steps.verdict.outputs.total_plugins }}
+
       - name: Post review comment
         if: github.event_name == 'pull_request'
         run: |
