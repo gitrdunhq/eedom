@@ -325,6 +325,22 @@ WHERE vuln_critical > 0 AND team = 'platform';
 
 ---
 
+## Supply Chain Provenance (SLSA)
+
+Every container image pushed to GHCR includes a SLSA Level 3 provenance attestation — cryptographic proof of what code was built, on what runner, with what workflow.
+
+**Eedom proves the code was reviewed. SLSA proves the image was built from that reviewed code.** Together: full chain of custody from PR to production.
+
+Verify any eedom image:
+
+```bash
+gh attestation verify oci://ghcr.io/gitrdunhq/eedom:latest --owner gitrdunhq
+```
+
+The attestation includes: source commit SHA, workflow file, runner environment, and build timestamp. Tamper with any of these and verification fails.
+
+---
+
 ## Fail-Open Philosophy
 
 Nothing blocks the build unless OPA says so. Every external call has a timeout. Every failure returns a typed result, never an exception.

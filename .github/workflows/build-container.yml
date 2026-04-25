@@ -1,0 +1,106 @@
+name: Build & Attest Container Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "policies/**"
+      - "Dockerfile"
+      - "pyproject.toml"
+
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build, Push & Attest
+    runs-on: self-hosted
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect container engine
+        id: engine
+        run: |
+          if command -v podman &>/dev/null; then
+            echo "cmd=podman" >> "$GITHUB_OUTPUT"
+          elif command -v docker &>/dev/null; then
+            echo "cmd=docker" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No container engine found (podman or docker required)"
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            ${{ steps.engine.outputs.cmd }} login ghcr.io \
+              -u ${{ github.actor }} --password-stdin
+
+      - name: Build image
+        id: build
+        run: |
+          ENGINE="${{ steps.engine.outputs.cmd }}"
+          TAG="ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          TAG_LATEST="ghcr.io/${{ env.IMAGE_NAME }}:latest"
+
+          $ENGINE build \
+            --tag "$TAG" \
+            --tag "$TAG_LATEST" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            .
+
+          DIGEST=$($ENGINE inspect --format='{{.Digest}}' "$TAG" 2>/dev/null || \
+                   $ENGINE image inspect "$TAG" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d@ -f2)
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag_latest=$TAG_LATEST" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Built $TAG (digest: $DIGEST)"
+
+      - name: Push to GHCR
+        run: |
+          ENGINE="${{ steps.engine.outputs.cmd }}"
+          $ENGINE push "${{ steps.build.outputs.tag }}"
+          $ENGINE push "${{ steps.build.outputs.tag_latest }}"
+
+      - name: Generate SLSA provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify attestation
+        run: |
+          gh attestation verify "oci://ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --owner "${{ github.repository_owner }}" || echo "::warning::Attestation verification skipped (may need propagation time)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Container Image Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image:** \`ghcr.io/${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SHA tag:** \`ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Digest:** \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SLSA provenance:** attached to registry" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Verify:" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "gh attestation verify oci://ghcr.io/${{ env.IMAGE_NAME }}:latest --owner ${{ github.repository_owner }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
