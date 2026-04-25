@@ -124,39 +124,59 @@ jobs:
         run: |
           ERRORS=0
           WARNINGS=0
+          CRASHED=0
+          TOTAL_PLUGINS=0
           if [ -f .temp/review.sarif ]; then
-            ERRORS=$(python3 -c "
-          import json
+            python3 -c "
+          import json, os
           with open('.temp/review.sarif') as f:
               sarif = json.load(f)
-          print(sum(1 for r in sarif.get('runs',[]) for res in r.get('results',[]) if res.get('level')=='error'))
-          " 2>/dev/null || echo "0")
-
-            WARNINGS=$(python3 -c "
-          import json
-          with open('.temp/review.sarif') as f:
-              sarif = json.load(f)
-          print(sum(1 for r in sarif.get('runs',[]) for res in r.get('results',[]) if res.get('level')=='warning'))
-          " 2>/dev/null || echo "0")
+          runs = sarif.get('runs', [])
+          total = len(runs)
+          errors = sum(1 for r in runs for res in r.get('results', []) if res.get('level') == 'error')
+          warnings = sum(1 for r in runs for res in r.get('results', []) if res.get('level') == 'warning')
+          crashed = sum(1 for r in runs if any(
+              'NOT_INSTALLED' in res.get('message', {}).get('text', '') or
+              'TIMEOUT' in res.get('message', {}).get('text', '') or
+              'Read-only file system' in res.get('message', {}).get('text', '')
+              for res in r.get('results', [])
+          ))
+          # Also count runs with zero results and error in tool name as crashed
+          crashed += sum(1 for r in runs if len(r.get('results', [])) == 0 and r.get('tool', {}).get('driver', {}).get('name', '') not in ('opa',))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'errors={errors}\n')
+              out.write(f'warnings={warnings}\n')
+              out.write(f'crashed={crashed}\n')
+              out.write(f'total_plugins={total}\n')
+          " 2>/dev/null || {
+              echo "errors=0" >> "$GITHUB_OUTPUT"
+              echo "warnings=0" >> "$GITHUB_OUTPUT"
+              echo "crashed=0" >> "$GITHUB_OUTPUT"
+              echo "total_plugins=0" >> "$GITHUB_OUTPUT"
+          }
           fi
 
-          echo "errors=$ERRORS" >> "$GITHUB_OUTPUT"
-          echo "warnings=$WARNINGS" >> "$GITHUB_OUTPUT"
+          ERRORS="${{ steps.verdict.outputs.errors }}"
+          WARNINGS="${{ steps.verdict.outputs.warnings }}"
+          CRASHED="${{ steps.verdict.outputs.crashed }}"
+          TOTAL="${{ steps.verdict.outputs.total_plugins }}"
 
           if [ "$ERRORS" -gt 0 ]; then
             echo "verdict=blocked" >> "$GITHUB_OUTPUT"
+          elif [ "${CRASHED:-0}" -ge 3 ]; then
+            echo "verdict=incomplete" >> "$GITHUB_OUTPUT"
           elif [ "$WARNINGS" -gt 0 ]; then
             echo "verdict=warnings" >> "$GITHUB_OUTPUT"
           else
             echo "verdict=approved" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Runtime: ${{ steps.runtime.outputs.engine }} | Errors: $ERRORS | Warnings: $WARNINGS"
+          echo "Runtime: ${{ steps.runtime.outputs.engine }} | Errors: ${ERRORS:-0} | Warnings: ${WARNINGS:-0} | Crashed: ${CRASHED:-0}/${TOTAL:-0} plugins"
 
       - name: Set dom label
         if: github.event_name == 'pull_request'
         run: |
-          for LABEL in "dom: approved" "dom: warnings" "dom: blocked"; do
+          for LABEL in "dom: approved" "dom: warnings" "dom: blocked" "dom: incomplete"; do
             gh issue edit "$PR_NUM" --remove-label "$LABEL" 2>/dev/null || true
           done
 
@@ -167,12 +187,14 @@ jobs:
           echo "- **Runtime:** ${{ steps.runtime.outputs.engine }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Crashed plugins:** $CRASHED" >> "$GITHUB_STEP_SUMMARY"
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUM: ${{ github.event.pull_request.number }}
           VERDICT: ${{ steps.verdict.outputs.verdict }}
           ERRORS: ${{ steps.verdict.outputs.errors }}
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
+          CRASHED: ${{ steps.verdict.outputs.crashed }}
 
       - name: Post review comment
         if: github.event_name == 'pull_request'
@@ -185,10 +207,15 @@ jobs:
           ICON="✅"
           if [ "$VERDICT" = "blocked" ]; then ICON="🚫"; fi
           if [ "$VERDICT" = "warnings" ]; then ICON="⚠️"; fi
+          if [ "$VERDICT" = "incomplete" ]; then ICON="🟣"; fi
 
           MARKER="<!-- eedom-review -->"
+          CRASHED_NOTE=""
+          if [ "${CRASHED:-0}" -ge 1 ]; then
+            CRASHED_NOTE=" | ${CRASHED} plugin(s) crashed"
+          fi
           BODY="${MARKER}
-          ${ICON} **dom: ${VERDICT}** — ${ERRORS} error(s), ${WARNINGS} warning(s)
+          ${ICON} **dom: ${VERDICT}** — ${ERRORS} error(s), ${WARNINGS} warning(s)${CRASHED_NOTE}
 
           <details>
           <summary>Full review</summary>
