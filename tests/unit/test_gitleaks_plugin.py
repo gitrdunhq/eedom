@@ -8,9 +8,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from eedom.plugins.gitleaks import GitleaksPlugin
-
 from eedom.core.plugin import PluginCategory
+from eedom.plugins.gitleaks import GitleaksPlugin
 
 LEAK_OUTPUT = json.dumps(
     [
@@ -117,3 +116,31 @@ class TestGitleaksPlugin:
         p = GitleaksPlugin()
         result = PluginResult(plugin_name="gitleaks", error="not installed")
         assert "not installed" in p.render(result)
+
+    @patch("eedom.plugins.gitleaks.subprocess.run")
+    def test_custom_config_passed_when_present(self, mock_run, tmp_path):
+        config_dir = tmp_path / ".eedom"
+        config_dir.mkdir()
+        config_file = config_dir / "gitleaks.toml"
+        config_file.write_text('title = "custom"\n')
+
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = CLEAN_OUTPUT
+
+        p = GitleaksPlugin()
+        p.run(["app.py"], tmp_path)
+
+        cmd = mock_run.call_args[0][0]
+        assert "--config" in cmd
+        assert str(config_file) in cmd
+
+    @patch("eedom.plugins.gitleaks.subprocess.run")
+    def test_no_config_flag_when_absent(self, mock_run):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = CLEAN_OUTPUT
+
+        p = GitleaksPlugin()
+        p.run(["app.py"], Path("/nonexistent"))
+
+        cmd = mock_run.call_args[0][0]
+        assert "--config" not in cmd
