@@ -110,16 +110,14 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
-            sh -c "
-              eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif
-              eedom review --repo-path /workspace --all --output /workspace/.temp/review.md || true
-            "
+            sh -c "set -e && eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all --output /workspace/.temp/review.md"
 
       - name: Run eedom review (native)
         if: steps.runtime.outputs.container == 'false'
         run: |
+          set -e
           uv run eedom review --repo-path . --all --format sarif --output .temp/review.sarif
-          uv run eedom review --repo-path . --all --output .temp/review.md || true
+          uv run eedom review --repo-path . --all --output .temp/review.md
 
       - name: Compute verdict
         id: verdict
