@@ -9,13 +9,15 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("agent_framework", reason="agent_framework not installed (eedom[copilot])")
+
 from eedom.core.models import (
-    ReviewDecision,
-    ReviewRequest,
     DecisionVerdict,
     OperatingMode,
     PolicyEvaluation,
     RequestType,
+    ReviewDecision,
+    ReviewRequest,
     ScanResult,
     ScanResultStatus,
 )

@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+pytest.importorskip("starlette", reason="starlette not installed (eedom[copilot])")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

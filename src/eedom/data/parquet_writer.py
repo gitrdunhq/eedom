@@ -13,9 +13,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import structlog
+
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except ImportError:
+    pa = None  # type: ignore[assignment]
+    pq = None  # type: ignore[assignment]
 
 from eedom.core.models import ReviewDecision
 
@@ -23,37 +28,43 @@ logger = structlog.get_logger(__name__)
 
 PARQUET_FILENAME = "decisions.parquet"
 
-SCHEMA = pa.schema(
-    [
-        ("decision_id", pa.string()),
-        ("commit_sha", pa.string()),
-        ("run_id", pa.string()),
-        ("timestamp", pa.timestamp("us", tz="UTC")),
-        ("package_name", pa.string()),
-        ("package_version", pa.string()),
-        ("ecosystem", pa.string()),
-        ("team", pa.string()),
-        ("scope", pa.string()),
-        ("pr_url", pa.string()),
-        ("request_type", pa.string()),
-        ("operating_mode", pa.string()),
-        ("decision", pa.string()),
-        ("vuln_critical", pa.int32()),
-        ("vuln_high", pa.int32()),
-        ("vuln_medium", pa.int32()),
-        ("vuln_low", pa.int32()),
-        ("vuln_info", pa.int32()),
-        ("finding_count", pa.int32()),
-        ("triggered_rules", pa.list_(pa.string())),
-        ("constraints", pa.list_(pa.string())),
-        ("policy_version", pa.string()),
-        ("pipeline_duration_seconds", pa.float64()),
-        ("scanner_names", pa.list_(pa.string())),
-        ("scanner_statuses", pa.list_(pa.string())),
-        ("advisory_ids", pa.list_(pa.string())),
-        ("memo_text", pa.string()),
-    ]
-)
+
+def _build_schema() -> pa.Schema:
+    if pa is None:
+        raise ImportError(
+            "pyarrow is required for parquet support. Install with: pip install eedom[parquet]"
+        )
+    return pa.schema(
+        [
+            ("decision_id", pa.string()),
+            ("commit_sha", pa.string()),
+            ("run_id", pa.string()),
+            ("timestamp", pa.timestamp("us", tz="UTC")),
+            ("package_name", pa.string()),
+            ("package_version", pa.string()),
+            ("ecosystem", pa.string()),
+            ("team", pa.string()),
+            ("scope", pa.string()),
+            ("pr_url", pa.string()),
+            ("request_type", pa.string()),
+            ("operating_mode", pa.string()),
+            ("decision", pa.string()),
+            ("vuln_critical", pa.int32()),
+            ("vuln_high", pa.int32()),
+            ("vuln_medium", pa.int32()),
+            ("vuln_low", pa.int32()),
+            ("vuln_info", pa.int32()),
+            ("finding_count", pa.int32()),
+            ("triggered_rules", pa.list_(pa.string())),
+            ("constraints", pa.list_(pa.string())),
+            ("policy_version", pa.string()),
+            ("pipeline_duration_seconds", pa.float64()),
+            ("scanner_names", pa.list_(pa.string())),
+            ("scanner_statuses", pa.list_(pa.string())),
+            ("advisory_ids", pa.list_(pa.string())),
+            ("memo_text", pa.string()),
+        ]
+    )
 
 
 def decision_to_row(decision: ReviewDecision, run_id: str = "") -> dict:
@@ -116,11 +127,12 @@ def append_decisions(
     try:
         evidence_root.mkdir(parents=True, exist_ok=True)
 
+        schema = _build_schema()
         rows = [decision_to_row(d, run_id) for d in decisions]
-        new_table = pa.Table.from_pylist(rows, schema=SCHEMA)
+        new_table = pa.Table.from_pylist(rows, schema=schema)
 
         if parquet_path.exists():
-            existing = pq.read_table(parquet_path, schema=SCHEMA)
+            existing = pq.read_table(parquet_path, schema=schema)
             combined = pa.concat_tables([existing, new_table])
         else:
             combined = new_table

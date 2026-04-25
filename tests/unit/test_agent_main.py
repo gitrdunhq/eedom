@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+pytest.importorskip("agent_framework", reason="agent_framework not installed (eedom[copilot])")
+
 from eedom.agent.config import AgentSettings, EnforcementMode
 
 

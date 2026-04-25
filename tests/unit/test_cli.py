@@ -565,6 +565,41 @@ class TestPluginsCommand:
         assert "semgrep" in result.output
 
 
+class TestIsolatedEnvironmentCheck:
+    """Tests for the venv/container enforcement."""
+
+    def test_rejects_global_install(self, monkeypatch) -> None:
+        """CLI exits 1 when sys.prefix == sys.base_prefix (no venv)."""
+        import sys as _sys
+
+        monkeypatch.setattr(_sys, "prefix", "/usr")
+        monkeypatch.setattr(_sys, "base_prefix", "/usr")
+        monkeypatch.delenv("EEDOM_ALLOW_GLOBAL", raising=False)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--repo-path", "."])
+        assert result.exit_code == 1
+        assert "isolated environment" in result.output
+
+    def test_allows_venv(self) -> None:
+        """CLI proceeds when running inside a venv (our test environment)."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+
+    def test_allows_bypass_env_var(self, monkeypatch) -> None:
+        """EEDOM_ALLOW_GLOBAL=1 overrides the check."""
+        import sys as _sys
+
+        monkeypatch.setattr(_sys, "prefix", "/usr")
+        monkeypatch.setattr(_sys, "base_prefix", "/usr")
+        monkeypatch.setenv("EEDOM_ALLOW_GLOBAL", "1")
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--repo-path", "."])
+        assert result.exit_code == 0
+
+
 class TestCliTopLevel:
     """Tests for the top-level CLI group."""
 
