@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyarrow.parquet as pq
+import pytest
+
+pq = pytest.importorskip("pyarrow.parquet", reason="pyarrow not installed (eedom[parquet])")
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from eedom.core.models import (
-    ReviewDecision,
-    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -21,14 +21,18 @@ from eedom.core.models import (
     OperatingMode,
     PolicyEvaluation,
     RequestType,
+    ReviewDecision,
+    ReviewRequest,
     ScanResult,
     ScanResultStatus,
 )
 from eedom.data.parquet_writer import (
-    SCHEMA,
+    _build_schema,
     append_decisions,
     decision_to_row,
 )
+
+SCHEMA = _build_schema()
 
 # ---------------------------------------------------------------------------
 # Helpers

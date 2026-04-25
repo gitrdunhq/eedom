@@ -13,7 +13,11 @@ from typing import Protocol, runtime_checkable
 
 import orjson
 import structlog
-from psycopg_pool import ConnectionPool
+
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:
+    ConnectionPool = None  # type: ignore[assignment,misc]
 
 from eedom.core.models import (
     BypassRecord,
@@ -81,6 +85,11 @@ class DecisionRepository:
         Returns True if the pool was created and a connection succeeds,
         False otherwise.
         """
+        if ConnectionPool is None:
+            logger.error(
+                "database_unavailable", reason="psycopg not installed (pip install eedom[db])"
+            )
+            return False
         try:
             self._pool = ConnectionPool(self._dsn, min_size=1, max_size=10, open=True)
             with self._pool.connection() as conn:

@@ -3,28 +3,63 @@ name = "eedom"
 version = "0.2.0"
 description = "Eagle Eyed Dom — fully deterministic dependency and code review for CI"
 requires-python = ">=3.12"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Sam Fakhreddine", email = "sambou@gmail.com"},
+]
+keywords = ["security", "code-review", "dependency-review", "sarif", "ci", "devsecops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "click==8.3.3",
     "pydantic==2.13.3",
     "pydantic-settings==2.14.0",
     "structlog==25.5.0",
     "httpx==0.28.1",
-    "psycopg[binary]==3.3.3",
-    "psycopg-pool==3.3.0",
     "orjson==3.11.8",
     "packaging==26.1",
-    "pyarrow==24.0.0",
-    "agent-framework-github-copilot==1.0.0b260424",
     "jinja2==3.1.6",
     "pyyaml==6.0.3",
+    "rich==13.9.4",
+]
+
+[project.optional-dependencies]
+db = [
+    "psycopg[binary]==3.3.3",
+    "psycopg-pool==3.3.0",
+]
+parquet = [
+    "pyarrow==24.0.0",
+]
+copilot = [
+    "agent-framework-github-copilot==1.0.0b260424",
+    "starlette==1.0.0",
+    "uvicorn==0.46.0",
+]
+watch = [
     "watchdog==6.0.0",
-    "rich>=13.7.0",
-    "starlette>=1.0.0",
-    "uvicorn>=0.46.0",
+]
+all = [
+    "eedom[db,parquet,copilot,watch]",
 ]
 
 [project.scripts]
 eedom = "eedom.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/gitrdunhq/eedom"
+Repository = "https://github.com/gitrdunhq/eedom"
+Changelog = "https://github.com/gitrdunhq/eedom/blob/main/CHANGELOG.md"
+Issues = "https://github.com/gitrdunhq/eedom/issues"
 
 [build-system]
 requires = ["hatchling"]

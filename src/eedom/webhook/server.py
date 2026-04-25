@@ -19,10 +19,16 @@ import subprocess
 
 import httpx
 import structlog
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
+
+try:
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, Response
+    from starlette.routing import Route
+except ImportError as _exc:
+    raise ImportError(
+        "starlette is required for the webhook server. Install with: pip install eedom[copilot]"
+    ) from _exc
 
 from eedom.webhook.config import WebhookSettings
 

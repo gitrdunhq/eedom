@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Annotated
 
 import structlog
-from agent_framework import tool
+
+try:
+    from agent_framework import tool
+except ImportError as _exc:
+    raise ImportError(
+        "agent_framework is required for the Copilot agent. "
+        "Install with: pip install eedom[copilot]"
+    ) from _exc
 
 from eedom.agent.tool_helpers import (
     _SAFE_NAME_RE,
