@@ -14,8 +14,19 @@ lint:
 	@uv run ruff check src/ tests/
 	@echo "Linting complete"
 
+CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+
 test:
-	@uv run pytest tests/ -v
+	@$(CONTAINER_ENGINE) build -f Dockerfile.test -t eedom-test:latest .
+	@$(CONTAINER_ENGINE) run --rm \
+		-v "$(CURDIR):/workspace:ro" \
+		-w /workspace \
+		-e EEDOM_ALLOW_GLOBAL=1 \
+		eedom-test:latest \
+		python3 -m pytest tests/ -v
+
+test-host:
+	@EEDOM_ALLOW_HOST_TESTS=1 uv run pytest tests/ -v
 
 dev:
 	@uv sync --group dev

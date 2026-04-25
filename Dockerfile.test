@@ -1,0 +1,31 @@
+# Test image — installs eedom from source with dev deps.
+# Unlike the runtime Dockerfile, this always reflects the current checkout.
+#
+# Build:  podman build -f Dockerfile.test -t eedom-test:latest .
+# Run:    podman run --rm -v .:/workspace:ro -w /workspace eedom-test:latest python3 -m pytest tests/ -v
+
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /workspace
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --group dev
+
+COPY src/ src/
+COPY tests/ tests/
+COPY policies/ policies/
+
+RUN uv sync --frozen --group dev
+
+# mypy for the type-checking plugin tests
+RUN uv pip install mypy
+
+ENV EEDOM_ALLOW_GLOBAL=1
+
+ENTRYPOINT ["uv", "run"]
