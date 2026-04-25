@@ -225,6 +225,19 @@ def check_health() -> None:
     default=None,
     help="Scan only this package directory.",
 )
+@click.option(
+    "--pr",
+    type=int,
+    default=None,
+    help="Post findings as inline PR review comments via GitHub API.",
+)
+@click.option(
+    "--repo",
+    "gh_repo",
+    type=str,
+    default=None,
+    help="GitHub repo (owner/name) for --pr mode. Auto-detected if omitted.",
+)
 def review(
     diff: str | None,
     repo_path: str,
@@ -241,6 +254,8 @@ def review(
     disable: str,
     enable: str,
     package: str | None,
+    pr: int | None,
+    gh_repo: str | None,
 ) -> None:
     """Run Eagle Eyed Dom plugin review on a repo or diff."""
     from eedom.core.plugin import PluginCategory
@@ -322,7 +337,7 @@ def review(
             package_units=package_units,
         )
 
-        if output_format == "sarif":
+        if output_format == "sarif" or pr:
             import orjson
 
             from eedom.core.sarif import to_sarif
@@ -330,6 +345,32 @@ def review(
             sarif_doc = to_sarif(
                 results, repo_path=str(repo), max_findings_per_run=sarif_max_findings
             )
+
+            if pr:
+                from eedom.core.pr_review import (
+                    detect_gh_repo,
+                    get_pr_diff_files,
+                    post_review,
+                    sarif_to_review,
+                )
+
+                target_repo = gh_repo or detect_gh_repo()
+                if not target_repo:
+                    click.echo("Could not detect GitHub repo. Use --repo owner/name.", err=True)
+                    sys.exit(1)
+
+                diff_files = get_pr_diff_files(target_repo, pr)
+                pr_review = sarif_to_review(sarif_doc, diff_files)
+                ok = post_review(target_repo, pr, pr_review)
+                click.echo(
+                    f"{'Posted' if ok else 'Failed to post'} review on PR #{pr}: "
+                    f"{pr_review.event} ({len(pr_review.comments)} inline, "
+                    f"{len(pr_review.outside_diff)} outside diff)"
+                )
+                if not ok:
+                    sys.exit(1)
+                return
+
             sarif_text = orjson.dumps(sarif_doc, option=orjson.OPT_INDENT_2).decode()
             if output:
                 Path(output).write_text(sarif_text)
