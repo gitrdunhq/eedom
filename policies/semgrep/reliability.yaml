@@ -1,0 +1,122 @@
+rules:
+  - id: org.reliability.unconditional-exit-zero
+    pattern: sys.exit(0)
+    paths:
+      include:
+        - src/eedom/agent/
+    message: >
+      Unconditional sys.exit(0) in agent code may bypass block-mode enforcement.
+      Check enforcement_mode before exiting clean.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.reliability.subprocess-no-timeout
+    patterns:
+      - pattern: subprocess.run(...)
+      - pattern-not: subprocess.run(..., timeout=..., ...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Every subprocess.run() call must have an explicit timeout.
+      Unbounded subprocesses can hang the pipeline.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.reliability.silent-pass-fallback
+    pattern: |
+      try:
+          ...
+      except $E:
+          pass
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Silent pass in except block hides failures.
+      Log the error or return a typed degraded result.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.reliability.substring-match-without-boundary
+    patterns:
+      - pattern: |
+          if $NEEDLE in $HAYSTACK:
+              ...
+      - metavariable-pattern:
+          metavariable: $NEEDLE
+          pattern: |
+            "..."
+      - metavariable-pattern:
+          metavariable: $HAYSTACK
+          patterns:
+            - pattern-not: "[...]"
+            - pattern-not: "(...)"
+            - pattern-not: "{...}"
+    paths:
+      exclude:
+        - tests/
+    message: >
+      String `in` check matches substrings — "ice" matches "device", "service".
+      Use a set lookup, exact equality, or re.search() with word boundaries.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.reliability.file-open-missing-oserror
+    patterns:
+      - pattern: |
+          try:
+              ...
+              open($PATH, ...)
+              ...
+          except $SPECIFIC_ERROR:
+              ...
+      - pattern-not: |
+          try:
+              ...
+              open($PATH, ...)
+              ...
+          except OSError:
+              ...
+      - pattern-not: |
+          try:
+              ...
+              open($PATH, ...)
+              ...
+          except (OSError, ...):
+              ...
+      - pattern-not: |
+          try:
+              ...
+              open($PATH, ...)
+              ...
+          except Exception:
+              ...
+    paths:
+      exclude:
+        - tests/
+    message: >
+      open() can raise OSError (file not found, permission denied) but the
+      except clause only catches a narrower exception type.
+      Add OSError to the except clause or use a broad Exception handler.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.reliability.subprocess-run-unhandled-exceptions
+    patterns:
+      - pattern: |
+          $RESULT = subprocess.run(...)
+      - pattern-not-inside: |
+          try:
+              ...
+          except ...:
+              ...
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: >
+      subprocess.run() can raise FileNotFoundError (binary missing) and
+      TimeoutExpired. Wrap in try/except or use a helper that handles both.
+    severity: WARNING
+    languages: [python]

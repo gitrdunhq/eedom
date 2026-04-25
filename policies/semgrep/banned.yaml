@@ -1,0 +1,11 @@
+rules:
+  - id: org.banned.print-in-source
+    pattern: print(...)
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: >
+      Use structlog, not print(). print() is banned in production code.
+    severity: WARNING
+    languages: [python]

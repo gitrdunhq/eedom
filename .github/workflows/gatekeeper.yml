@@ -111,8 +111,8 @@ jobs:
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
             sh -c "
-              uv run eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif
-              uv run eedom review --repo-path /workspace --all --output /workspace/.temp/review.md || true
+              eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif
+              eedom review --repo-path /workspace --all --output /workspace/.temp/review.md || true
             "
 
       - name: Run eedom review (native)

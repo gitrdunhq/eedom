@@ -244,6 +244,7 @@ RUN rm -f /bin/sh \
     && chmod 0755 /bin/sh
 
 ENV PYTHONPATH=/opt/pysite \
+    PATH="/opt/pysite/bin:${PATH}" \
     EEDOM_OPERATING_MODE=monitor \
     EEDOM_OPA_POLICY_PATH=/opt/eedom/policies \
     EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,clamav

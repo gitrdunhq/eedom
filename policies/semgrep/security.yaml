@@ -1,0 +1,53 @@
+rules:
+  - id: org.security.secret-in-log
+    patterns:
+      - pattern: logger.$METHOD(..., password=$X, ...)
+      - pattern: logger.$METHOD(..., secret=$X, ...)
+      - pattern: logger.$METHOD(..., token=$X, ...)
+      - pattern: logger.$METHOD(..., api_key=$X, ...)
+      - pattern: logger.$METHOD(..., dsn=$X, ...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Do not log secrets, passwords, tokens, or raw DSNs.
+      Use SecretStr or mask before logging.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.pickle-load
+    pattern: pickle.loads(...)
+    message: >
+      pickle.loads() is a deserialization vulnerability.
+      Use JSON, orjson, or a safe serialization format.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.pickle-load-file
+    pattern: pickle.load(...)
+    message: >
+      pickle.load() is a deserialization vulnerability.
+      Use JSON, orjson, or a safe serialization format.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.eval-call
+    pattern: eval(...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      eval() executes arbitrary code. Never use on external input.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.os-system
+    pattern: os.system(...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      os.system() is a command injection vector.
+      Use subprocess.run() with explicit args list and timeout.
+    severity: ERROR
+    languages: [python]

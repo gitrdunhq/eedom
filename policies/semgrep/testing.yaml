@@ -1,0 +1,40 @@
+rules:
+  - id: org.testing.weak-assertion-defined
+    pattern: assert $X is not None
+    paths:
+      include:
+        - tests/
+    message: >
+      Assert concrete values, not just existence.
+      A test that passes when the implementation is deleted is worthless.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.testing.weak-assertion-truthy
+    patterns:
+      - pattern: assert $X
+      - pattern-not: assert $X == $Y
+      - pattern-not: assert $X in $Y
+      - pattern-not: assert $X is $Y
+      - pattern-not: assert $X != $Y
+      - pattern-not: assert $X not in $Y
+      - pattern-not: assert $X is not $Y
+      - pattern-not: assert $X >= $Y
+      - pattern-not: assert $X <= $Y
+      - pattern-not: assert $X > $Y
+      - pattern-not: assert $X < $Y
+      - pattern-not: assert isinstance($X, $Y)
+      - pattern-not: assert len($X) == $Y
+      - pattern-not: assert len($X) > $Y
+      - pattern-not: assert len($X) >= $Y
+      - pattern-not: assert not $X
+      - pattern-not: assert any($X)
+      - pattern-not: assert all($X)
+    paths:
+      include:
+        - tests/
+    message: >
+      Bare `assert result` is a weak assertion.
+      Assert specific values, types, or conditions.
+    severity: INFO
+    languages: [python]

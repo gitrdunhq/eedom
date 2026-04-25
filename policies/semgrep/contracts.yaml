@@ -1,0 +1,38 @@
+rules:
+  - id: org.contract.raw-string-status
+    patterns:
+      - pattern: |
+          $X = "approve"
+      - pattern: |
+          $X = "reject"
+      - pattern: |
+          $X = "needs_review"
+      - pattern: |
+          $X = "approve_with_constraints"
+      - pattern: |
+          $X == "approve"
+      - pattern: |
+          $X == "reject"
+    paths:
+      exclude:
+        - tests/
+        - policies/
+    message: >
+      Use DecisionVerdict enum instead of raw verdict strings.
+      Raw strings drift and bypass type checking.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.contract.event-type-string-literal
+    patterns:
+      - pattern: event_type="$VAL"
+      - pattern-not-inside: |
+          $CONST = "$VAL"
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Event types should come from an enum or constant, not string literals.
+      Mismatched event_type strings between producer and consumer cause silent failures.
+    severity: WARNING
+    languages: [python]
