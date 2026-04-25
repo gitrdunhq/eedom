@@ -54,9 +54,30 @@ class DebounceTimer:
                 self._timer = None
 
 
+def _check_isolated_environment() -> None:
+    """Abort if running outside a virtual environment or container."""
+    in_venv = sys.prefix != sys.base_prefix
+    in_container = Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
+    bypass = "EEDOM_ALLOW_GLOBAL" in __import__("os").environ
+    if not in_venv and not in_container and not bypass:
+        click.echo(
+            "ERROR: eedom must run in an isolated environment.\n"
+            "\n"
+            "  uvx eedom review --all              # recommended\n"
+            "  pipx install eedom                   # persistent CLI\n"
+            "  pip install eedom  (inside a venv)   # manual venv\n"
+            "  docker run eedom                     # container\n"
+            "\n"
+            "Set EEDOM_ALLOW_GLOBAL=1 to override (not recommended).",
+            err=True,
+        )
+        raise SystemExit(1)
+
+
 @click.group()
 def cli() -> None:
-    """Agentic Dependency Review — PoC CLI."""
+    """Eagle Eyed Dom — fully deterministic dependency and code review for CI."""
+    _check_isolated_environment()
 
 
 @cli.command()
