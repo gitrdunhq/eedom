@@ -243,11 +243,12 @@ RUN rm -f /bin/sh \
     && echo 'exec /usr/bin/dash "$@"'                          >> /bin/sh \
     && chmod 0755 /bin/sh
 
+RUN printf '#!/bin/sh\nexec python3 -m eedom.cli.main "$@"\n' > /usr/local/bin/eedom \
+    && chmod +x /usr/local/bin/eedom
+
 ENV PYTHONPATH=/opt/pysite \
-    PATH="/opt/pysite/bin:${PATH}" \
     EEDOM_OPERATING_MODE=monitor \
     EEDOM_OPA_POLICY_PATH=/opt/eedom/policies \
     EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,clamav
 
-# Default entrypoint: python3 -m eedom.cli.main <subcommand>
-ENTRYPOINT ["python3", "-m", "eedom.cli.main"]
+ENTRYPOINT ["eedom"]
