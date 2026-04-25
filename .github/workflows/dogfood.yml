@@ -1,0 +1,28 @@
+name: Dogfood
+
+on:
+  schedule:
+    - cron: '0 15 * * 1'  # Monday 9am Edmonton (UTC-6)
+  workflow_dispatch:
+
+jobs:
+  dogfood:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install deps
+        run: uv sync --group dev
+
+      - name: Run eedom self-review
+        run: uv run eedom review --repo-path . --all --format sarif --output dogfood-results.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dogfood-sarif
+          path: dogfood-results.sarif
+          retention-days: 30

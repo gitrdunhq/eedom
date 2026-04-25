@@ -2,6 +2,8 @@ name: GATEKEEPER — Dependency & Code Review
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
   workflow_dispatch:
     inputs:
@@ -273,3 +275,28 @@ jobs:
           VERDICT: ${{ steps.verdict.outputs.verdict }}
           ERRORS: ${{ steps.verdict.outputs.errors }}
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
+
+      - name: Gitleaks PII scan
+        if: always()
+        run: |
+          if command -v gitleaks &>/dev/null; then
+            CONFIG_FLAG=""
+            [ -f ".eedom/gitleaks.toml" ] && CONFIG_FLAG="--config .eedom/gitleaks.toml"
+            gitleaks detect --log-opts "--all -1" $CONFIG_FLAG
+          else
+            echo "gitleaks not installed — skipping"
+          fi
+
+      - name: Post release key
+        if: success()
+        run: |
+          SHA=$(git rev-parse HEAD)
+          TOKEN=$(python3 -c "import hmac,hashlib; print(hmac.new('$RELEASE_UNLOCK_WORD'.encode(), '$SHA'.encode(), hashlib.sha256).hexdigest())")
+          gh api repos/${{ github.repository }}/statuses/"$SHA" \
+            --method POST \
+            -f state=success \
+            -f context=ci/release-key \
+            -f description="$TOKEN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_UNLOCK_WORD: ${{ secrets.RELEASE_UNLOCK_WORD }}
