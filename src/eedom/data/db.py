@@ -16,10 +16,10 @@ import structlog
 from psycopg_pool import ConnectionPool
 
 from eedom.core.models import (
-    ReviewDecision,
-    ReviewRequest,
     BypassRecord,
     PolicyEvaluation,
+    ReviewDecision,
+    ReviewRequest,
     ScanResult,
 )
 

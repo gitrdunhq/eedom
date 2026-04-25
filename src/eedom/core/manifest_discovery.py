@@ -64,7 +64,7 @@ _ALWAYS_SKIP: frozenset[str] = frozenset(
         ".venv",
         ".claude",
         ".eedom",
-        
+
     }
 )
 

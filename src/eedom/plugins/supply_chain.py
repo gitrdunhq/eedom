@@ -11,9 +11,12 @@ import json
 import re
 from pathlib import Path
 
+import structlog
 import yaml
 
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
+
+logger = structlog.get_logger(__name__)
 
 _LOCKFILE_TO_MANIFEST: dict[str, list[str]] = {
     "package-lock.json": ["package.json"],
@@ -226,8 +229,8 @@ class SupplyChainPlugin(ScannerPlugin):
                                     "reason": self._npm_reason(ver),
                                 }
                             )
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as exc:
+                logger.debug("supply_chain.manifest_parse_error", error=str(exc))
 
         for req in repo.rglob("requirements*.txt"):
             try:
@@ -250,8 +253,8 @@ class SupplyChainPlugin(ScannerPlugin):
                                 "reason": self._py_reason(spec),
                             }
                         )
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("supply_chain.requirements_read_error", file=str(req), error=str(exc))
 
         return findings
 

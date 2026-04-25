@@ -170,7 +170,7 @@ def _map_severity(vuln: dict) -> FindingSeverity:
         try:
             return _cvss_score_to_severity(float(score_str))
         except ValueError:
-            pass
+            logger.debug("cvss.parse_error", score_str=score_str)
 
         # CVSS vector string (e.g. "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")
         # Approximate base score from impact metrics — no external library needed.
