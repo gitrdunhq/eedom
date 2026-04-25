@@ -14,7 +14,7 @@ from eedom.core.plugin import PluginResult
 
 _MAX_COMMENT_LENGTH = 65536
 _DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
-_VERSION = "0.1.0"
+_VERSION = "1.2.0"
 
 _SEVERITY_WEIGHTS: dict[str, int] = {
     "critical": 10,
