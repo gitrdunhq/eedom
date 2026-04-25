@@ -106,7 +106,7 @@ jobs:
         if: steps.runtime.outputs.container == 'true'
         run: |
           ENGINE="${{ steps.runtime.outputs.engine }}"
-          $ENGINE run --rm \
+          $ENGINE run --rm --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
