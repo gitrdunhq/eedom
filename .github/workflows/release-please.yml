@@ -11,6 +11,7 @@ permissions:
   pull-requests: write
   id-token: write
   attestations: write
+  statuses: read
 
 jobs:
   release-please:
@@ -41,7 +42,7 @@ jobs:
             echo "WARNING: No ci/release-key status found for $SHA — skipping verification" >&2
             exit 0
           fi
-          EXPECTED=$(python3 -c "import hmac,hashlib; print(hmac.new('$RELEASE_UNLOCK_WORD'.encode(), '$SHA'.encode(), hashlib.sha256).hexdigest())")
+          EXPECTED=$(python3 -c "import hmac,hashlib,os; print(hmac.new(os.environ['RELEASE_UNLOCK_WORD'].encode(), os.environ['VERIFY_SHA'].encode(), hashlib.sha256).hexdigest())")
           if [ "$STORED" = "$EXPECTED" ]; then
             echo "VERIFIED"
           else
@@ -51,6 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_UNLOCK_WORD: ${{ secrets.RELEASE_UNLOCK_WORD }}
+          VERIFY_SHA: ${{ github.sha }}
 
   publish:
     needs: [release-please, verify-key]
@@ -65,7 +67,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
 
       - name: Build
         run: uv build

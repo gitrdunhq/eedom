@@ -54,6 +54,7 @@ jobs:
         run: uv sync --group dev
 
       - name: Generate PR diff
+        if: github.event_name == 'pull_request'
         id: diff
         run: |
           mkdir -p .temp
@@ -288,10 +289,10 @@ jobs:
           fi
 
       - name: Post release key
-        if: success()
+        if: success() && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)
         run: |
           SHA=$(git rev-parse HEAD)
-          TOKEN=$(python3 -c "import hmac,hashlib; print(hmac.new('$RELEASE_UNLOCK_WORD'.encode(), '$SHA'.encode(), hashlib.sha256).hexdigest())")
+          TOKEN=$(python3 -c "import hmac,hashlib,os; print(hmac.new(os.environ['RELEASE_UNLOCK_WORD'].encode(), os.environ['KEY_SHA'].encode(), hashlib.sha256).hexdigest())")
           gh api repos/${{ github.repository }}/statuses/"$SHA" \
             --method POST \
             -f state=success \
@@ -300,3 +301,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_UNLOCK_WORD: ${{ secrets.RELEASE_UNLOCK_WORD }}
+          KEY_SHA: ${{ github.sha }}
