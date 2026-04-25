@@ -10,16 +10,17 @@ Eagle Eyed Dom — fully deterministic dependency and code review for CI. 15 plu
 
 ```bash
 uv sync --group dev                    # Install all deps
-uv run pytest tests/ -v                # Run all tests
-uv run pytest tests/unit/test_X.py -v  # Run one test file
+make test                              # Run tests in container (podman/docker)
+make test-host                         # Run tests on host (escape hatch)
 uv run ruff check src/ tests/          # Lint
 uv run black src/ tests/               # Format
 make quality-check                     # Format + lint
-make test                              # Run tests
 make dogfood                           # Self-scan with eedom review
 make preflight                         # Format + lint + test + dogfood
 opa test policies/                     # OPA Rego policy tests
 ```
+
+**Tests MUST run in a container.** `make test` handles this automatically. Bare `uv run pytest` will abort with an error unless `EEDOM_ALLOW_HOST_TESTS=1` is set.
 
 Container:
 ```bash
