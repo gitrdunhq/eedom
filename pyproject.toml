@@ -26,6 +26,13 @@ dependencies = [
 [project.scripts]
 eedom = "eedom.cli.main:cli"
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eedom"]
+
 [tool.uv]
 package = true
 

@@ -45,18 +45,24 @@ class GitleaksPlugin(ScannerPlugin):
         repo_path: Path,
         timeout: int = 60,
     ) -> PluginResult:
+        cmd = [
+            "gitleaks",
+            "dir",
+            str(repo_path),
+            "--report-format",
+            "json",
+            "--report-path",
+            "/dev/stdout",
+            "--no-banner",
+        ]
+        custom_config = repo_path / ".eedom" / "gitleaks.toml"
+        if custom_config.is_file():
+            cmd.extend(["--config", str(custom_config)])
+            logger.info("gitleaks.custom_config", path=str(custom_config))
+
         try:
             r = subprocess.run(
-                [
-                    "gitleaks",
-                    "dir",
-                    str(repo_path),
-                    "--report-format",
-                    "json",
-                    "--report-path",
-                    "/dev/stdout",
-                    "--no-banner",
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
