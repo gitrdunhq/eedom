@@ -332,7 +332,20 @@ class TestCalculateSeverityScore:
         ]
         assert calculate_severity_score(results) == 100.0
 
-    def test_score_shown_in_comment_when_below_100(self):
+    def test_quality_plugins_excluded_from_security_score(self):
+        results = [
+            PluginResult(
+                plugin_name="blast-radius",
+                findings=[{"severity": "critical"} for _ in range(100)],
+            ),
+            PluginResult(
+                plugin_name="complexity",
+                findings=[{"severity": "high"} for _ in range(50)],
+            ),
+        ]
+        assert calculate_severity_score(results) == 100.0
+
+    def test_score_shown_in_comment_with_security_and_quality(self):
         results = [
             PluginResult(
                 plugin_name="osv-scanner",
@@ -340,9 +353,10 @@ class TestCalculateSeverityScore:
             )
         ]
         md = render_comment(results, repo="org/repo", pr_num=1, title="test")
-        assert "Health Score: 90/100" in md
+        assert "Security: 90/100" in md
+        assert "Quality:" in md
 
-    def test_score_not_shown_in_comment_when_100(self):
+    def test_score_shown_even_when_100(self):
         results = [PluginResult(plugin_name="osv-scanner", findings=[])]
         md = render_comment(results, repo="org/repo", pr_num=1, title="test")
-        assert "Health Score" not in md
+        assert "Security: 100/100" in md

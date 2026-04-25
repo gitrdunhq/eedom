@@ -24,16 +24,61 @@ _SEVERITY_WEIGHTS: dict[str, int] = {
     "info": 0,
 }
 
+_SECURITY_PLUGINS: set[str] = {
+    "gitleaks",
+    "semgrep",
+    "trivy",
+    "osv-scanner",
+    "clamav",
+    "supply-chain",
+    "opa",
+    "scancode",
+    "kube-linter",
+    "mypy",
+}
+
+_QUALITY_PLUGINS: set[str] = {
+    "blast-radius",
+    "complexity",
+    "cpd",
+    "cspell",
+    "ls-lint",
+}
+
+
+def _plugin_is_security(plugin_name: str) -> bool:
+    normalized = plugin_name.lower().replace("_", "-")
+    return normalized in _SECURITY_PLUGINS
+
 
 def calculate_severity_score(results: list[PluginResult]) -> float:
-    """Return a 0-100 health score across all plugin findings.
+    """Return a 0-100 health score based on security plugin findings only.
 
-    Formula: max(0, 100 - sum(weight(severity) for each finding))
+    Quality plugins (blast-radius, complexity, cpd, cspell, ls-lint) are
+    excluded from the score — they are advisory, not merge-blocking.
+
+    Formula: max(0, 100 - sum(weight(severity) for each security finding))
     Weights: critical=10, high=5, medium=2, low=1, info=0.
-    Unknown or missing severity keys are treated as info (weight 0).
     """
     total_weight = 0
     for result in results:
+        if not _plugin_is_security(result.plugin_name):
+            continue
+        for finding in result.findings:
+            sev = str(finding.get("severity", "")).lower()
+            total_weight += _SEVERITY_WEIGHTS.get(sev, 0)
+    return max(0.0, min(100.0, 100.0 - total_weight))
+
+
+def calculate_quality_score(results: list[PluginResult]) -> float:
+    """Return a 0-100 quality score based on quality plugin findings only.
+
+    Advisory — does not gate merges. Reported alongside the security score.
+    """
+    total_weight = 0
+    for result in results:
+        if _plugin_is_security(result.plugin_name):
+            continue
         for finding in result.findings:
             sev = str(finding.get("severity", "")).lower()
             total_weight += _SEVERITY_WEIGHTS.get(sev, 0)
@@ -75,6 +120,7 @@ def _build_monorepo_sections(
     for pkg_root, pkg_results in packages.items():
         pkg_verdict, pkg_rows, pkg_finding_sections = _build_sections(pkg_results, plugin_renderers)
         pkg_score = calculate_severity_score(pkg_results)
+        pkg_quality = calculate_quality_score(pkg_results)
 
         if _verdict_rank(pkg_verdict) > _verdict_rank(overall_verdict):
             overall_verdict = pkg_verdict
@@ -82,7 +128,7 @@ def _build_monorepo_sections(
         header = pkg_root if pkg_root else "(root)"
         pkg_lines: list[str] = [
             f"## {header}",
-            f"> Score: {int(pkg_score)}/100",
+            f"> Security: {int(pkg_score)}/100 · Quality: {int(pkg_quality)}/100",
             "",
             "| Plugin | Findings |",
             "|--------|----------|",
@@ -96,7 +142,12 @@ def _build_monorepo_sections(
                 pkg_lines.append(fs)
 
         sections.append("\n".join(pkg_lines))
-        summary_rows.append((header, f"{pkg_verdict.upper()} (Score: {int(pkg_score)}/100)"))
+        summary_rows.append(
+            (
+                header,
+                f"{pkg_verdict.upper()} (Sec: {int(pkg_score)} · Qual: {int(pkg_quality)})",
+            )
+        )
 
     return overall_verdict, summary_rows, sections
 
@@ -124,6 +175,7 @@ def render_comment(
         verdict, summary_rows, sections = _build_sections(results, plugin_renderers)
 
     severity_score = calculate_severity_score(results)
+    quality_score = calculate_quality_score(results)
     mi_grade, mi_score, mi_icon, avg_ccn, hi_ccn, mi_c_count = _extract_mi(results)
 
     footer_parts = []
@@ -144,6 +196,7 @@ def render_comment(
         summary_rows=summary_rows,
         sections=sections,
         severity_score=severity_score,
+        quality_score=quality_score,
         mi_grade=mi_grade,
         mi_score=mi_score,
         mi_icon=mi_icon,

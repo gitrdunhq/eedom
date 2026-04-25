@@ -11,8 +11,8 @@
 > 🟢 **ALL CLEAR**
 {% endif %}
 
-{% if severity_score is not none and severity_score < 100 %}
-> **Health Score: {{ severity_score | int }}/100**
+{% if severity_score is not none %}
+> **Security: {{ severity_score | int }}/100** · Quality: {{ quality_score | int }}/100
 {% endif %}
 {% if mi_grade %}
 > **Maintainability: {{ mi_icon }} {{ mi_grade }} ({{ mi_score }}/100)** · CCN avg {{ avg_ccn }}{% if hi_ccn %} · ⚠️ {{ hi_ccn }} high-complexity{% endif %}{% if mi_c_count %} · 🔴 {{ mi_c_count }} grade-C{% endif %}
