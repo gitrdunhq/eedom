@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
+from unittest.mock import patch
 
 from eedom.plugins._runners.graph_builder import CodeGraph
+from eedom.plugins.blast_radius import BlastRadiusPlugin
 
 SAMPLE_PYTHON = textwrap.dedent("""\
     import os
@@ -267,3 +270,20 @@ class TestCodeGraph:
         assert "noop_function" in names
         assert "mock_stub_in_source" in names
         assert len(names) >= 8
+
+
+class TestBlastRadiusPluginReadOnly:
+    def test_run_falls_back_to_temp_dir_on_read_only_fs(self, tmp_path):
+        """blast-radius should not crash when repo_path is read-only."""
+        # Write a tiny Python file so can_run returns True.
+        src = tmp_path / "mod.py"
+        src.write_text("def hello():\n    pass\n")
+
+        plugin = BlastRadiusPlugin()
+
+        # Simulate a read-only workspace: mkdir raises OSError(30, …)
+        with patch.object(Path, "mkdir", side_effect=OSError(30, "Read-only file system")):
+            result = plugin.run(["mod.py"], tmp_path)
+
+        # Must not surface the OSError as a plugin error
+        assert result.error == "", f"Unexpected error: {result.error}"
