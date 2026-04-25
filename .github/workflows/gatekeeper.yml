@@ -260,12 +260,7 @@ jobs:
             gh pr comment "$PR_NUM" --body "$HANDOFF"
           fi
 
-          if gh pr edit "$PR_NUM" --add-reviewer @copilot 2>/dev/null; then
-            gh issue edit "$PR_NUM" --remove-label "dom: needs-copilot" 2>/dev/null || true
-          else
-            gh issue edit "$PR_NUM" --add-label "dom: needs-copilot"
-            gh pr comment "$PR_NUM" --body "⚠️ **Could not request Copilot review.** The workflow token lacks permission to add reviewers. Run manually: \`gh pr edit $PR_NUM --add-reviewer @copilot\`"
-          fi
+          # Copilot review is requested by copilot-review.yml when dom: approved label is applied
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

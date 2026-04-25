@@ -1,0 +1,21 @@
+name: Request Copilot Review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  request-copilot:
+    if: github.event.label.name == 'dom: approved'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Request Copilot code review
+        run: |
+          gh pr edit "$PR_NUM" --repo "$REPO" --add-reviewer @copilot
+          echo "Copilot review requested on PR #$PR_NUM"
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_REVIEWER_PAT }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
