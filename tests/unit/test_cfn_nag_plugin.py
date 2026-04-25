@@ -8,9 +8,8 @@ import json
 import subprocess
 from unittest.mock import patch
 
-from eedom.plugins.cfn_nag import CfnNagPlugin
-
 from eedom.core.plugin import PluginCategory
+from eedom.plugins.cfn_nag import CfnNagPlugin
 
 # Realistic cfn-nag JSON output with one FAIL and one WARN
 CFN_NAG_OUTPUT = json.dumps(
@@ -229,3 +228,35 @@ class TestCfnNagPluginRun:
 
         assert "total" in result.summary
         assert result.summary["total"] == 2
+
+    @patch("eedom.plugins._runners.cfn_nag_runner.subprocess.run")
+    def test_crashed_with_empty_stdout_returns_error(self, mock_run, tmp_path):
+        """Non-zero exit + empty stdout must report an error, not a clean scan."""
+        template = tmp_path / "template.yaml"
+        template.write_text("AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n")
+
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = "cfn_nag_scan: command failed"
+
+        p = CfnNagPlugin()
+        result = p.run([str(template)], tmp_path)
+
+        assert "BINARY_CRASHED" in result.error
+        assert result.findings == []
+
+    @patch("eedom.plugins._runners.cfn_nag_runner.subprocess.run")
+    def test_crashed_with_invalid_json_returns_error(self, mock_run, tmp_path):
+        """Non-zero exit + non-JSON stdout must report an error, not a clean scan."""
+        template = tmp_path / "template.yaml"
+        template.write_text("AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n")
+
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = "Traceback (most recent call last):\n  RuntimeError: boom"
+        mock_run.return_value.stderr = ""
+
+        p = CfnNagPlugin()
+        result = p.run([str(template)], tmp_path)
+
+        assert "BINARY_CRASHED" in result.error
+        assert result.findings == []

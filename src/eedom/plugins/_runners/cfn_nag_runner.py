@@ -36,6 +36,31 @@ def run_cfn_nag(
                 cwd=repo_path,
                 check=False,
             )
+            if result.returncode != 0:
+                # cfn-nag exits non-zero both when it finds violations (stdout
+                # contains valid JSON) and when it crashes (empty / garbled
+                # stdout).  Only the crash case is an error.
+                stdout_is_valid_json = False
+                if result.stdout:
+                    try:
+                        json.loads(result.stdout)
+                        stdout_is_valid_json = True
+                    except json.JSONDecodeError:
+                        pass
+                if not stdout_is_valid_json:
+                    from eedom.core.errors import ErrorCode, error_msg
+
+                    msg = error_msg(
+                        ErrorCode.BINARY_CRASHED,
+                        "cfn-nag",
+                        exit_code=result.returncode,
+                    )
+                    logger.warning(
+                        "cfn_nag.crashed",
+                        error=msg,
+                        returncode=result.returncode,
+                    )
+                    return {"error": msg, "findings": []}
             if result.stdout:
                 file_findings = _parse_output(result.stdout, file_path)
                 findings.extend(file_findings)
