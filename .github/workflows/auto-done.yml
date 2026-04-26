@@ -1,0 +1,104 @@
+name: Auto-done on close/merge
+
+on:
+  issues:
+    types: [closed]
+  pull_request_target:
+    types: [closed]
+
+jobs:
+  move-to-done:
+    name: Move to Done on project board
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'issues' ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITRDUNHQ_PROJECT_BOT }}
+          script: |
+            const org = 'gitrdunhq';
+            const repo = context.repo.repo;
+            const isIssue = context.eventName === 'issues';
+            const nodeId = isIssue
+              ? context.payload.issue.node_id
+              : context.payload.pull_request.node_id;
+
+            // Find which project this repo is linked to
+            const { organization } = await github.graphql(`
+              query($org: String!) {
+                organization(login: $org) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      repositories(first: 50) {
+                        nodes { name }
+                      }
+                      field(name: "Status") {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          options { id name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }`, { org });
+
+            const project = organization.projectsV2.nodes.find(p =>
+              p.repositories.nodes.some(r => r.name === repo)
+            );
+
+            if (!project) {
+              console.log(`No project found linked to ${repo}, skipping`);
+              return;
+            }
+
+            const doneOption = project.field.options.find(o => o.name === 'Done');
+            if (!doneOption) {
+              console.log('No "Done" status option found, skipping');
+              return;
+            }
+
+            // Find the item on the project board
+            const { node } = await github.graphql(`
+              query($nodeId: ID!) {
+                node(id: $nodeId) {
+                  ... on Issue {
+                    projectItems(first: 10) {
+                      nodes { id project { id } }
+                    }
+                  }
+                  ... on PullRequest {
+                    projectItems(first: 10) {
+                      nodes { id project { id } }
+                    }
+                  }
+                }
+              }`, { nodeId });
+
+            const item = node.projectItems.nodes.find(i => i.project.id === project.id);
+            if (!item) {
+              console.log(`Item not found on project ${project.title}, skipping`);
+              return;
+            }
+
+            // Move to Done
+            await github.graphql(`
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) { projectV2Item { id } }
+              }`, {
+              projectId: project.id,
+              itemId: item.id,
+              fieldId: project.field.id,
+              optionId: doneOption.id
+            });
+
+            console.log(`Moved to Done on ${project.title}`);
