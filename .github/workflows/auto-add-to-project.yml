@@ -14,4 +14,4 @@ jobs:
       - uses: actions/add-to-project@v1.0.2
         with:
           project-url: https://github.com/orgs/gitrdunhq/projects/3
-          github-token: ${{ secrets.PROJECT_TOKEN }}
+          github-token: ${{ secrets.GITRDUNHQ_PROJECT_BOT }}
