@@ -73,9 +73,10 @@ jobs:
         run: uv build
 
       - name: Generate SBOM
+        continue-on-error: true
         run: |
           uv tool install cyclonedx-bom --force
-          cyclonedx-py environment --output sbom.cdx.json --output-format json
+          cyclonedx-py environment -o sbom.cdx.json --of json
           gh release upload ${{ needs.release-please.outputs.tag_name }} sbom.cdx.json
         env:
           GH_TOKEN: ${{ github.token }}
