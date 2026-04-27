@@ -176,13 +176,17 @@ class TestMultiplePlugins:
         assert names == ["semgrep", "gitleaks"]
 
     def test_error_plugins_still_produce_runs(self) -> None:
-        """Errored plugins still appear as runs with zero results."""
+        """Errored plugins appear as runs with an error-level result."""
         results = [
             PluginResult(plugin_name="semgrep", findings=[], summary={}, error="timeout"),
         ]
         out = to_sarif(results)
         assert len(out["runs"]) == 1
-        assert out["runs"][0]["results"] == []
+        assert len(out["runs"][0]["results"]) == 1
+        err_result = out["runs"][0]["results"][0]
+        assert err_result["level"] == "error"
+        assert "timeout" in err_result["message"]["text"]
+        assert err_result["ruleId"] == "eedom-plugin-error"
 
 
 class TestRuleIdFallbacks:
@@ -423,3 +427,66 @@ class TestFindingCap:
         )
         out = to_sarif([result], max_findings_per_run=0)
         assert len(out["runs"][0]["results"]) == 5000
+
+
+class TestPluginErrorsInSarif:
+    """Plugin errors must be visible in SARIF so downstream consumers can detect failures."""
+
+    def test_not_installed_error_emits_error_result(self) -> None:
+        result = PluginResult(
+            plugin_name="semgrep",
+            findings=[],
+            summary={},
+            error="[NOT_INSTALLED] semgrep not installed",
+        )
+        out = to_sarif([result])
+        run = out["runs"][0]
+        assert len(run["results"]) == 1
+        assert run["results"][0]["level"] == "error"
+        assert "NOT_INSTALLED" in run["results"][0]["message"]["text"]
+
+    def test_timeout_error_emits_error_result(self) -> None:
+        result = PluginResult(
+            plugin_name="scancode",
+            findings=[],
+            summary={},
+            error="[TIMEOUT] scancode timed out after 60s",
+        )
+        out = to_sarif([result])
+        assert out["runs"][0]["results"][0]["level"] == "error"
+        assert "TIMEOUT" in out["runs"][0]["results"][0]["message"]["text"]
+
+    def test_error_result_has_eedom_plugin_error_rule_id(self) -> None:
+        result = PluginResult(
+            plugin_name="blast-radius",
+            findings=[],
+            summary={},
+            error="unable to open database file",
+        )
+        out = to_sarif([result])
+        assert out["runs"][0]["results"][0]["ruleId"] == "eedom-plugin-error"
+
+    def test_error_plus_findings_emits_both(self) -> None:
+        """A plugin that partially ran before erroring keeps its findings + error."""
+        result = PluginResult(
+            plugin_name="trivy",
+            findings=[{"id": "CVE-1", "severity": "high", "summary": "vuln"}],
+            summary={},
+            error="scan interrupted",
+        )
+        out = to_sarif([result])
+        results = out["runs"][0]["results"]
+        assert len(results) == 2
+        levels = {r["level"] for r in results}
+        assert "error" in levels
+
+    def test_clean_plugin_zero_findings_no_error_result(self) -> None:
+        """A plugin that ran cleanly with 0 findings must NOT emit an error result."""
+        result = PluginResult(
+            plugin_name="gitleaks",
+            findings=[],
+            summary={},
+            error="",
+        )
+        out = to_sarif([result])
+        assert out["runs"][0]["results"] == []

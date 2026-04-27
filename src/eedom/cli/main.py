@@ -77,9 +77,23 @@ def _check_isolated_environment() -> None:
 
 
 @click.group()
+@click.version_option(package_name="eedom")
 def cli() -> None:
     """Eagle Eyed Dom — fully deterministic dependency and code review for CI."""
     _check_isolated_environment()
+
+
+def _register_subcommands() -> None:
+    from eedom.cli.inspect_cmds import check_health, healthcheck, plugins
+    from eedom.cli.query_cmd import query
+
+    cli.add_command(healthcheck)
+    cli.add_command(check_health)
+    cli.add_command(plugins)
+    cli.add_command(query)
+
+
+_register_subcommands()
 
 
 @cli.command()
@@ -156,50 +170,6 @@ def evaluate(
     except Exception:
         logger.exception("pipeline_failed_unexpectedly")
         sys.exit(1)
-
-
-@cli.command("check-health")
-def check_health() -> None:
-    """Verify scanner binaries and database connectivity."""
-    import shutil
-
-    tools = ["syft", "osv-scanner", "trivy", "scancode", "opa"]
-    all_ok = True
-
-    click.echo("Scanner Health Check")
-    click.echo("=" * 40)
-    for tool in tools:
-        path = shutil.which(tool)
-        if path:
-            click.echo(f"  {tool:<15} OK  ({path})")
-        else:
-            click.echo(f"  {tool:<15} MISSING")
-            all_ok = False
-
-    click.echo()
-
-    try:
-        from eedom.core.config import EedomSettings
-
-        config = EedomSettings()  # type: ignore[call-arg]
-        from eedom.data.db import DecisionRepository
-
-        db = DecisionRepository(dsn=config.db_dsn)
-        if db.connect():
-            click.echo("  Database        OK")
-            db.close()
-        else:
-            click.echo("  Database        UNAVAILABLE")
-            all_ok = False
-    except Exception:
-        click.echo("  Database        UNAVAILABLE (config error)")
-        all_ok = False
-
-    click.echo()
-    if all_ok:
-        click.echo("All checks passed.")
-    else:
-        click.echo("Some checks failed. See above.")
 
 
 @cli.command()
@@ -424,107 +394,6 @@ def review(
 
     if watch:
         _watch_and_rerun(repo_path=repo, run_review=run_review)
-
-
-@cli.command()
-def plugins() -> None:
-    """List all registered Eagle Eyed Dom plugins."""
-    import shutil
-
-    registry = get_default_registry()
-    all_plugins = registry.list()
-
-    click.echo(f"{'Name':<20} {'Category':<15} {'Binary':<12} {'Depends On':<18} Description")
-    click.echo("-" * 95)
-    for p in sorted(all_plugins, key=lambda x: (x.category, x.name)):
-        binary = p.name.replace("-", "")
-        installed = "ok" if shutil.which(p.name) or shutil.which(binary) else "—"
-        deps = ", ".join(p.depends_on) if p.depends_on else "—"
-        click.echo(
-            f"{p.name:<20} {p.category.value:<15} {installed:<12} {deps:<18} {p.description}"
-        )
-    click.echo(f"\n{len(all_plugins)} plugins registered")
-
-
-@cli.command()
-@click.argument("question")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(),
-    default=".eedom/graph.db",
-    show_default=True,
-    help="Path to the CodeGraph SQLite database.",
-)
-def query(question: str, db_path: str) -> None:
-    """Query the code graph using natural language.
-
-    Examples:
-
-    \b
-      eedom query "which functions have the highest fan-out?"
-      eedom query "show me dead code"
-      eedom query "what depends on ReviewPipeline"
-      eedom query "are there circular imports?"
-    """
-    from eedom.core.nl_query import TEMPLATES, query_code
-
-    db = Path(db_path)
-    if not db.exists():
-        click.echo(f"Database not found: {db}", err=True)
-        click.echo(
-            "Run 'eedom review --repo-path .' first to build the code graph.",
-            err=True,
-        )
-        sys.exit(1)
-
-    result = query_code(question, db)
-
-    if not result.query:
-        click.echo("No matching query found.\n")
-        click.echo(f"Available queries ({len(TEMPLATES)} templates):")
-        click.echo()
-        for row in result.rows:
-            desc = row.get("template", "")
-            kws = row.get("keywords", "")
-            click.echo(f"  {desc}")
-            if kws:
-                click.echo(f"    Keywords: {kws}")
-        sys.exit(0)
-
-    click.echo(f"Query: {result.description}\n")
-
-    if not result.rows:
-        click.echo("No results found.")
-        sys.exit(0)
-
-    _print_table(result.columns, result.rows)
-
-
-def _print_table(columns: list[str], rows: list[dict]) -> None:
-    """Print rows as an aligned table, using rich when available."""
-    try:
-        from rich.console import Console
-        from rich.table import Table
-
-        table = Table(show_header=True, header_style="bold")
-        for col in columns:
-            table.add_column(col)
-        for row in rows:
-            table.add_row(*[str(row.get(col, "")) for col in columns])
-        Console().print(table)
-    except ImportError:
-        col_widths = {col: len(col) for col in columns}
-        for row in rows:
-            for col in columns:
-                col_widths[col] = max(col_widths[col], len(str(row.get(col, ""))))
-        header = "  ".join(col.ljust(col_widths[col]) for col in columns)
-        separator = "  ".join("-" * col_widths[col] for col in columns)
-        click.echo(header)
-        click.echo(separator)
-        for row in rows:
-            line = "  ".join(str(row.get(col, "")).ljust(col_widths[col]) for col in columns)
-            click.echo(line)
 
 
 def _read_diff(diff_path: str) -> str:

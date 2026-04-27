@@ -40,9 +40,12 @@ class BlastRadiusPlugin(ScannerPlugin):
         db_dir = repo_path / ".eedom"
         try:
             db_dir.mkdir(exist_ok=True)
+            test_file = db_dir / ".write_test"
+            test_file.touch()
+            test_file.unlink()
         except OSError:
             logger.warning(
-                "blast-radius: cannot create .eedom in repo_path (read-only?), using temp dir",
+                "blast-radius: repo_path not writable, using temp dir",
                 repo_path=str(repo_path),
             )
             db_dir = Path(tempfile.mkdtemp(prefix="eedom-blast-radius-"))

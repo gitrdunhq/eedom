@@ -101,6 +101,15 @@ def _plugin_to_run(
             sarif_result["locations"] = locations
         sarif_results.append(sarif_result)
 
+    if result.error:
+        sarif_results.append(
+            {
+                "ruleId": "eedom-plugin-error",
+                "level": "error",
+                "message": {"text": result.error},
+            }
+        )
+
     if truncated > 0:
         sarif_results.append(
             {

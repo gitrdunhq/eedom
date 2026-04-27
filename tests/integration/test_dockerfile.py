@@ -479,7 +479,7 @@ class TestChecksumVerification:
         A tampered binary causes the script (and therefore this test) to fail.
         """
         result = container_run(
-            ["/bin/sh", "/opt/eedom/scripts/verify-checksums.sh"],
+            ["/opt/eedom/scripts/verify-checksums.sh"],
             entrypoint="/bin/sh",
             extra_flags=[],
         )
@@ -524,11 +524,11 @@ class TestNoStaleSignatures:
             [
                 "-c",
                 (
-                    "import os, sys; "
-                    "db_dir = '/var/lib/clamav'; "
-                    "if not os.path.exists(db_dir): sys.exit(0); "
-                    "db_files = [f for f in os.listdir(db_dir) if f.endswith(('.cvd', '.cld'))]; "
-                    "print(f'Found DB files: {db_files}'); "
+                    "import os, sys\n"
+                    "db_dir = '/var/lib/clamav'\n"
+                    "if not os.path.exists(db_dir): sys.exit(0)\n"
+                    "db_files = [f for f in os.listdir(db_dir) if f.endswith(('.cvd', '.cld'))]\n"
+                    "print(f'Found DB files: {db_files}')\n"
                     "sys.exit(1 if db_files else 0)"
                 ),
             ],
