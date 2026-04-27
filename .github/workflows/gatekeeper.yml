@@ -28,14 +28,22 @@ jobs:
     name: GATEKEEPER Review
     runs-on: self-hosted
     timeout-minutes: 10
+    env:
+      IS_RELEASE_PR: ${{ startsWith(github.head_ref || '', 'release-please--') }}
 
     steps:
+      - name: Skip release-please PRs
+        if: env.IS_RELEASE_PR == 'true'
+        run: echo "::notice::Skipping GATEKEEPER — release-please PR (version/changelog only)"
+
       - name: Checkout
+        if: env.IS_RELEASE_PR != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
       - name: Detect runtime
+        if: env.IS_RELEASE_PR != 'true'
         id: runtime
         run: |
           # Check podman is installed AND responsive (machine running, image pullable)
@@ -51,11 +59,11 @@ jobs:
           fi
 
       - name: Install dependencies (native)
-        if: steps.runtime.outputs.container == 'false'
+        if: env.IS_RELEASE_PR != 'true' && steps.runtime.outputs.container == 'false'
         run: uv sync --group dev
 
       - name: Generate PR diff
-        if: github.event_name == 'pull_request'
+        if: env.IS_RELEASE_PR != 'true' && github.event_name == 'pull_request'
         id: diff
         run: |
           mkdir -p .temp
@@ -65,7 +73,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
       - name: Run eedom review (container)
-        if: steps.runtime.outputs.container == 'true'
+        if: env.IS_RELEASE_PR != 'true' && steps.runtime.outputs.container == 'true'
         run: |
           $ENGINE run --rm --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
@@ -76,7 +84,7 @@ jobs:
           ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: Run eedom review (native)
-        if: steps.runtime.outputs.container == 'false'
+        if: env.IS_RELEASE_PR != 'true' && steps.runtime.outputs.container == 'false'
         run: |
           set -e
           DIFF_FLAG=""
@@ -85,6 +93,7 @@ jobs:
           uv run eedom review --repo-path . --all $DIFF_FLAG --output .temp/review.md
 
       - name: Compute verdict
+        if: env.IS_RELEASE_PR != 'true'
         id: verdict
         run: |
           ERRORS=0
@@ -163,7 +172,7 @@ jobs:
           RUNTIME_ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: Set dom label
-        if: github.event_name == 'pull_request'
+        if: env.IS_RELEASE_PR != 'true' && github.event_name == 'pull_request'
         run: |
           for LABEL in "dom: approved" "dom: warnings" "dom: blocked" "dom: incomplete"; do
             gh issue edit "$PR_NUM" --remove-label "$LABEL" 2>/dev/null || true
@@ -187,7 +196,7 @@ jobs:
           RUNTIME_ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: File issue on incomplete review
-        if: github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
+        if: env.IS_RELEASE_PR != 'true' && github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
         continue-on-error: true
         run: |
           TITLE="[eedom-crash] ${CRASHED} plugin(s) crashed reviewing PR #${PR_NUM}"
@@ -225,7 +234,7 @@ jobs:
           TOTAL: ${{ steps.verdict.outputs.total_plugins }}
 
       - name: Post review comment
-        if: github.event_name == 'pull_request'
+        if: env.IS_RELEASE_PR != 'true' && github.event_name == 'pull_request'
         run: |
           if [ ! -s .temp/review.md ]; then
             echo "No review output — skipping comment."
@@ -273,7 +282,7 @@ jobs:
           CRASHED: ${{ steps.verdict.outputs.crashed }}
 
       - name: Hand off to Copilot
-        if: github.event_name == 'pull_request'
+        if: env.IS_RELEASE_PR != 'true' && github.event_name == 'pull_request'
         run: |
           MARKER="<!-- eedom-copilot-handoff -->"
           HANDOFF="${MARKER}
@@ -314,7 +323,7 @@ jobs:
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
 
       - name: Gitleaks PII scan
-        if: always()
+        if: always() && env.IS_RELEASE_PR != 'true'
         run: |
           if command -v gitleaks &>/dev/null; then
             CONFIG_FLAG=""
@@ -326,7 +335,7 @@ jobs:
           fi
 
       - name: Post release key
-        if: success() && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)
+        if: env.IS_RELEASE_PR != 'true' && success() && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)
         run: |
           SHA=$(git rev-parse HEAD)
           TOKEN=$(python3 -c "import hmac,hashlib,os; print(hmac.new(os.environ['RELEASE_UNLOCK_WORD'].encode(), os.environ['KEY_SHA'].encode(), hashlib.sha256).hexdigest())")
@@ -342,7 +351,7 @@ jobs:
           KEY_SHA: ${{ github.sha }}
 
       - name: Fail-closed gate
-        if: always()
+        if: always() && env.IS_RELEASE_PR != 'true'
         run: |
           VERDICT="${{ steps.verdict.outputs.verdict }}"
           CRASHED="${{ steps.verdict.outputs.crashed }}"
