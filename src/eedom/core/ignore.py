@@ -14,6 +14,8 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path
 
+_GLOB_CHARS = frozenset("*?[")
+
 # ---------------------------------------------------------------------------
 # Built-in defaults — always applied even without a .eedomignore file.
 # These mirror the hard-coded exclusion sets already present in cli/main.py.
@@ -23,9 +25,19 @@ DEFAULT_PATTERNS: list[str] = [
     "__pycache__/",
     "node_modules/",
     ".venv/",
+    "venv/",
     ".claude/",
     ".eedom/",
+    ".dogfood/",
     "cdk.out/",
+    "build/",
+    "dist/",
+    "*.egg-info/",
+    ".temp/",
+    ".tox/",
+    ".idea/",
+    ".vscode/",
+    "htmlcov/",
 ]
 
 
@@ -89,10 +101,13 @@ def should_ignore(file_path: str, patterns: list[str]) -> bool:
 
     for pattern in patterns:
         if pattern.endswith("/"):
-            # Multi- or single-component directory pattern.  The trailing "/"
-            # is preserved so the match always ends at a directory boundary.
-            if ("/" + pattern) in anchored:
-                return True
+            dir_pat = pattern[:-1]
+            if _GLOB_CHARS & set(dir_pat):
+                if any(fnmatch.fnmatch(part, dir_pat) for part in anchored.split("/")):
+                    return True
+            else:
+                if ("/" + pattern) in anchored:
+                    return True
         else:
             if fnmatch.fnmatch(file_path, pattern):
                 return True

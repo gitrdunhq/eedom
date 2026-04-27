@@ -209,3 +209,48 @@ class TestCdkOutExclusion:
 
     def test_cdk_out_manifest_excluded(self) -> None:
         assert should_ignore("cdk.out/manifest.json", DEFAULT_PATTERNS) is True
+
+
+# ---------------------------------------------------------------------------
+# Expanded default ignore patterns — issue #85
+# ---------------------------------------------------------------------------
+
+
+class TestExpandedDefaultPatterns:
+    """DEFAULT_PATTERNS must exclude build artifacts, agent state, and IDE dirs."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "build/lib/module.py",
+            "dist/package.tar.gz",
+            "my_pkg.egg-info/PKG-INFO",
+            ".dogfood/fleet-state.json",
+            ".temp/scratch.txt",
+            ".idea/workspace.xml",
+            ".vscode/settings.json",
+            "htmlcov/index.html",
+            "venv/lib/python3.12/site.py",
+            ".tox/py312/lib/x.py",
+        ],
+    )
+    def test_generated_paths_excluded(self, path: str) -> None:
+        assert should_ignore(path, DEFAULT_PATTERNS) is True
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            "build/",
+            "dist/",
+            "*.egg-info/",
+            ".dogfood/",
+            ".temp/",
+            ".idea/",
+            ".vscode/",
+            "htmlcov/",
+            "venv/",
+            ".tox/",
+        ],
+    )
+    def test_pattern_in_defaults(self, pattern: str) -> None:
+        assert pattern in DEFAULT_PATTERNS
