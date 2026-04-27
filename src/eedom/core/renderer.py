@@ -13,6 +13,14 @@ import jinja2
 from eedom.core.plugin import PluginResult
 
 _MAX_COMMENT_LENGTH = 65536
+
+CATEGORY_PRIORITY: dict[str, int] = {
+    "supply_chain": 0,
+    "dependency": 1,
+    "infra": 2,
+    "code": 3,
+    "quality": 4,
+}
 _DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 _VERSION = "1.2.0"
 
@@ -223,7 +231,13 @@ def _build_sections(
     summary_rows: list[tuple[str, str]] = []
     sections: list[str] = []
 
-    for r in results:
+    _max_priority = max(CATEGORY_PRIORITY.values()) + 1
+    sorted_results = sorted(
+        results,
+        key=lambda r: CATEGORY_PRIORITY.get(r.category, _max_priority),
+    )
+
+    for r in sorted_results:
         count = len(r.findings)
         label = r.plugin_name
 

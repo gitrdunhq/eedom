@@ -5,7 +5,13 @@
 from __future__ import annotations
 
 from eedom.core.plugin import PluginResult
-from eedom.core.renderer import _VERSION, calculate_severity_score, render_comment  # noqa: PLC2701
+from eedom.core.renderer import (  # noqa: PLC2701
+    _VERSION,
+    CATEGORY_PRIORITY,
+    _build_sections,
+    calculate_severity_score,
+    render_comment,
+)
 
 
 def _vuln_result() -> PluginResult:
@@ -360,3 +366,65 @@ class TestCalculateSeverityScore:
         results = [PluginResult(plugin_name="osv-scanner", findings=[])]
         md = render_comment(results, repo="org/repo", pr_num=1, title="test")
         assert "Security: 100/100" in md
+
+
+class TestSectionOrdering:
+    """Sections must render security-first regardless of input order (#89)."""
+
+    def test_security_sections_before_quality(self):
+        results = [
+            PluginResult(
+                plugin_name="complexity",
+                findings=[{"severity": "medium", "message": "high complexity"}],
+                category="quality",
+            ),
+            PluginResult(
+                plugin_name="gitleaks",
+                findings=[{"severity": "critical", "message": "leaked secret"}],
+                category="supply_chain",
+            ),
+        ]
+        _, _, sections = _build_sections(results, None)
+        assert len(sections) == 2
+        assert "gitleaks" in sections[0]
+        assert "complexity" in sections[1]
+
+    def test_dependency_before_code(self):
+        results = [
+            PluginResult(
+                plugin_name="semgrep",
+                findings=[{"severity": "medium", "message": "code issue"}],
+                category="code",
+            ),
+            PluginResult(
+                plugin_name="osv-scanner",
+                findings=[{"severity": "high", "message": "CVE found"}],
+                category="dependency",
+            ),
+        ]
+        _, _, sections = _build_sections(results, None)
+        assert len(sections) == 2
+        assert "osv-scanner" in sections[0]
+        assert "semgrep" in sections[1]
+
+    def test_category_priority_map_exists(self):
+        assert "supply_chain" in CATEGORY_PRIORITY
+        assert "dependency" in CATEGORY_PRIORITY
+        assert "quality" in CATEGORY_PRIORITY
+        assert CATEGORY_PRIORITY["supply_chain"] < CATEGORY_PRIORITY["quality"]
+
+    def test_results_without_category_sort_last(self):
+        results = [
+            PluginResult(
+                plugin_name="unknown",
+                findings=[{"severity": "low", "message": "something"}],
+            ),
+            PluginResult(
+                plugin_name="gitleaks",
+                findings=[{"severity": "critical", "message": "secret"}],
+                category="supply_chain",
+            ),
+        ]
+        _, _, sections = _build_sections(results, None)
+        assert len(sections) == 2
+        assert "gitleaks" in sections[0]

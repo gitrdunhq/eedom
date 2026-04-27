@@ -193,20 +193,24 @@ class PluginRegistry:
         repo_path: Path,
         findings: list[dict],
     ) -> PluginResult:
+        cat = plugin.category.value
         if not plugin.can_run(files, repo_path):
             return PluginResult(
                 plugin_name=plugin.name,
                 summary={"status": "skipped"},
+                category=cat,
             )
         try:
-            return plugin.run(files, repo_path, findings=findings)
+            result = plugin.run(files, repo_path, findings=findings)
+            result.category = cat
+            return result
         except Exception as exc:
             logger.warning(
                 "plugin.policy_failed",
                 plugin=plugin.name,
                 error=str(exc),
             )
-            return PluginResult(plugin_name=plugin.name, error=str(exc))
+            return PluginResult(plugin_name=plugin.name, error=str(exc), category=cat)
 
     def _run_one(
         self,
@@ -214,20 +218,24 @@ class PluginRegistry:
         files: list[str],
         repo_path: Path,
     ) -> PluginResult:
+        cat = plugin.category.value
         if not plugin.can_run(files, repo_path):
             return PluginResult(
                 plugin_name=plugin.name,
                 summary={"status": "skipped"},
+                category=cat,
             )
         try:
-            return plugin.run(files, repo_path)
+            result = plugin.run(files, repo_path)
+            result.category = cat
+            return result
         except Exception as exc:
             logger.warning(
                 "plugin.run_failed",
                 plugin=plugin.name,
                 error=str(exc),
             )
-            return PluginResult(plugin_name=plugin.name, error=str(exc))
+            return PluginResult(plugin_name=plugin.name, error=str(exc), category=cat)
 
 
 def discover_plugins(plugin_dir: Path) -> list[ScannerPlugin]:

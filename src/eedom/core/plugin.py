@@ -29,6 +29,7 @@ class PluginResult:
     summary: dict = field(default_factory=dict)
     error: str = ""
     package_root: str | None = None
+    category: str = ""
 
 
 class ScannerPlugin(abc.ABC):
