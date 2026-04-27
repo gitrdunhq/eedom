@@ -20,7 +20,9 @@ logger = structlog.get_logger()
 # ---------------------------------------------------------------------------
 # Watch-mode constants
 # ---------------------------------------------------------------------------
-_WATCH_EXTENSIONS: frozenset[str] = frozenset({".py", ".ts", ".js", ".tf", ".yaml", ".yml"})
+_WATCH_EXTENSIONS: frozenset[str] = frozenset(
+    {".py", ".ts", ".js", ".tf", ".yaml", ".yml", ".json"}
+)
 _IGNORE_DIRS: frozenset[str] = frozenset({"__pycache__", ".git", ".eedom", ".dogfood"})
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from eedom.core.ignore import DEFAULT_PATTERNS, load_ignore_patterns, should_ignore
 
 # ---------------------------------------------------------------------------
@@ -185,3 +186,26 @@ class TestShouldIgnoreEdgeCases:
     def test_default_patterns_do_not_exclude_source_files(self, path: str) -> None:
         """Default patterns must not exclude ordinary source files."""
         assert should_ignore(path, DEFAULT_PATTERNS) is False
+
+
+# ---------------------------------------------------------------------------
+# cdk.out exclusion — issue #81
+# ---------------------------------------------------------------------------
+
+
+class TestCdkOutExclusion:
+    """cdk.out/ must be excluded by DEFAULT_PATTERNS to prevent double-scanning."""
+
+    def test_cdk_out_in_default_patterns(self) -> None:
+        assert "cdk.out/" in DEFAULT_PATTERNS
+
+    def test_cdk_out_template_excluded(self) -> None:
+        assert should_ignore("cdk.out/MyStack.template.json", DEFAULT_PATTERNS) is True
+
+    def test_cdk_out_nested_excluded(self) -> None:
+        assert (
+            should_ignore("cdk.out/assembly-Prod/MyStack.template.json", DEFAULT_PATTERNS) is True
+        )
+
+    def test_cdk_out_manifest_excluded(self) -> None:
+        assert should_ignore("cdk.out/manifest.json", DEFAULT_PATTERNS) is True

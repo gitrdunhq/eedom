@@ -815,6 +815,15 @@ class TestReviewRepoConfigWiring:
         assert "--package" in result.output
 
 
+class TestWatchExtensionsIncludesJson:
+    """Watch mode must detect .json file changes (issue #81)."""
+
+    def test_json_in_watch_extensions(self) -> None:
+        from eedom.cli.main import _WATCH_EXTENSIONS
+
+        assert ".json" in _WATCH_EXTENSIONS
+
+
 class TestBuildFileListJsonDiscovery:
     """Verify _build_file_list includes .json files in --all mode (issue #55)."""
 
