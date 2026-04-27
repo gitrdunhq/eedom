@@ -5,11 +5,11 @@
 # Test:   EEDOM_IMAGE=eedom:latest uv run pytest tests/integration/test_dockerfile.py -v
 
 # ── Version pins ─────────────────────────────────────────────────────────────
-ARG SYFT_VERSION=1.21.0
+ARG SYFT_VERSION=1.43.0
 ARG TRIVY_VERSION=0.70.0
-ARG OSV_VERSION=2.0.1
-ARG OPA_VERSION=1.4.2
-ARG GITLEAKS_VERSION=8.24.3
+ARG OSV_VERSION=2.3.5
+ARG OPA_VERSION=1.15.2
+ARG GITLEAKS_VERSION=8.30.1
 ARG JQ_VERSION=1.7.1
 ARG KUBE_LINTER_VERSION=0.8.3
 ARG SEMGREP_VERSION=1.67.0
@@ -18,17 +18,19 @@ ARG PMD_VERSION=7.24.0
 ARG LIZARD_VERSION=1.17.13
 ARG MYPY_VERSION=1.15.0
 ARG CSPELL_VERSION=8.18.1
+ARG LS_LINT_VERSION=2.3.1
 
 # ── SHA256 checksums — per architecture ──────────────────────────────────────
 # Build fails hard if any hash mismatches — no silent pass.
 # PMD is architecture-independent (Java).
-ARG SYFT_SHA256_ARM64=b7617868459cb707e4f9f56c8cb121124bf90b2c944f30e2f3c773807e1e05d7
+ARG SYFT_SHA256_ARM64=afe92510c467f952a009b994f2d998ff8f9dd266dc26eca55d14a0dd46fec7f2
 ARG TRIVY_SHA256_ARM64=2f6bb988b553a1bbac6bdd1ce890f5e412439564e17522b88a4541b4f364fc8d
-ARG OSV_SHA256_ARM64=9ce9c96e3ae4526f8e077e6b456bc82bb2070abd5bbfac966a8dbbbb93a50fd2
-ARG OPA_SHA256_ARM64=facd6a9ea375c6299701f86b90b470e52305c5726c4f136e2980fa6123ae9613
-ARG GITLEAKS_SHA256_ARM64=5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07
+ARG OSV_SHA256_ARM64=fa46ad2b3954db5d5335303d45de921613393285d9a93c140b63b40e35e9ce50
+ARG OPA_SHA256_ARM64=6651bf5a80cfec6ba6a2d3b6a550b8f748d9cade1c74d54b5f854782f9bea67a
+ARG GITLEAKS_SHA256_ARM64=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
 ARG JQ_SHA256_ARM64=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5
 ARG KUBE_LINTER_SHA256_ARM64=802e1b09eabd08f6f0a060a6b8ab2bf7bc7e6bf4f673bb2692303704c84b3e22
+ARG LS_LINT_SHA256_ARM64=2abdb71243c619f0bb29587be5c228bec84c107985f2c066139ef0ec35fd3a99
 ARG PMD_SHA256=110934b36d39c19094d1b77386931978093f238f2c2f1851748822b69c7367ac
 
 # AMD64 checksums — populate when adding amd64 support
@@ -39,15 +41,16 @@ ARG OPA_SHA256_AMD64=PLACEHOLDER
 ARG GITLEAKS_SHA256_AMD64=PLACEHOLDER
 ARG JQ_SHA256_AMD64=PLACEHOLDER
 ARG KUBE_LINTER_SHA256_AMD64=PLACEHOLDER
+ARG LS_LINT_SHA256_AMD64=b5a0d2e4427ad039fbc574551f17679f38f142b25d15e0e538769f8cf15af397
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 1: builder
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim-trixie AS builder
 
-ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION KUBE_LINTER_VERSION PMD_VERSION
-ARG SYFT_SHA256_ARM64 TRIVY_SHA256_ARM64 OSV_SHA256_ARM64 OPA_SHA256_ARM64 GITLEAKS_SHA256_ARM64 JQ_SHA256_ARM64 KUBE_LINTER_SHA256_ARM64 PMD_SHA256
-ARG SYFT_SHA256_AMD64 TRIVY_SHA256_AMD64 OSV_SHA256_AMD64 OPA_SHA256_AMD64 GITLEAKS_SHA256_AMD64 JQ_SHA256_AMD64 KUBE_LINTER_SHA256_AMD64
+ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION KUBE_LINTER_VERSION PMD_VERSION LS_LINT_VERSION
+ARG SYFT_SHA256_ARM64 TRIVY_SHA256_ARM64 OSV_SHA256_ARM64 OPA_SHA256_ARM64 GITLEAKS_SHA256_ARM64 JQ_SHA256_ARM64 KUBE_LINTER_SHA256_ARM64 LS_LINT_SHA256_ARM64 PMD_SHA256
+ARG SYFT_SHA256_AMD64 TRIVY_SHA256_AMD64 OSV_SHA256_AMD64 OPA_SHA256_AMD64 GITLEAKS_SHA256_AMD64 JQ_SHA256_AMD64 KUBE_LINTER_SHA256_AMD64 LS_LINT_SHA256_AMD64
 ARG SEMGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION CSPELL_VERSION
 ARG TARGETARCH
 
@@ -71,7 +74,8 @@ RUN set -eux; \
             OPA_ARCH="amd64_static"; OPA_SHA="${OPA_SHA256_AMD64}"; \
             GITLEAKS_ARCH="x64";     GITLEAKS_SHA="${GITLEAKS_SHA256_AMD64}"; \
             JQ_ARCH="amd64";         JQ_SHA="${JQ_SHA256_AMD64}"; \
-            KL_ARCH="amd64";         KL_SHA="${KUBE_LINTER_SHA256_AMD64}" ;; \
+            KL_ARCH="amd64";         KL_SHA="${KUBE_LINTER_SHA256_AMD64}"; \
+            LL_ARCH="amd64";         LL_SHA="${LS_LINT_SHA256_AMD64}" ;; \
         "arm64") \
             SYFT_ARCH="arm64";       SYFT_SHA="${SYFT_SHA256_ARM64}"; \
             TRIVY_ARCH="ARM64";      TRIVY_SHA="${TRIVY_SHA256_ARM64}"; \
@@ -79,7 +83,8 @@ RUN set -eux; \
             OPA_ARCH="arm64_static"; OPA_SHA="${OPA_SHA256_ARM64}"; \
             GITLEAKS_ARCH="arm64";   GITLEAKS_SHA="${GITLEAKS_SHA256_ARM64}"; \
             JQ_ARCH="arm64";         JQ_SHA="${JQ_SHA256_ARM64}"; \
-            KL_ARCH="arm64";         KL_SHA="${KUBE_LINTER_SHA256_ARM64}" ;; \
+            KL_ARCH="arm64";         KL_SHA="${KUBE_LINTER_SHA256_ARM64}"; \
+            LL_ARCH="arm64";         LL_SHA="${LS_LINT_SHA256_ARM64}" ;; \
         *) echo "Fatal: unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     curl -sSfL -o /tmp/syft.tar.gz "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${SYFT_ARCH}.tar.gz"; \
@@ -98,6 +103,8 @@ RUN set -eux; \
     curl -sSfL -o /tmp/kube-linter.tar.gz "https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux_${KL_ARCH}.tar.gz"; \
     echo "${KL_SHA}  /tmp/kube-linter.tar.gz" | sha256sum --strict -c -; \
     tar -xzf /tmp/kube-linter.tar.gz -C /staging/gobin kube-linter; \
+    curl -sSfL -o /staging/gobin/ls-lint "https://github.com/loeffel-io/ls-lint/releases/download/v${LS_LINT_VERSION}/ls-lint-linux-${LL_ARCH}"; \
+    echo "${LL_SHA}  /staging/gobin/ls-lint" | sha256sum --strict -c -; \
     curl -sSfL -o /tmp/pmd.zip "https://github.com/pmd/pmd/releases/download/pmd_releases/${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip"; \
     echo "${PMD_SHA256}  /tmp/pmd.zip" | sha256sum --strict -c -; \
     unzip -q /tmp/pmd.zip -d /staging/pmd; \
@@ -107,7 +114,7 @@ RUN set -eux; \
     chmod +x /staging/gobin/* /staging/jq/jq
 
 # ── Build-time checksums for runtime verification ────────────────────────────
-RUN for b in syft trivy osv-scanner opa gitleaks kube-linter; do \
+RUN for b in syft trivy osv-scanner opa gitleaks kube-linter ls-lint; do \
       sha256sum "/staging/gobin/$b" | sed "s|/staging/gobin/$b|/usr/local/bin/$b|"; \
     done > /staging/scripts/checksums.txt \
     && sha256sum /staging/jq/jq | sed 's|/staging/jq/jq|/usr/bin/jq|' >> /staging/scripts/checksums.txt
@@ -167,7 +174,7 @@ RUN printf '%s\n' \
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 2: runtime
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-trixie
 
 ARG CSPELL_VERSION
 ARG PMD_VERSION
@@ -182,11 +189,14 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-      git clamav clamav-freshclam libicu72 libarchive13 ca-certificates \
-      default-jre-headless nodejs npm \
-    && npm install -g "cspell@${CSPELL_VERSION}" --no-fund --no-audit \
+      git clamav clamav-freshclam libicu76 libarchive13t64 ca-certificates curl gnupg \
+      default-jre-headless ruby ruby-dev build-essential \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g "cspell@${CSPELL_VERSION}" "aws-cdk" --no-fund --no-audit \
     && npm cache clean --force \
-    && apt-get purge -y npm \
+    && gem install cfn-nag --no-document \
+    && apt-get purge -y build-essential ruby-dev curl gnupg \
     && apt-get autoremove -y
 
 # Non-root user — scanners must not run as root.
@@ -205,6 +215,7 @@ COPY --from=builder /staging/gobin/osv-scanner /usr/local/bin/osv-scanner
 COPY --from=builder /staging/gobin/opa         /usr/local/bin/opa
 COPY --from=builder /staging/gobin/gitleaks    /usr/local/bin/gitleaks
 COPY --from=builder /staging/gobin/kube-linter /usr/local/bin/kube-linter
+COPY --from=builder /staging/gobin/ls-lint    /usr/local/bin/ls-lint
 COPY --from=builder /staging/pmd/              /opt/pmd/
 COPY --from=builder /staging/jq/jq             /usr/bin/jq
 COPY --from=builder /opt/pysite/               /opt/pysite/
@@ -242,7 +253,7 @@ ENV PYTHONPATH=/opt/pysite \
     XDG_CACHE_HOME=/home/eedom/.cache \
     EEDOM_OPERATING_MODE=monitor \
     EEDOM_OPA_POLICY_PATH=/opt/eedom/policies \
-    EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,clamav,kube-linter,pmd,lizard,mypy,cspell
+    EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,clamav,kube-linter,pmd,lizard,mypy,cspell,ls-lint,cdk-nag,cfn-nag
 
 USER eedom
 WORKDIR /home/eedom
