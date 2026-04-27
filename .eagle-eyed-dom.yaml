@@ -1,0 +1,4 @@
+plugins:
+  disabled:
+    - mypy
+    - blast-radius

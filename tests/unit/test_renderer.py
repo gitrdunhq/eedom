@@ -428,3 +428,49 @@ class TestSectionOrdering:
         _, _, sections = _build_sections(results, None)
         assert len(sections) == 2
         assert "gitleaks" in sections[0]
+
+
+class TestActionabilityInComment:
+    def test_actionability_section_rendered_for_fixable_findings(self):
+        result = PluginResult(
+            plugin_name="trivy",
+            findings=[
+                {
+                    "id": "CVE-2025-1234",
+                    "severity": "critical",
+                    "package": "libfoo",
+                    "version": "1.0.0",
+                    "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-1234",
+                    "summary": "Test vuln",
+                    "fixed_version": "2.0.0",
+                },
+            ],
+        )
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+        assert "Actionability" in md
+        assert "fixable" in md.lower()
+        assert "2.0.0" in md
+
+    def test_actionability_section_rendered_for_blocked_findings(self):
+        result = PluginResult(
+            plugin_name="trivy",
+            findings=[
+                {
+                    "id": "CVE-2025-9999",
+                    "severity": "critical",
+                    "package": "libbar",
+                    "version": "3.0.0",
+                    "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-9999",
+                    "summary": "Unfixable",
+                },
+            ],
+        )
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+        assert "Actionability" in md
+        assert "blocked" in md.lower()
+        assert "none actionable" in md.lower()
+
+    def test_no_actionability_section_when_no_findings(self):
+        result = PluginResult(plugin_name="trivy", findings=[])
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+        assert "Actionability" not in md

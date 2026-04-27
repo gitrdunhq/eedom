@@ -28,6 +28,29 @@
 | Maintainability | {{ mi_icon }} {{ mi_grade }} ({{ mi_score }}/100) |
 {%- endif %}
 
+{% if actionability and (actionability.actionable_count > 0 or actionability.blocked_count > 0) %}
+### Actionability
+
+> {{ actionability.summary_text }}
+
+{% if actionability.actionable_count > 0 %}
+**{{ actionability.actionable_count }} fixable** — upgrade available:
+{% for f in actionability.actionable[:10] %}
+- `{{ f.package }}` {{ f.version }} → **{{ f.fixed_version }}** ({{ f.severity }}) — [{{ f.id }}]({{ f.url }})
+{%- endfor %}
+{% if actionability.actionable_count > 10 %}
+- *...{{ actionability.actionable_count - 10 }} more*
+{% endif %}
+{% endif %}
+
+{% if actionability.blocked_count > 0 %}
+**{{ actionability.blocked_count }} blocked** — no fix available:
+{% for source, findings in actionability.blocked_by_source.items() %}
+- **{{ source }}**: {{ findings | length }} findings ({{ findings | map(attribute='severity') | unique | join(', ') }})
+{%- endfor %}
+{% endif %}
+{% endif %}
+
 {% for section in sections %}
 {{ section }}
 {% endfor %}

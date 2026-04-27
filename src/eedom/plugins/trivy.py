@@ -72,6 +72,7 @@ class TrivyPlugin(ScannerPlugin):
                         "severity": _SEV_MAP.get(vuln.get("Severity", ""), "info"),
                         "package": vuln.get("PkgName", "?"),
                         "version": vuln.get("InstalledVersion", "?"),
+                        "fixed_version": vuln.get("FixedVersion", ""),
                     }
                 )
 

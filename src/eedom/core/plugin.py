@@ -22,6 +22,14 @@ class PluginCategory(StrEnum):
     supply_chain = "supply_chain"
 
 
+class Actionability(StrEnum):
+    fix = "fix"
+    blocked_upstream = "blocked_upstream"
+    blocked_os = "blocked_os"
+    blocked_eol = "blocked_eol"
+    accept = "accept"
+
+
 @dataclass
 class PluginResult:
     plugin_name: str
