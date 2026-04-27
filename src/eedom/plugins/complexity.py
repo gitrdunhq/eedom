@@ -79,12 +79,16 @@ class ComplexityPlugin(ScannerPlugin):
                     f" | {mi} | {f['nloc']} |"
                 )
             lines.append("")
+        max_rows = 25
         lines.append("| Function | CCN | MI | NLOC |")
         lines.append("|----------|-----|----|------|")
-        for f in result.findings:
+        for f in result.findings[:max_rows]:
             mi = f.get("maintainability_index", "?")
             lines.append(
                 f"| `{f['function']}` | {f['cyclomatic_complexity']} | {mi} | {f['nloc']} |"
             )
+        remaining = len(result.findings) - max_rows
+        if remaining > 0:
+            lines.append(f"\n*...{remaining} more functions (see SARIF for full list)*")
         lines.append("\n</details>\n")
         return "\n".join(lines)

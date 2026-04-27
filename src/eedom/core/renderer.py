@@ -172,7 +172,7 @@ def render_comment(
     tpl_dir = template_dir or _DEFAULT_TEMPLATE_DIR
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(tpl_dir)),
-        autoescape=False,
+        autoescape=False,  # nosemgrep: jinja2-autoescape-disabled — output is markdown, not HTML
         keep_trailing_newline=True,
     )
     template = env.get_template("comment.md.j2")

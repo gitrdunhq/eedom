@@ -91,7 +91,7 @@ class ScannerPlugin(abc.ABC):
 
             env = Environment(
                 loader=FileSystemLoader(str(tdir)),
-                autoescape=False,
+                autoescape=False,  # nosemgrep: jinja2-autoescape-disabled
                 keep_trailing_newline=True,
                 trim_blocks=True,
                 lstrip_blocks=True,
