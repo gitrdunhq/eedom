@@ -227,6 +227,7 @@ class SupplyChainPlugin(ScannerPlugin):
                                     "version": ver,
                                     "ecosystem": "npm",
                                     "reason": self._npm_reason(ver),
+                                    "severity": self._unpinned_severity_npm(ver),
                                 }
                             )
             except (OSError, ValueError) as exc:
@@ -251,6 +252,7 @@ class SupplyChainPlugin(ScannerPlugin):
                                 "version": spec or "(no version)",
                                 "ecosystem": "pypi",
                                 "reason": self._py_reason(spec),
+                                "severity": self._unpinned_severity_py(spec),
                             }
                         )
             except OSError as exc:
@@ -334,6 +336,18 @@ class SupplyChainPlugin(ScannerPlugin):
         if v in ("*", "latest", ""):
             return "completely unpinned"
         return "floating range"
+
+    @staticmethod
+    def _unpinned_severity_npm(v: str) -> str:
+        if v in ("*", "latest", ""):
+            return "critical"
+        return "high"
+
+    @staticmethod
+    def _unpinned_severity_py(spec: str) -> str:
+        if not spec:
+            return "critical"
+        return "high"
 
     @staticmethod
     def _is_floating_py(spec: str) -> bool:

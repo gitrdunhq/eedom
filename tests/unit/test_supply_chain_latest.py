@@ -229,6 +229,70 @@ class TestLockfileShaPath:
             f"Expected {expected_sha}, got {lockfile_findings[0]['sha256']!r}"
         )
 
+
+# ── Unpinned severity tests ──────────────────────────────────────────────────
+
+
+def _npm_unpinned_findings(deps: dict, tmp_path: Path) -> list[dict]:
+    pkg = tmp_path / "package.json"
+    pkg.write_text(__import__("json").dumps({"dependencies": deps}))
+    plugin = SupplyChainPlugin()
+    return plugin._check_unpinned(tmp_path)
+
+
+def _py_unpinned_findings(lines: list[str], tmp_path: Path) -> list[dict]:
+    req = tmp_path / "requirements.txt"
+    req.write_text("\n".join(lines))
+    plugin = SupplyChainPlugin()
+    return plugin._check_unpinned(tmp_path)
+
+
+class TestUnpinnedSeverity:
+    def test_completely_unpinned_npm_has_critical_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": "*"}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "critical"
+
+    def test_caret_range_npm_has_high_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": "^1.2.3"}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "high"
+
+    def test_tilde_range_npm_has_high_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": "~1.2.3"}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "high"
+
+    def test_open_range_npm_has_high_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": ">=1.0.0"}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "high"
+
+    def test_latest_tag_npm_has_critical_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": "latest"}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "critical"
+
+    def test_empty_version_npm_has_critical_severity(self, tmp_path):
+        findings = _npm_unpinned_findings({"example-lib": ""}, tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "critical"
+
+    def test_no_version_py_has_critical_severity(self, tmp_path):
+        findings = _py_unpinned_findings(["requests"], tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "critical"
+
+    def test_minimum_bound_py_has_high_severity(self, tmp_path):
+        findings = _py_unpinned_findings(["requests>=2.0.0"], tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "high"
+
+    def test_compatible_release_py_has_high_severity(self, tmp_path):
+        findings = _py_unpinned_findings(["requests~=2.28"], tmp_path)
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "high"
+
     def test_manifest_lockfile_check_uses_package_dir(self, tmp_path):
         """_check_lockfiles: manifest-changed check looks for lockfile in package dir."""
         import hashlib
