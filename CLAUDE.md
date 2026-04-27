@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with the eedom scanner.
 
 ## What This Is
 
-Eagle Eyed Dom — fully deterministic dependency and code review for CI. 15 plugins, 600+ tests, zero LLM in the decision path.
+Eagle Eyed Dom — fully deterministic dependency and code review for CI. 18 plugins, 33 custom semgrep rules, 12 code graph checks, 6 OPA policy rules, 600+ tests, zero LLM in the decision path.
 
 ## Commands
 
@@ -36,7 +36,7 @@ Three-tier — imports flow downward only (cli -> core -> data):
 - `src/eedom/cli/` — thin CLI adapter. Parses args, delegates to core, formats output.
 - `src/eedom/core/` — all business logic. Pipeline, policy, plugin registry, renderer, SARIF, config.
 - `src/eedom/data/` — persistence and external calls. Scanners, DB, evidence, parquet, PyPI client.
-- `src/eedom/plugins/` — 15 scanner plugins with auto-discovery via `PluginRegistry`.
+- `src/eedom/plugins/` — 18 scanner plugins with auto-discovery via `PluginRegistry`.
 - `src/eedom/agent/` — GATEKEEPER Copilot Agent (second presentation-tier entry point).
 - `src/eedom/templates/` — Jinja2 templates for PR comment rendering.
 
@@ -103,6 +103,10 @@ Code at security, cryptographic, state, or trust boundaries requires formal prop
 | Reversibility | LIVENESS | Failed operations eventually clean up |
 
 Not every module needs all 14. Pick the domains that match your boundary. Group property tests in a `TestProperties` class. If you can't state the domain and property type, the test is incomplete.
+
+## Capability Matrix
+
+`docs/CAPABILITIES.md` is the canonical feature inventory — optimized for LLM ingestion and human comparison. **Update it whenever you add, remove, or modify**: a plugin, semgrep rule, code graph check, OPA policy rule, CLI command, output format, or integration. Keep counts accurate. Update the LAST VERIFIED date.
 
 ## Code Conventions
 
