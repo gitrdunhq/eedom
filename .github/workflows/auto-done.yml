@@ -6,6 +6,8 @@ on:
   pull_request_target:
     types: [closed]
 
+permissions: {}
+
 jobs:
   move-to-done:
     name: Move to Done on project board
