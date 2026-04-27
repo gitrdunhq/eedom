@@ -343,3 +343,59 @@ class TestCdkNagPlugin:
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert "synth" in cmd
+
+    @patch(f"{RUNNER_PATH}.subprocess.run")
+    def test_scanner_crash_nonzero_exit_returns_error(self, mock_run, tmp_path):
+        """cfn_nag_scan non-zero exit + empty stdout during template scan must error."""
+        from eedom.plugins.cdk_nag import CdkNagPlugin
+
+        cdk_out = tmp_path / "cdk.out"
+        cdk_out.mkdir()
+        (cdk_out / "Stack.template.json").write_text("{}")
+
+        synth_result = MagicMock()
+        synth_result.returncode = 0
+        synth_result.stdout = ""
+        synth_result.stderr = ""
+
+        scan_result = MagicMock()
+        scan_result.returncode = 1
+        scan_result.stdout = ""
+        scan_result.stderr = "cfn_nag_scan crashed"
+
+        mock_run.side_effect = [synth_result, scan_result]
+
+        p = CdkNagPlugin()
+        result = p.run([], tmp_path)
+
+        assert (
+            result.error is not None and result.error != ""
+        ), "Non-zero exit from cfn_nag_scan must be an error, not a clean pass"
+
+    @patch(f"{RUNNER_PATH}.subprocess.run")
+    def test_scanner_malformed_json_returns_error(self, mock_run, tmp_path):
+        """cfn_nag_scan exit-0 + malformed JSON during template scan must error."""
+        from eedom.plugins.cdk_nag import CdkNagPlugin
+
+        cdk_out = tmp_path / "cdk.out"
+        cdk_out.mkdir()
+        (cdk_out / "Stack.template.json").write_text("{}")
+
+        synth_result = MagicMock()
+        synth_result.returncode = 0
+        synth_result.stdout = ""
+        synth_result.stderr = ""
+
+        scan_result = MagicMock()
+        scan_result.returncode = 0
+        scan_result.stdout = "not valid json"
+        scan_result.stderr = ""
+
+        mock_run.side_effect = [synth_result, scan_result]
+
+        p = CdkNagPlugin()
+        result = p.run([], tmp_path)
+
+        assert (
+            result.error is not None and result.error != ""
+        ), "Malformed JSON from cfn_nag_scan must be an error, not a clean pass"

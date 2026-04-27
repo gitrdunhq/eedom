@@ -64,6 +64,18 @@ def run_cfn_nag(
             if result.stdout:
                 file_findings = _parse_output(result.stdout, file_path)
                 findings.extend(file_findings)
+            elif result.returncode == 0:
+                from eedom.core.errors import ErrorCode, error_msg
+
+                msg = error_msg(ErrorCode.BINARY_CRASHED, "cfn-nag", exit_code=0)
+                logger.warning("cfn_nag.empty_stdout")
+                return {"error": msg, "findings": []}
+        except ValueError:
+            from eedom.core.errors import ErrorCode, error_msg
+
+            msg = error_msg(ErrorCode.BINARY_CRASHED, "cfn-nag", exit_code=result.returncode)
+            logger.warning("cfn_nag.invalid_json", returncode=result.returncode)
+            return {"error": msg, "findings": []}
         except FileNotFoundError:
             from eedom.core.errors import ErrorCode, error_msg
 
@@ -93,8 +105,8 @@ def run_cfn_nag(
 def _parse_output(stdout: str, default_file: str) -> list[dict]:
     try:
         data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        raise ValueError("cfn-nag produced invalid JSON") from exc
 
     findings: list[dict] = []
     for file_result in data:

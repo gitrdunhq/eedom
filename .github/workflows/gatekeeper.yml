@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
   statuses: write
 
@@ -165,6 +166,7 @@ jobs:
 
       - name: File issue on incomplete review
         if: github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
+        continue-on-error: true
         run: |
           TITLE="[eedom-crash] ${CRASHED} plugin(s) crashed reviewing PR #${PR_NUM}"
           EXISTING=$(gh issue list --search "\"$TITLE\" in:title" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -246,6 +248,7 @@ jobs:
           VERDICT: ${{ steps.verdict.outputs.verdict }}
           ERRORS: ${{ steps.verdict.outputs.errors }}
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
+          CRASHED: ${{ steps.verdict.outputs.crashed }}
 
       - name: Hand off to Copilot
         if: github.event_name == 'pull_request'
@@ -254,7 +257,7 @@ jobs:
           HANDOFF="${MARKER}
           **Copilot context from Eagle Eyed Dom:**
 
-          Dom scanned this PR with 15 deterministic plugins:
+          Dom scanned this PR with 18 deterministic plugins:
           - **${ERRORS} error-level** findings (critical/high)
           - **${WARNINGS} warning-level** findings (medium)
           - **Verdict: ${VERDICT}**
