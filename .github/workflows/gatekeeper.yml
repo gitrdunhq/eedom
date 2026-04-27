@@ -66,12 +66,13 @@ jobs:
       - name: Run eedom review (container)
         if: steps.runtime.outputs.container == 'true'
         run: |
-          ENGINE="${{ steps.runtime.outputs.engine }}"
           $ENGINE run --rm --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
             sh -c "set -e && eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all --output /workspace/.temp/review.md"
+        env:
+          ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: Run eedom review (native)
         if: steps.runtime.outputs.container == 'false'
@@ -102,8 +103,10 @@ jobs:
               'Read-only file system' in res.get('message', {}).get('text', '')
               for res in r.get('results', [])
           ))
-          # Also count runs with zero results and error in tool name as crashed
           crashed += sum(1 for r in runs if len(r.get('results', [])) == 0 and r.get('tool', {}).get('driver', {}).get('name', '') not in ('opa',))
+          env_file = '.temp/verdict_env.sh'
+          with open(env_file, 'w') as ef:
+              ef.write(f'ERRORS={errors}\nWARNINGS={warnings}\nCRASHED={crashed}\nTOTAL={total}\n')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write(f'errors={errors}\n')
               out.write(f'warnings={warnings}\n')
@@ -114,13 +117,13 @@ jobs:
               echo "warnings=0" >> "$GITHUB_OUTPUT"
               echo "crashed=0" >> "$GITHUB_OUTPUT"
               echo "total_plugins=0" >> "$GITHUB_OUTPUT"
+              printf 'ERRORS=0\nWARNINGS=0\nCRASHED=0\nTOTAL=0\n' > .temp/verdict_env.sh
           }
           fi
 
-          ERRORS="${{ steps.verdict.outputs.errors }}"
-          WARNINGS="${{ steps.verdict.outputs.warnings }}"
-          CRASHED="${{ steps.verdict.outputs.crashed }}"
-          TOTAL="${{ steps.verdict.outputs.total_plugins }}"
+          if [ -f .temp/verdict_env.sh ]; then
+            . .temp/verdict_env.sh
+          fi
 
           if [ "$ERRORS" -gt 0 ]; then
             echo "verdict=blocked" >> "$GITHUB_OUTPUT"
@@ -132,7 +135,9 @@ jobs:
             echo "verdict=approved" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Runtime: ${{ steps.runtime.outputs.engine }} | Errors: ${ERRORS:-0} | Warnings: ${WARNINGS:-0} | Crashed: ${CRASHED:-0}/${TOTAL:-0} plugins"
+          echo "Runtime: ${RUNTIME_ENGINE} | Errors: ${ERRORS:-0} | Warnings: ${WARNINGS:-0} | Crashed: ${CRASHED:-0}/${TOTAL:-0} plugins"
+        env:
+          RUNTIME_ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: Set dom label
         if: github.event_name == 'pull_request'
@@ -145,7 +150,7 @@ jobs:
 
           echo "## dom: $VERDICT" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Runtime:** ${{ steps.runtime.outputs.engine }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Runtime:** $RUNTIME_ENGINE" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Crashed plugins:** $CRASHED" >> "$GITHUB_STEP_SUMMARY"
@@ -156,6 +161,7 @@ jobs:
           ERRORS: ${{ steps.verdict.outputs.errors }}
           WARNINGS: ${{ steps.verdict.outputs.warnings }}
           CRASHED: ${{ steps.verdict.outputs.crashed }}
+          RUNTIME_ENGINE: ${{ steps.runtime.outputs.engine }}
 
       - name: File issue on incomplete review
         if: github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
@@ -165,19 +171,20 @@ jobs:
           if [ -n "$EXISTING" ]; then
             echo "Issue #$EXISTING already open — skipping"
           else
+            RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
             gh issue create \
               --title "$TITLE" \
               --label "bug" \
               --body "## Eedom review incomplete
 
-          **PR:** #${PR_NUM} (${{ github.event.pull_request.html_url }})
-          **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          **PR:** #${PR_NUM} (${PR_URL})
+          **Run:** ${RUN_URL}
           **Crashed plugins:** ${CRASHED} out of ${TOTAL} total
 
           The review passed with \`dom: incomplete\` because too many plugins failed to produce results. This means the PR has no meaningful security/quality signal from eedom.
 
           ### Action required
-          1. Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) logs for NOT_INSTALLED / TIMEOUT / filesystem errors
+          1. Check the [workflow run](${RUN_URL}) logs for NOT_INSTALLED / TIMEOUT / filesystem errors
           2. Fix the runner environment or container image
           3. Re-run the workflow on PR #${PR_NUM}
 
@@ -186,6 +193,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUM: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           CRASHED: ${{ steps.verdict.outputs.crashed }}
           TOTAL: ${{ steps.verdict.outputs.total_plugins }}
 
@@ -294,12 +305,13 @@ jobs:
         run: |
           SHA=$(git rev-parse HEAD)
           TOKEN=$(python3 -c "import hmac,hashlib,os; print(hmac.new(os.environ['RELEASE_UNLOCK_WORD'].encode(), os.environ['KEY_SHA'].encode(), hashlib.sha256).hexdigest())")
-          gh api repos/${{ github.repository }}/statuses/"$SHA" \
+          gh api "repos/${REPO}/statuses/${SHA}" \
             --method POST \
             -f state=success \
             -f context=ci/release-key \
             -f description="$TOKEN"
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           RELEASE_UNLOCK_WORD: ${{ secrets.RELEASE_UNLOCK_WORD }}
           KEY_SHA: ${{ github.sha }}
