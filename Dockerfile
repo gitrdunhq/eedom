@@ -136,6 +136,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --target=/opt/pysite "scancode-toolkit==${SCANCODE_VERSION}"
 
 # eedom itself — invalidated when src/ changes
+COPY LICENSE ./
 COPY src/ src/
 COPY policies/ policies/
 COPY migrations/ migrations/

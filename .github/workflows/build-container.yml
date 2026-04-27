@@ -59,6 +59,7 @@ jobs:
           $ENGINE build \
             --tag "$TAG" \
             --tag "$TAG_LATEST" \
+            --tag "eedom:latest" \
             --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             .
