@@ -1,0 +1,112 @@
+name: Auto-done on close/merge
+
+on:
+  issues:
+    types: [closed]
+  pull_request_target:
+    types: [closed]
+
+jobs:
+  move-to-done:
+    name: Move to Done on project board
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'issues' ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          github-token: ${{ secrets.GITRDUNHQ_PROJECT_BOT }}
+          script: |
+            const org = context.repo.owner;
+            const repo = context.repo.repo;
+            const projectNumber = 3;
+            const isIssue = context.eventName === 'issues';
+            const nodeId = isIssue
+              ? context.payload.issue.node_id
+              : context.payload.pull_request.node_id;
+
+            // Load the known project directly to avoid fragile paginated discovery
+            const { organization } = await github.graphql(`
+              query($org: String!, $projectNumber: Int!) {
+                organization(login: $org) {
+                  projectV2(number: $projectNumber) {
+                    id
+                    title
+                    field(name: "Status") {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        options { id name }
+                      }
+                    }
+                  }
+                }
+              }`, { org, projectNumber });
+
+            const project = organization.projectV2;
+
+            if (!project) {
+              console.log(`Project #${projectNumber} not found for ${org}, skipping`);
+              return;
+            }
+
+            if (!project.field || !project.field.options) {
+              console.log('No "Status" field found on project, skipping');
+              return;
+            }
+            const doneOption = project.field.options.find(o => o.name === 'Done');
+            if (!doneOption) {
+              console.log('No "Done" status option found, skipping');
+              return;
+            }
+
+            // Find the item on the project board
+            let item = null;
+            let cursor = null;
+            let hasNextPage = true;
+
+            while (!item && hasNextPage) {
+              const { node } = await github.graphql(`
+                query($nodeId: ID!, $cursor: String) {
+                  node(id: $nodeId) {
+                    ... on Issue {
+                      projectItems(first: 100, after: $cursor) {
+                        nodes { id project { id } }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                    ... on PullRequest {
+                      projectItems(first: 100, after: $cursor) {
+                        nodes { id project { id } }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                  }
+                }`, { nodeId, cursor });
+
+              item = node.projectItems.nodes.find(i => i.project.id === project.id);
+              hasNextPage = node.projectItems.pageInfo.hasNextPage;
+              cursor = node.projectItems.pageInfo.endCursor;
+            }
+            if (!item) {
+              console.log(`Item not found on project ${project.title}, skipping`);
+              return;
+            }
+
+            // Move to Done
+            await github.graphql(`
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) { projectV2Item { id } }
+              }`, {
+              projectId: project.id,
+              itemId: item.id,
+              fieldId: project.field.id,
+              optionId: doneOption.id
+            });
+
+            console.log(`Moved to Done on ${project.title}`);

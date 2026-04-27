@@ -1,0 +1,28 @@
+name: Auto-add to project
+
+on:
+  issues:
+    types: [opened, transferred]
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  add-to-project:
+    name: Add to project board
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add issue or pull request to project board
+        env:
+          GH_TOKEN: ${{ secrets.GITRDUNHQ_PROJECT_BOT }}
+          CONTENT_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
+        run: |
+          PROJECT_ID="$(gh api graphql \
+            -f query='query($org:String!, $number:Int!) { organization(login:$org) { projectV2(number:$number) { id } } }' \
+            -f org='gitrdunhq' \
+            -F number=3 \
+            --jq '.data.organization.projectV2.id')"
+
+          gh api graphql \
+            -f query='mutation($project:ID!, $content:ID!) { addProjectV2ItemById(input:{projectId:$project, contentId:$content}) { item { id } } }' \
+            -f project="$PROJECT_ID" \
+            -f content="$CONTENT_ID"
