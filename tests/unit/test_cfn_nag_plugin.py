@@ -260,3 +260,33 @@ class TestCfnNagPluginRun:
 
         assert "BINARY_CRASHED" in result.error
         assert result.findings == []
+
+    @patch("eedom.plugins._runners.cfn_nag_runner.subprocess.run")
+    def test_exit_zero_malformed_json_returns_error(self, mock_run, tmp_path):
+        """Exit 0 + malformed JSON stdout must NOT produce empty findings."""
+        template = tmp_path / "template.yaml"
+        template.write_text("AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n")
+
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "not valid json at all"
+        mock_run.return_value.stderr = ""
+
+        p = CfnNagPlugin()
+        result = p.run([str(template)], tmp_path)
+
+        assert result.error, "Malformed JSON on exit-0 must report error, not silently return clean"
+
+    @patch("eedom.plugins._runners.cfn_nag_runner.subprocess.run")
+    def test_exit_zero_empty_stdout_returns_error(self, mock_run, tmp_path):
+        """Exit 0 + empty stdout must NOT produce empty findings."""
+        template = tmp_path / "template.yaml"
+        template.write_text("AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n")
+
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+
+        p = CfnNagPlugin()
+        result = p.run([str(template)], tmp_path)
+
+        assert result.error, "Empty stdout on exit-0 must report error, not silently return clean"

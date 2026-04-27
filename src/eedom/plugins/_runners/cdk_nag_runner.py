@@ -76,9 +76,23 @@ def run_cdk_nag(
                 cwd=repo_path,
                 check=False,
             )
+            if result.returncode != 0 and not result.stdout:
+                msg = error_msg(
+                    ErrorCode.BINARY_CRASHED, "cfn_nag_scan", exit_code=result.returncode
+                )
+                logger.warning("cdk_nag.scan_crashed", error=msg, returncode=result.returncode)
+                return {"findings": [], "error": msg}
             if result.stdout:
                 file_findings = _parse_output(result.stdout, str(template))
                 all_findings.extend(file_findings)
+            elif result.returncode == 0:
+                msg = error_msg(ErrorCode.BINARY_CRASHED, "cfn_nag_scan", exit_code=0)
+                logger.warning("cdk_nag.empty_stdout")
+                return {"findings": [], "error": msg}
+        except ValueError:
+            msg = error_msg(ErrorCode.BINARY_CRASHED, "cfn_nag_scan", exit_code=result.returncode)
+            logger.warning("cdk_nag.invalid_json", returncode=result.returncode)
+            return {"findings": [], "error": msg}
         except FileNotFoundError:
             msg = error_msg(ErrorCode.NOT_INSTALLED, "cfn_nag_scan")
             logger.warning("cdk_nag.cfn_nag_not_installed", error=msg)
@@ -102,8 +116,8 @@ def run_cdk_nag(
 def _parse_output(stdout: str, default_file: str) -> list[dict]:
     try:
         data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        raise ValueError("cfn_nag_scan produced invalid JSON") from exc
 
     findings: list[dict] = []
     for file_result in data:
