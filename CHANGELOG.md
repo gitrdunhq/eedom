@@ -7,6 +7,14 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.5](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.4...eedom-v0.2.5) (2026-04-27)
+
+
+### Features
+
+* actionability classification for scanner findings ([a865ac7](https://github.com/gitrdunhq/eedom/commit/a865ac7c6c8109b0d3e331a8031b4f913eb15bcc))
+* **container:** 18/18 scanners, Trixie base, Node 22, binary bumps ([312bbf1](https://github.com/gitrdunhq/eedom/commit/312bbf19d04a465a5c32194644fcd22435c7e173))
+
 ## [0.2.4](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.3...eedom-v0.2.4) (2026-04-27)
 
 
