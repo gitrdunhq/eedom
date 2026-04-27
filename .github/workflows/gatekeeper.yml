@@ -71,7 +71,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
-            sh -c "set -e && freshclam --quiet 2>/dev/null || true && eedom review --repo-path /workspace --all --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all --output /workspace/.temp/review.md"
+            sh -c "set -e && freshclam --quiet 2>/dev/null || true && DIFF_FLAG='' && [ -f /workspace/.temp/pr.diff ] && DIFF_FLAG='--diff /workspace/.temp/pr.diff' && eedom review --repo-path /workspace --all $DIFF_FLAG --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all $DIFF_FLAG --output /workspace/.temp/review.md"
         env:
           ENGINE: ${{ steps.runtime.outputs.engine }}
 
@@ -79,8 +79,10 @@ jobs:
         if: steps.runtime.outputs.container == 'false'
         run: |
           set -e
-          uv run eedom review --repo-path . --all --format sarif --output .temp/review.sarif
-          uv run eedom review --repo-path . --all --output .temp/review.md
+          DIFF_FLAG=""
+          [ -f .temp/pr.diff ] && DIFF_FLAG="--diff .temp/pr.diff"
+          uv run eedom review --repo-path . --all $DIFF_FLAG --format sarif --output .temp/review.sarif
+          uv run eedom review --repo-path . --all $DIFF_FLAG --output .temp/review.md
 
       - name: Compute verdict
         id: verdict

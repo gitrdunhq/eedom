@@ -2,11 +2,11 @@
   <img src="assets/hero.svg" alt="Eagle Eyed Dom" width="900">
   <br>
   <strong>Fully deterministic dependency review for CI.</strong><br>
-  15 plugins. 6 OPA policy rules. 18 ecosystems. Zero LLM in the decision path.
+  18 plugins. 6 OPA policy rules. 18 ecosystems. Zero LLM in the decision path.
   <br><br>
 
   <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-→-d4251a?style=flat-square" alt="Get Started"></a>
-  <a href="#the-15-plugins"><img src="https://img.shields.io/badge/15_plugins-deterministic-f2c14a?style=flat-square&labelColor=0e0706" alt="15 Plugins"></a>
+  <a href="#the-18-plugins"><img src="https://img.shields.io/badge/18_plugins-deterministic-f2c14a?style=flat-square&labelColor=0e0706" alt="18 Plugins"></a>
   <a href="#opa-policy-rules"><img src="https://img.shields.io/badge/OPA-6_rules-1e3a8a?style=flat-square" alt="OPA Rules"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm_Shield-7ae582?style=flat-square" alt="PolyForm Shield License"></a>
 </div>
@@ -25,11 +25,11 @@ Those checks aren't hard. They're tedious. And they're the reason your senior en
 
 Both outcomes cost real money. One costs velocity. The other costs incidents.
 
-**Eagle Eyed Dom doesn't replace human review. It removes the mechanical half so humans can do the half that requires judgment.** Fifteen plugins run the checks that don't need a brain. OPA policy makes the accept/reject decision deterministically. The reviewer opens a PR and the dependency, vulnerability, license, complexity, and secret checks are already done — with evidence, an audit trail, and a clear verdict. They can skip straight to "does this design make sense?"
+**Eagle Eyed Dom doesn't replace human review. It removes the mechanical half so humans can do the half that requires judgment.** Eighteen plugins run the checks that don't need a brain. OPA policy makes the accept/reject decision deterministically. The reviewer opens a PR and the dependency, vulnerability, license, complexity, and secret checks are already done — with evidence, an audit trail, and a clear verdict. They can skip straight to "does this design make sense?"
 
 ---
 
-When a PR touches a dependency manifest — `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, any of 18 ecosystems — eedom detects the changed packages, runs 15 plugins in parallel, deduplicates findings, evaluates them against OPA policy, writes tamper-evident evidence, and appends the decision to a Parquet audit log.
+When a PR touches a dependency manifest — `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, any of 18 ecosystems — eedom detects the changed packages, runs 18 plugins in parallel, deduplicates findings, evaluates them against OPA policy, writes tamper-evident evidence, and appends the decision to a Parquet audit log.
 
 Every scanning tool is deterministic. The decision is deterministic. Nothing blocks the build unless OPA says so.
 
@@ -42,7 +42,7 @@ Every scanning tool is deterministic. The decision is deterministic. Nothing blo
 
 ---
 
-## The 15 Plugins
+## The 18 Plugins
 
 <div align="center">
   <img src="assets/scanners.svg" alt="Scanner lineup" width="700">
@@ -69,28 +69,36 @@ All deterministic. Zero LLM. The only AI is the optional Copilot agent wrapper t
 | 6 | **Semgrep** | AST pattern matching (dynamic rulesets + custom org rules) |
 | 7 | **PMD CPD** | Copy-paste detection (12 languages) |
 
+### Type Checking
+
+| # | Plugin | What it does |
+|---|--------|-------------|
+| 8 | **Mypy** | Deterministic cross-file Python type checking |
+
 ### Infrastructure
 
 | # | Plugin | What it does |
 |---|--------|-------------|
-| 8 | **kube-linter** | K8s/Helm security validation |
+| 9 | **kube-linter** | K8s/Helm security validation |
+| 10 | **CDK Nag** | CDK CloudFormation security scanning |
+| 11 | **cfn-nag** | CloudFormation template security scanning |
 
 ### Quality
 
 | # | Plugin | What it does |
 |---|--------|-------------|
-| 9 | **Lizard + Radon** | Cyclomatic complexity + maintainability index |
-| 10 | **cspell** | Code-aware spell checking (en-CA, 15 dictionaries) |
-| 11 | **ls-lint** | File naming conventions |
-| 12 | **Blast Radius** | AST→SQLite code graph, 8+ SQL checks |
+| 12 | **Lizard + Radon** | Cyclomatic complexity + maintainability index |
+| 13 | **cspell** | Code-aware spell checking (en-CA, 15 dictionaries) |
+| 14 | **ls-lint** | File naming conventions |
+| 15 | **Blast Radius** | AST→SQLite code graph, 8+ SQL checks |
 
 ### Supply Chain
 
 | # | Plugin | What it does |
 |---|--------|-------------|
-| 13 | **Supply Chain** | Unpinned deps + lockfile integrity + latest tag detection |
-| 14 | **ClamAV** | Malware/virus scanning |
-| 15 | **Gitleaks** | Secret/credential detection (800+ patterns) |
+| 16 | **Supply Chain** | Unpinned deps + lockfile integrity + latest tag detection |
+| 17 | **ClamAV** | Malware/virus scanning |
+| 18 | **Gitleaks** | Secret/credential detection (800+ patterns) |
 
 **Scanner disagreement:** When OSV-Scanner and Trivy report the same CVE, the normalizer deduplicates on `(advisory_id, category, package_name, version)`. Highest severity wins.
 
@@ -270,16 +278,20 @@ src/eedom/
 │   ├── diff.py             #   Text diff parser (requirements.txt, pyproject.toml)
 │   ├── sbom_diff.py        #   CycloneDX SBOM differ (18 ecosystems via purl)
 │   ├── normalizer.py       #   Finding deduplication (highest severity wins)
+│   ├── actionability.py    #   Actionable vs blocked finding classification
 │   ├── orchestrator.py     #   Parallel scanner runner (ThreadPoolExecutor)
 │   ├── decision.py         #   Pure assembler — OPA verdict → ReviewDecision
 │   ├── memo.py             #   Markdown PR comment generator
 │   ├── seal.py             #   SHA-256 evidence chain
 │   └── taskfit*.py         #   Optional LLM advisory (disabled by default)
-├── plugins/                # 15 scanner plugin implementations
+├── plugins/                # 18 scanner plugin implementations
 │   ├── blast_radius.py     #   AST→SQLite code graph + SQL checks
 │   ├── semgrep.py          #   AST pattern matching
 │   ├── clamav.py           #   Malware/virus scanning
 │   ├── gitleaks.py         #   Secret detection (800+ patterns)
+│   ├── mypy.py             #   Cross-file Python type checking
+│   ├── cdk_nag.py          #   CDK CloudFormation security scanning
+│   ├── cfn_nag.py          #   CloudFormation template scanning
 │   └── ...                 #   + 11 more (one file per plugin)
 ├── templates/              # Jinja2 templates for PR comments
 │   ├── comment.md.j2       #   Main comment wrapper (verdict + sections)
@@ -378,12 +390,17 @@ Nothing blocks the build unless OPA says so. Every external call has a timeout. 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GATEKEEPER_GITHUB_TOKEN` | **(required)** | GitHub token for PR comments |
+| `GATEKEEPER_PR_NUMBER` | **(required)** | PR number to review |
+| `GATEKEEPER_DIFF_PATH` | — | Path to diff file |
+| `GATEKEEPER_REPO_OWNER` | — | Repository owner |
+| `GATEKEEPER_REPO_NAME` | — | Repository name |
 | `GATEKEEPER_ENFORCEMENT_MODE` | `warn` | `block` / `warn` / `log` |
 | `GATEKEEPER_LLM_MODEL` | `gpt-4.1` | Copilot agent model |
 | `GATEKEEPER_ENABLED_SCANNERS` | `syft,osv-scanner,trivy,scancode` | Pipeline scanners |
 | `GATEKEEPER_SEMGREP_TIMEOUT` | `120` | Semgrep timeout (s) |
 | `GATEKEEPER_PIPELINE_TIMEOUT` | `300` | Pipeline timeout (s) |
 | `GATEKEEPER_POLICY_VERSION` | `1.0.0` | Shown in PR comments |
+| `GATEKEEPER_MAX_COMMENT_LENGTH` | `3900` | Max PR comment chars |
 
 ---
 
@@ -499,7 +516,7 @@ Watch mode debounces file-system events (500 ms default). Press `Ctrl+C` to stop
 
 ## Monorepo Support
 
-Eagle Eyed Dom auto-discovers packages across a monorepo and runs all 15 plugins per-package.
+Eagle Eyed Dom auto-discovers packages across a monorepo and runs all 18 plugins per-package.
 
 ### Package discovery
 
@@ -587,5 +604,5 @@ uv run python scripts/gauntlet.py
 <div align="center">
   <img src="assets/avatar.png" alt="Eagle Eyed Dom" width="96">
   <br>
-  <sub>Eagle Eyed Dom &middot; Dependency Review Agent &middot; v0.1.0</sub>
+  <sub>Eagle Eyed Dom &middot; Dependency Review Agent &middot; v0.2.4</sub>
 </div>

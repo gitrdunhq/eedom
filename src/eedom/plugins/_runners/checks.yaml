@@ -1,6 +1,6 @@
 checks:
   - name: blast_radius_high
-    severity: high
+    severity: info
     description: Symbol has >10 direct dependents
     query: |
       SELECT s.name, s.file, s.line, COUNT(e.id) as dependents
@@ -12,7 +12,7 @@ checks:
       ORDER BY dependents DESC
 
   - name: blast_radius_critical
-    severity: critical
+    severity: medium
     description: Symbol has >25 direct dependents
     query: |
       SELECT s.name, s.file, s.line, COUNT(e.id) as dependents

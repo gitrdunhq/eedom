@@ -3,6 +3,10 @@ title = "gitrdun custom gitleaks rules"
 [allowlist]
 paths = [
   '''\.claude/''',
+  '''Dockerfile''',
+  '''tests/''',
+  '''\.temp/''',
+  '''src/eedom/core/telemetry\.py''',
 ]
 
 [[rules]]

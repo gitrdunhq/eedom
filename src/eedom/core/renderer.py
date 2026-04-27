@@ -186,6 +186,10 @@ def render_comment(
     quality_score = calculate_quality_score(results)
     mi_grade, mi_score, mi_icon, avg_ccn, hi_ccn, mi_c_count = _extract_mi(results)
 
+    from eedom.core.actionability import classify_findings
+
+    act_summary = classify_findings(results)
+
     footer_parts = []
     for r in results:
         if r.error:
@@ -213,6 +217,7 @@ def render_comment(
         mi_c_count=mi_c_count,
         version=_VERSION,
         footer_stats=footer_stats,
+        actionability=act_summary,
     )
 
     if len(output) > _MAX_COMMENT_LENGTH:
