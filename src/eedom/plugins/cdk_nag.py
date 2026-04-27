@@ -27,8 +27,9 @@ class CdkNagPlugin(ScannerPlugin):
         return (repo_path / "cdk.json").exists() or (repo_path / "cdk.out").is_dir()
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
+        skip_synth = not (repo_path / "cdk.json").exists()
         try:
-            data = _run(str(repo_path))
+            data = _run(str(repo_path), skip_synth=skip_synth)
         except Exception as exc:
             return PluginResult(plugin_name=self.name, error=str(exc))
 

@@ -20,43 +20,48 @@ def run_cdk_nag(
     repo_path: str,
     synth_timeout: int = 120,
     scan_timeout: int = 60,
+    skip_synth: bool = False,
 ) -> dict:
     """Run cdk-nag against a CDK project.
 
-    Two-step process:
-    1. Always run ``cdk synth --quiet`` to generate fresh templates. Stale
-       ``cdk.out/`` is never used — new code changes would be silently missed.
-    2. Scan all ``*.template.json`` files in ``cdk.out/`` using ``cfn_nag_scan``.
+    When ``skip_synth`` is False (default), runs ``cdk synth`` first to
+    generate fresh templates. When True, scans existing ``cdk.out/``
+    templates directly — used for assembly-only repos without ``cdk.json``.
     """
     from eedom.core.errors import ErrorCode, error_msg
 
     rp = Path(repo_path)
     cdk_out = rp / "cdk.out"
 
-    try:
-        result = subprocess.run(
-            ["cdk", "synth", "--quiet"],
-            capture_output=True,
-            text=True,
-            timeout=synth_timeout,
-            cwd=repo_path,
-            check=False,
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            logger.warning("cdk_nag.synth_failed", returncode=result.returncode, stderr=stderr)
-            return {
-                "findings": [],
-                "error": f"cdk synth failed (exit {result.returncode}): {stderr}",
-            }
-    except FileNotFoundError:
-        msg = error_msg(ErrorCode.NOT_INSTALLED, "cdk")
-        logger.warning("cdk_nag.cdk_not_installed", error=msg)
-        return {"findings": [], "error": msg}
-    except subprocess.TimeoutExpired:
-        msg = error_msg(ErrorCode.TIMEOUT, "cdk", timeout=synth_timeout)
-        logger.warning("cdk_nag.synth_timeout", error=msg)
-        return {"findings": [], "error": msg}
+    if not skip_synth:
+        try:
+            result = subprocess.run(
+                ["cdk", "synth", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=synth_timeout,
+                cwd=repo_path,
+                check=False,
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.strip()
+                logger.warning(
+                    "cdk_nag.synth_failed",
+                    returncode=result.returncode,
+                    stderr=stderr,
+                )
+                return {
+                    "findings": [],
+                    "error": f"cdk synth failed (exit {result.returncode}): {stderr}",
+                }
+        except FileNotFoundError:
+            msg = error_msg(ErrorCode.NOT_INSTALLED, "cdk")
+            logger.warning("cdk_nag.cdk_not_installed", error=msg)
+            return {"findings": [], "error": msg}
+        except subprocess.TimeoutExpired:
+            msg = error_msg(ErrorCode.TIMEOUT, "cdk", timeout=synth_timeout)
+            logger.warning("cdk_nag.synth_timeout", error=msg)
+            return {"findings": [], "error": msg}
 
     templates = list(cdk_out.glob("*.template.json"))
     if not templates:

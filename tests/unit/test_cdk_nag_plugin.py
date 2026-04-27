@@ -93,6 +93,7 @@ class TestCdkNagPlugin:
     def test_run_with_existing_cdk_out(self, mock_run, tmp_path):
         from eedom.plugins.cdk_nag import CdkNagPlugin
 
+        (tmp_path / "cdk.json").write_text("{}")
         cdk_out = tmp_path / "cdk.out"
         cdk_out.mkdir()
         template = cdk_out / "MyStack.template.json"
@@ -270,10 +271,11 @@ class TestCdkNagPlugin:
         assert result.summary["total"] == 0
 
     @patch(f"{RUNNER_PATH}.subprocess.run")
-    def test_synth_always_called_even_when_cdk_out_exists(self, mock_run, tmp_path):
-        """Synth must run even when cdk.out/ already exists — stale output guard."""
+    def test_synth_called_when_cdk_json_exists(self, mock_run, tmp_path):
+        """Synth must run when cdk.json exists — stale output guard."""
         from eedom.plugins.cdk_nag import CdkNagPlugin
 
+        (tmp_path / "cdk.json").write_text("{}")
         cdk_out = tmp_path / "cdk.out"
         cdk_out.mkdir()
         (cdk_out / "MyStack.template.json").write_text("{}")
@@ -324,6 +326,7 @@ class TestCdkNagPlugin:
     def test_no_templates_in_cdk_out(self, mock_run, tmp_path):
         from eedom.plugins.cdk_nag import CdkNagPlugin
 
+        (tmp_path / "cdk.json").write_text("{}")
         cdk_out = tmp_path / "cdk.out"
         cdk_out.mkdir()
         # No .template.json files
@@ -371,6 +374,42 @@ class TestCdkNagPlugin:
         assert (
             result.error is not None and result.error != ""
         ), "Non-zero exit from cfn_nag_scan must be an error, not a clean pass"
+
+    @patch(f"{RUNNER_PATH}.subprocess.run")
+    def test_assembly_only_skips_synth(self, mock_run, tmp_path):
+        """cdk.out/ exists but no cdk.json → scan templates without running cdk synth."""
+        from eedom.plugins.cdk_nag import CdkNagPlugin
+
+        cdk_out = tmp_path / "cdk.out"
+        cdk_out.mkdir()
+        (cdk_out / "MyStack.template.json").write_text("{}")
+
+        scan_result = MagicMock()
+        scan_result.returncode = 0
+        scan_result.stdout = CFN_NAG_OUTPUT
+        mock_run.return_value = scan_result
+
+        p = CdkNagPlugin()
+        result = p.run([], tmp_path)
+
+        assert result.error == ""
+        assert len(result.findings) == 2
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args[0][0]
+        assert "cfn_nag_scan" in cmd
+        assert "cdk" not in cmd or "synth" not in cmd
+
+    def test_assembly_only_no_templates_returns_empty(self, tmp_path):
+        """cdk.out/ exists with no templates and no cdk.json → no findings, no error."""
+        from eedom.plugins.cdk_nag import CdkNagPlugin
+
+        (tmp_path / "cdk.out").mkdir()
+
+        p = CdkNagPlugin()
+        result = p.run([], tmp_path)
+
+        assert result.findings == []
+        assert result.error == ""
 
     @patch(f"{RUNNER_PATH}.subprocess.run")
     def test_scanner_malformed_json_returns_error(self, mock_run, tmp_path):
