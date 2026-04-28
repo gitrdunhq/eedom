@@ -109,7 +109,7 @@ class TestEedomSettings:
 
         # Path defaults
         assert settings.evidence_path == "./evidence"
-        assert settings.opa_policy_path == "./policies"
+        assert settings.opa_policy_path == "./policies/policy.rego"
         assert settings.alternatives_path == "./alternatives.json"
 
         # Scanner defaults
