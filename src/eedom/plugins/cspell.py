@@ -33,8 +33,19 @@ class CspellPlugin(ScannerPlugin):
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
         # cspell (Node.js) doesn't flush stdout in non-TTY mode.
-        # Write JSON to a temp file via @cspell/cspell-json-reporter.
+        # Use a temp cspell.json config to write JSON output to a file.
         out_path = Path(tempfile.mktemp(suffix=".json"))
+        cfg_path = Path(tempfile.mktemp(suffix=".cspell.json"))
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "reporters": [
+                        "default",
+                        ["@cspell/cspell-json-reporter", {"outFile": str(out_path)}],
+                    ]
+                }
+            )
+        )
         cmd = [
             "cspell",
             "lint",
@@ -42,10 +53,8 @@ class CspellPlugin(ScannerPlugin):
             "--no-summary",
             "--locale",
             "en-CA",
-            "--reporter",
-            "default",
-            "--reporter",
-            f"@cspell/cspell-json-reporter:{out_path}",
+            "--config",
+            str(cfg_path),
             *files,
         ]
 
@@ -59,20 +68,23 @@ class CspellPlugin(ScannerPlugin):
             )
         except FileNotFoundError:
             out_path.unlink(missing_ok=True)
+            cfg_path.unlink(missing_ok=True)
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.NOT_INSTALLED, "cspell"),
             )
         except subprocess.TimeoutExpired:
             out_path.unlink(missing_ok=True)
+            cfg_path.unlink(missing_ok=True)
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.TIMEOUT, "cspell", timeout=60),
             )
+        finally:
+            cfg_path.unlink(missing_ok=True)
 
         findings = []
 
-        # Try JSON file output first
         if out_path.exists() and out_path.stat().st_size > 2:
             with contextlib.suppress(json.JSONDecodeError, KeyError, TypeError):
                 data = json.loads(out_path.read_text())
