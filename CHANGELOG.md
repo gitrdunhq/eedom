@@ -7,6 +7,28 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.6](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.5...eedom-v0.2.6) (2026-04-28)
+
+
+### Features
+
+* --format json structured output for machine consumption (closes [#92](https://github.com/gitrdunhq/eedom/issues/92)) ([74b0a44](https://github.com/gitrdunhq/eedom/commit/74b0a4488427b83e7373bad3dc5bc6418e179b98))
+* configurable fan-out threshold via .eagle-eyed-dom.yaml (closes [#95](https://github.com/gitrdunhq/eedom/issues/95)) ([32df0c2](https://github.com/gitrdunhq/eedom/commit/32df0c2cda29a2f98ff3ca7fd541ecdfb5ac9d88))
+* skip reasons in PluginResult — why scanners were skipped + remediation (closes [#88](https://github.com/gitrdunhq/eedom/issues/88)) ([e4bdf72](https://github.com/gitrdunhq/eedom/commit/e4bdf72aed908a2dd10ce57f5a6ba74850fcd370))
+* two-axis scoring — security blocks, quality advises (closes [#93](https://github.com/gitrdunhq/eedom/issues/93)) ([76bf07a](https://github.com/gitrdunhq/eedom/commit/76bf07adc793fa0ccba3d8af85fbaaf33ead9e46))
+
+
+### Bug Fixes
+
+* cdk-nag assembly-only mode — skip synth when no cdk.json (closes [#80](https://github.com/gitrdunhq/eedom/issues/80)) ([ab7f227](https://github.com/gitrdunhq/eedom/commit/ab7f2271d9bc7d110f9300e1f2d66c153ce550ea))
+* docs-only PR skip, Jinja2 nosemgrep, complexity render cap (closes [#84](https://github.com/gitrdunhq/eedom/issues/84), [#87](https://github.com/gitrdunhq/eedom/issues/87), [#59](https://github.com/gitrdunhq/eedom/issues/59)) ([f9726ed](https://github.com/gitrdunhq/eedom/commit/f9726ed88e464507969976a3dc0b92a0e7f07cc0))
+* SLSA attestation non-blocking on self-hosted runners (closes [#105](https://github.com/gitrdunhq/eedom/issues/105)) ([fd9f1c6](https://github.com/gitrdunhq/eedom/commit/fd9f1c6da25091da64e20894940c69517ebfd524))
+
+
+### Documentation
+
+* add commit message discipline to CLAUDE.md ([e6cfca1](https://github.com/gitrdunhq/eedom/commit/e6cfca1a5a91b2a4f78ea608427362e1c251ef86))
+
 ## [0.2.5](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.4...eedom-v0.2.5) (2026-04-27)
 
 
