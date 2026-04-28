@@ -150,6 +150,7 @@ class GitleaksPlugin(ScannerPlugin):
         lines.append("| File | Line | Rule | Description |")
         lines.append("|------|------|------|-------------|")
         for f in result.findings:
-            lines.append(f"| `{f['file']}` | {f['line']} | `{f['rule']}` | {f['description']} |")
+            desc = f.get("description", "") or f.get("message", "")
+            lines.append(f"| `{f['file']}` | {f['line']} | `{f.get('rule', '')}` | {desc} |")
         lines.append("\n</details>\n")
         return "\n".join(lines)

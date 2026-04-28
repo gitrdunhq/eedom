@@ -45,6 +45,10 @@ class TestCpd:
 
         assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
 
+        cpd_result = next((r for r in parsed.get("results", []) if r.get("plugin") == "cpd"), {})
+        if "NOT_INSTALLED" in cpd_result.get("error", ""):
+            pytest.skip("cpd not installed in container")
+
         findings = get_plugin_findings(parsed, "cpd")
         assert (
             len(findings) >= 1
@@ -71,16 +75,17 @@ class TestMypy:
 
 class TestCspell:
     def test_cspell_finds_typo(self, vuln_repo: Path, tmp_path: Path) -> None:
-        """Cspell detects misspelled words.
-
-        Cspell output parsing depends on the exact cspell version and its
-        stdout format. When findings are empty, we verify the plugin ran
-        without error (fail-open).
-        """
+        """Cspell detects misspelled words."""
         result, parsed = run_review(vuln_repo, scanners="cspell", output_format="json")
         breakpoint_dump(tmp_path, "scanner_cspell", parsed)
 
         assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
+
+        cspell_result = next(
+            (r for r in parsed.get("results", []) if r.get("plugin") == "cspell"), {}
+        )
+        if "NOT_INSTALLED" in cspell_result.get("error", ""):
+            pytest.skip("cspell not installed in container")
 
         findings = get_plugin_findings(parsed, "cspell")
         assert (
