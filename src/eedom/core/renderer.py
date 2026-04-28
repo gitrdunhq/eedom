@@ -271,7 +271,13 @@ def _build_sections(
         if plugin_renderers:
             renderer = plugin_renderers.get(r.plugin_name)
 
-        md = renderer.render(r) if renderer and hasattr(renderer, "render") else _default_render(r)
+        if renderer is not None and callable(getattr(renderer, "render", None)):
+            try:
+                md = renderer.render(r)
+            except Exception:  # noqa: BLE001
+                md = _default_render(r)
+        else:
+            md = _default_render(r)
 
         if md:
             sections.append(md)

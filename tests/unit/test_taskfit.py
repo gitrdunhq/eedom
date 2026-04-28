@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
+import pytest
 import respx
 
 from eedom.core.config import EedomSettings
@@ -347,3 +348,196 @@ class TestTaskFitAdvisorEnabled:
         user_data = json.loads(body["messages"][1]["content"])
         assert "<b>" not in user_data["summary"]
         assert "Fast" in user_data["summary"]
+
+
+class TestCallLlmResponseParsing:
+    """F-022: _call_llm must handle malformed response fields without raising.
+
+    Two real bugs in the current code:
+    1. ValueError from response.json() is not in the except tuple → propagates.
+    2. len(text) is called OUTSIDE the try-except, so a non-string content
+       field (e.g. int 123) causes TypeError to escape _call_llm entirely.
+    """
+
+    def _make_advisor(self) -> TaskFitAdvisor:
+        config = _make_config(
+            llm_enabled=True,
+            llm_endpoint="https://llm.example.com/v1",
+            llm_model="gpt-4o",
+        )
+        return TaskFitAdvisor(config)
+
+    def _mock_post(self, advisor: TaskFitAdvisor, json_data):
+        """Return a context manager that patches advisor._client.post."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = json_data
+        return patch.object(advisor._client, "post", return_value=mock_response)
+
+    def test_call_llm_non_string_content_returns_empty(self) -> None:
+        """F-022: When 'content' is a non-string (e.g. int), _call_llm must
+        return '' — not raise TypeError from len(text) outside the try block.
+
+        RED before fix: len(123) raises TypeError outside the try-except.
+        GREEN after fix: isinstance check guards before len().
+        """
+        advisor = self._make_advisor()
+        malformed = {"choices": [{"message": {"content": 123}}]}
+        with self._mock_post(advisor, malformed):
+            result = advisor._call_llm([{"role": "user", "content": "test"}])
+        assert result == ""
+        assert isinstance(result, str)
+
+    def test_call_llm_json_decode_error_returns_empty(self) -> None:
+        """F-022: When response.json() raises ValueError, _call_llm must
+        return '' — not propagate ValueError to the caller.
+
+        RED before fix: ValueError is not in except (KeyError, IndexError, TypeError).
+        GREEN after fix: ValueError added to the except clause.
+        """
+        advisor = self._make_advisor()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        with patch.object(advisor._client, "post", return_value=mock_response):
+            result = advisor._call_llm([{"role": "user", "content": "test"}])
+        assert result == ""
+        assert isinstance(result, str)
+
+
+class TestTaskFitPackageNameValidation:
+    """Package name validation guards in TaskFitAdvisor.assess()."""
+
+    @respx.mock
+    def test_empty_package_name_skips_llm(self) -> None:
+        """Empty package name must not trigger an LLM call."""
+        config = _make_config(
+            llm_enabled=True,
+            llm_endpoint="https://llm.example.com/v1",
+            llm_model="gpt-4o",
+            llm_api_key="sk-test",
+        )
+        advisor = TaskFitAdvisor(config)
+        route = respx.post("https://llm.example.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "advisory text"}}]},
+            )
+        )
+
+        result = advisor.assess(
+            package_name="",
+            version="1.0.0",
+            use_case="test",
+            metadata=SAMPLE_METADATA,
+            alternatives=[],
+        )
+
+        assert result == ""
+        assert not route.called  # LLM must NOT be called for empty package name
+
+    @respx.mock
+    def test_whitespace_only_package_name_skips_llm(self) -> None:
+        """Whitespace-only package name must not trigger an LLM call."""
+        config = _make_config(
+            llm_enabled=True,
+            llm_endpoint="https://llm.example.com/v1",
+            llm_model="gpt-4o",
+            llm_api_key="sk-test",
+        )
+        advisor = TaskFitAdvisor(config)
+        route = respx.post("https://llm.example.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "advisory text"}}]},
+            )
+        )
+
+        result = advisor.assess(
+            package_name="   ",
+            version="1.0.0",
+            use_case="test",
+            metadata=SAMPLE_METADATA,
+            alternatives=[],
+        )
+
+        assert result == ""
+        assert not route.called
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "package with spaces",
+            "pkg;rm -rf /",
+            "pkg\nmalicious",
+            "pkg\x00null",
+            "../../../etc/passwd",
+        ],
+    )
+    def test_invalid_package_name_chars_skip_llm(self, bad_name: str) -> None:
+        """Package names with invalid chars must not trigger an LLM call."""
+        config = _make_config(
+            llm_enabled=True,
+            llm_endpoint="https://llm.example.com/v1",
+            llm_model="gpt-4o",
+            llm_api_key="sk-test",
+        )
+        advisor = TaskFitAdvisor(config)
+        route = respx.post("https://llm.example.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "advisory text"}}]},
+            )
+        )
+
+        result = advisor.assess(
+            package_name=bad_name,
+            version="1.0.0",
+            use_case="test",
+            metadata=SAMPLE_METADATA,
+            alternatives=[],
+        )
+
+        assert result == ""
+        assert not route.called
+
+    @respx.mock
+    def test_valid_package_name_does_call_llm(self) -> None:
+        """A valid package name should proceed to the LLM."""
+        config = _make_config(
+            llm_enabled=True,
+            llm_endpoint="https://llm.example.com/v1",
+            llm_model="gpt-4o",
+            llm_api_key="sk-test",
+        )
+        advisor = TaskFitAdvisor(config)
+
+        advisory_text = (
+            "NECESSITY:    PASS — Needed.\n"
+            "MINIMALITY:   PASS — Minimal.\n"
+            "MAINTENANCE:  PASS — Active.\n"
+            "SECURITY:     PASS — Good.\n"
+            "EXPOSURE:     PASS — Low.\n"
+            "BLAST_RADIUS: PASS — Small.\n"
+            "ALTERNATIVES: PASS — None.\n"
+            "BEHAVIORAL:   PASS — Clean.\n\n"
+            "RECOMMENDATION: APPROVE — Good package."
+        )
+        route = respx.post("https://llm.example.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": advisory_text}}]},
+            )
+        )
+
+        result = advisor.assess(
+            package_name="valid-package",
+            version="1.0.0",
+            use_case="test",
+            metadata=SAMPLE_METADATA,
+            alternatives=[],
+        )
+
+        assert route.called  # Valid package name DOES reach the LLM
+        assert result == advisory_text

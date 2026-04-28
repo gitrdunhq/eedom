@@ -58,7 +58,8 @@ class AgentSettings(BaseSettings):
     # TODO: replace with Optional[str] once no-DB mode is implemented.
     # Currently triggers NullRepository fallback in the pipeline.
     # Removal condition: when EedomSettings.db_dsn becomes optional.
-    db_dsn: str = "postgresql://unused:unused@localhost/unused"
+    # No credentials in the default DSN — override via GATEKEEPER_DB_DSN.
+    db_dsn: str = "postgresql://localhost/eedom"
     policy_version: str = "1.0.0"
 
     @classmethod

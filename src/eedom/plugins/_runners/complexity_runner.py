@@ -201,8 +201,8 @@ def run_complexity(
                         for fn in functions:
                             if fn["file"] == fpath:
                                 fn["maintainability_index"] = score
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            logger.debug("complexity.radon_unavailable", error=str(exc))
         except Exception:
             logger.exception("complexity.radon_failed")
 

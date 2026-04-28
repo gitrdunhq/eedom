@@ -8,6 +8,7 @@ diff_sboms(), and PackageInfo.
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -329,6 +330,47 @@ def test_parse_never_crashes(data: dict) -> None:
     assert isinstance(result, dict)
 
 
+# ---------------------------------------------------------------------------
+# Input validation: non-dict inputs must raise TypeError, not AttributeError
+# ---------------------------------------------------------------------------
+
+
+class TestSBOMInputValidation:
+    """Untrusted / malformed SBOM inputs must fail fast with a clear TypeError."""
+
+    def test_parse_sbom_packages_rejects_none(self) -> None:
+        """None must raise TypeError, not AttributeError from .get() on None."""
+        with pytest.raises(TypeError, match="dict"):
+            parse_sbom_packages(None)  # type: ignore[arg-type]
+
+    def test_parse_sbom_packages_rejects_string(self) -> None:
+        """String input must raise TypeError, not silently produce wrong output."""
+        with pytest.raises(TypeError, match="dict"):
+            parse_sbom_packages("not a dict")  # type: ignore[arg-type]
+
+    def test_parse_sbom_packages_rejects_list(self) -> None:
+        """List input must raise TypeError even if it looks like a components list."""
+        with pytest.raises(TypeError, match="dict"):
+            parse_sbom_packages([{"name": "requests", "version": "1.0"}])  # type: ignore[arg-type]
+
+    def test_diff_sboms_rejects_none_before(self) -> None:
+        """None before-SBOM must raise TypeError before any diffing occurs."""
+        valid = {"components": []}
+        with pytest.raises(TypeError, match="dict"):
+            diff_sboms(None, valid)  # type: ignore[arg-type]
+
+    def test_diff_sboms_rejects_none_after(self) -> None:
+        """None after-SBOM must raise TypeError before any diffing occurs."""
+        valid = {"components": []}
+        with pytest.raises(TypeError, match="dict"):
+            diff_sboms(valid, None)  # type: ignore[arg-type]
+
+    def test_diff_sboms_rejects_string_inputs(self) -> None:
+        """Both non-dict args must raise TypeError, not crash with AttributeError."""
+        with pytest.raises(TypeError, match="dict"):
+            diff_sboms("before", "after")  # type: ignore[arg-type]
+
+
 @given(prefix=_purl_prefix_strategy, name=_valid_name_strategy, version=_valid_version_strategy)
 @settings(max_examples=200)
 def test_ecosystem_detection_is_deterministic(prefix: str, name: str, version: str) -> None:
@@ -345,3 +387,137 @@ def test_ecosystem_detection_is_deterministic(prefix: str, name: str, version: s
     assert keys1 == keys2
     for k in keys1:
         assert result1[k].ecosystem == result2[k].ecosystem
+
+
+# ---------------------------------------------------------------------------
+# _make_change helper — structural consistency guard
+# ---------------------------------------------------------------------------
+
+
+class TestMakeChangeHelper:
+    """Tests for the _make_change() private helper.
+
+    Written RED-first: these fail until _make_change is added to sbom_diff.py.
+    The helper must produce change dicts with identical structure regardless of
+    action type, eliminating the duplication risk from three inline dict literals.
+    """
+
+    def test_make_change_added(self) -> None:
+        """_make_change('added', None, new) produces correct structure."""
+        from eedom.core.sbom_diff import _make_change
+
+        new = PackageInfo(
+            name="requests", version="2.31.0", ecosystem="pypi", purl="pkg:pypi/requests@2.31.0"
+        )
+        result = _make_change("added", None, new)
+
+        assert result["action"] == "added"
+        assert result["package"] == "requests"
+        assert result["ecosystem"] == "pypi"
+        assert result["old_version"] is None
+        assert result["new_version"] == "2.31.0"
+        assert result["purl"] == "pkg:pypi/requests@2.31.0"
+
+    def test_make_change_removed(self) -> None:
+        """_make_change('removed', old, None) produces correct structure."""
+        from eedom.core.sbom_diff import _make_change
+
+        old = PackageInfo(
+            name="flask", version="2.0.0", ecosystem="pypi", purl="pkg:pypi/flask@2.0.0"
+        )
+        result = _make_change("removed", old, None)
+
+        assert result["action"] == "removed"
+        assert result["package"] == "flask"
+        assert result["ecosystem"] == "pypi"
+        assert result["old_version"] == "2.0.0"
+        assert result["new_version"] is None
+        assert result["purl"] == "pkg:pypi/flask@2.0.0"
+
+    def test_make_change_upgraded(self) -> None:
+        """_make_change('upgraded', old, new) uses new package info for name/ecosystem/purl."""
+        from eedom.core.sbom_diff import _make_change
+
+        old = PackageInfo(
+            name="lodash", version="4.17.20", ecosystem="npm", purl="pkg:npm/lodash@4.17.20"
+        )
+        new = PackageInfo(
+            name="lodash", version="4.17.21", ecosystem="npm", purl="pkg:npm/lodash@4.17.21"
+        )
+        result = _make_change("upgraded", old, new)
+
+        assert result["action"] == "upgraded"
+        assert result["old_version"] == "4.17.20"
+        assert result["new_version"] == "4.17.21"
+        assert result["purl"] == "pkg:npm/lodash@4.17.21"
+
+    def test_make_change_all_actions_have_identical_key_set(self) -> None:
+        """All action types produce dicts with exactly the same set of keys."""
+        from eedom.core.sbom_diff import _make_change
+
+        pkg = PackageInfo(name="x", version="1.0.0", ecosystem="pypi", purl="pkg:pypi/x@1.0.0")
+        required_keys = {"action", "package", "ecosystem", "old_version", "new_version", "purl"}
+
+        added = _make_change("added", None, pkg)
+        removed = _make_change("removed", pkg, None)
+        upgraded = _make_change("upgraded", pkg, pkg)
+
+        assert set(added.keys()) == required_keys, "added change missing required keys"
+        assert set(removed.keys()) == required_keys, "removed change missing required keys"
+        assert set(upgraded.keys()) == required_keys, "upgraded change missing required keys"
+
+
+class TestClassifyVersionChangeFallback:
+    """Tests for _classify_version_change string-comparison fallback."""
+
+    def test_fallback_returns_downgraded_when_old_greater(self) -> None:
+        """When versions are not valid semver, string comparison must be used.
+
+        Before fix: the fallback always returned "upgraded" regardless of the
+        actual ordering.
+        After fix: lexicographic string comparison determines the direction.
+        """
+        from eedom.core.sbom_diff import _classify_version_change
+
+        # Lexicographically "z_ver" > "a_ver", so this is a downgrade
+        result = _classify_version_change("z_ver", "a_ver")
+        assert result == "downgraded", (
+            "Expected 'downgraded' when old_ver > new_ver lexicographically; "
+            f"got '{result}'. Fallback must use string comparison, not always return 'upgraded'."
+        )
+
+    def test_fallback_returns_upgraded_when_new_greater(self) -> None:
+        """String comparison fallback must classify upgrade correctly."""
+        from eedom.core.sbom_diff import _classify_version_change
+
+        result = _classify_version_change("a_ver", "z_ver")
+        assert result == "upgraded"
+
+    def test_fallback_logs_string_comparison_indicator(self) -> None:
+        """The fallback log message must mention string comparison so operators know."""
+        from unittest.mock import patch
+
+        from eedom.core.sbom_diff import _classify_version_change
+
+        with patch("eedom.core.sbom_diff.logger") as mock_logger:
+            _classify_version_change("not-semver-x", "not-semver-y")
+
+            mock_logger.warning.assert_called_once()
+            call_kwargs = mock_logger.warning.call_args
+            # The log event name must reference 'fallback' or 'string' so operators
+            # understand the comparison was lexicographic, not semantic.
+            event_name = call_kwargs[0][0] if call_kwargs[0] else ""
+            assert (
+                "fallback" in event_name or "string" in event_name
+            ), f"Log message '{event_name}' does not indicate string-comparison fallback"
+
+    def test_valid_semver_uses_semver_comparison(self) -> None:
+        """Valid semver versions must use semantic comparison, not string comparison."""
+        from eedom.core.sbom_diff import _classify_version_change
+
+        # "10.0.0" > "9.0.0" semantically but "10" < "9" lexicographically
+        result = _classify_version_change("9.0.0", "10.0.0")
+        assert result == "upgraded", (
+            "Semantic version comparison must be used for valid semver — "
+            "'10.0.0' is semantically greater than '9.0.0'"
+        )

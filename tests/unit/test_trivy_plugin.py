@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from eedom.core.tool_runner import ToolResult
 from eedom.plugins.trivy import TrivyPlugin
 
 _TRIVY_OUTPUT = json.dumps(
@@ -114,3 +115,30 @@ class TestTrivyPluginFixedVersion:
         finding = result.findings[0]
         assert "fixed_version" in finding
         assert finding["fixed_version"] == ""
+
+
+class TestTrivyPluginExitCode:
+    """TrivyPlugin must surface tool failures via exit_code, not just not_installed/timed_out."""
+
+    def test_nonzero_exit_no_stdout_returns_binary_crashed_error(self) -> None:
+        """exit_code=2, no stdout → BINARY_CRASHED error (total failure, no partial output)."""
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(
+            exit_code=2, stdout="", stderr="fatal error from trivy"
+        )
+        plugin = TrivyPlugin(tool_runner=runner)
+
+        result = plugin.run([], Path("/project"))
+
+        assert "BINARY_CRASHED" in result.error
+
+    def test_nonzero_exit_with_stdout_proceeds_with_findings(self) -> None:
+        """exit_code=1, stdout present → warn and surface findings (scanner uses non-zero for hits)."""
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=1, stdout=_TRIVY_OUTPUT, stderr="")
+        plugin = TrivyPlugin(tool_runner=runner)
+
+        result = plugin.run([], Path("/project"))
+
+        assert result.error == ""
+        assert len(result.findings) == 2

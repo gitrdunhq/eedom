@@ -87,6 +87,31 @@ class PackageUnit(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+
+def _is_valid_ecosystem(ecosystem: str) -> bool:
+    """Return True if ecosystem is non-empty and contains only safe characters."""
+    if not ecosystem:
+        return False
+    return all(c.isalnum() or c in ("-", "_") for c in ecosystem)
+
+
+def _is_within_repo(path: Path, repo_path: Path) -> bool:
+    """Return True if *path* resolves to a location inside *repo_path*.
+
+    Resolves symlinks so that a symlink pointing outside the repo root is
+    correctly rejected.
+    """
+    try:
+        path.resolve().relative_to(repo_path.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
 
@@ -135,13 +160,32 @@ def discover_packages(
                 continue
 
             ecosystem = MANIFEST_MAP[filename]
+
+            if not _is_valid_ecosystem(ecosystem):
+                logger.warning(
+                    "manifest_skipped_malformed_ecosystem",
+                    manifest=str(dirpath / filename),
+                    ecosystem=ecosystem,
+                )
+                continue
+
             manifest_path = dirpath / filename
+
+            # Reject manifests that resolve outside repo_path (e.g. symlinks).
+            if not _is_within_repo(manifest_path, repo_path):
+                logger.warning(
+                    "manifest_skipped_outside_repo",
+                    manifest=str(manifest_path),
+                )
+                continue
 
             # Find the first matching lockfile in the same directory.
             lockfile_path: Path | None = None
             for lf_name in _MANIFEST_TO_LOCKFILES.get(filename, []):
                 if lf_name in sibling_set:
-                    lockfile_path = dirpath / lf_name
+                    candidate = dirpath / lf_name
+                    if _is_within_repo(candidate, repo_path):
+                        lockfile_path = candidate
                     break
 
             units.append(

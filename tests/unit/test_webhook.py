@@ -185,6 +185,43 @@ class TestEventParsing:
         mock_review.assert_called_once()
         mock_comment.assert_awaited_once()
 
+    async def test_review_repository_called_with_non_empty_file_list(self, client, secret):
+        """review_repository must receive a non-empty file list, not [].
+
+        Before the fix the handler hard-codes `files=[]`, so the call always
+        carries an empty list and produces zero findings.  After the fix it
+        walks the repo and passes at least one file path.
+        """
+        body = _pr_body("opened")
+        sig = _sign(body, secret)
+
+        mock_review_result = MagicMock(
+            results=[], verdict="clear", security_score=100.0, quality_score=100.0
+        )
+        with (
+            patch(
+                "eedom.webhook.server.review_repository", return_value=mock_review_result
+            ) as mock_review,
+            patch("eedom.webhook.server._post_pr_comment", new_callable=AsyncMock),
+        ):
+            resp = await client.post(
+                "/webhook",
+                content=body,
+                headers={
+                    "X-Hub-Signature-256": sig,
+                    "X-GitHub-Event": "pull_request",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_review.assert_called_once()
+        # Second positional arg to review_repository is the file list
+        files_arg = mock_review.call_args.args[1]
+        assert (
+            len(files_arg) > 0
+        ), f"review_repository must be called with a non-empty file list; got {files_arg!r}"
+
     async def test_pull_request_synchronize_triggers_review(self, client, secret):
         body = _pr_body("synchronize")
         sig = _sign(body, secret)
@@ -358,3 +395,309 @@ class TestConfig:
 
         settings = WebhookSettings()  # type: ignore[call-arg]
         assert settings.port == 12800
+
+
+# ---------------------------------------------------------------------------
+# 8. _post_pr_comment SSRF validation — malicious full_repo is rejected
+# ---------------------------------------------------------------------------
+
+
+class TestPostPRCommentValidation:
+    """_post_pr_comment must reject full_repo values that don't match
+    the pattern [a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+ before making any HTTP call."""
+
+    @pytest.mark.parametrize(
+        "bad_repo",
+        [
+            "../../evil/repo",
+            "org/repo;rm -rf /",
+            "../other-org/other-repo",
+            "org/repo\x00injected",
+            "org repo",
+            "",
+            "noslash",
+            "org//double-slash",
+        ],
+    )
+    async def test_malicious_full_repo_raises_value_error(self, bad_repo: str) -> None:
+        """Malformed full_repo must raise ValueError without touching the network."""
+        from eedom.webhook.server import _post_pr_comment
+
+        with pytest.raises(ValueError, match="Invalid repo"):
+            await _post_pr_comment(
+                token="ghp_fake",
+                full_repo=bad_repo,
+                pr_number=1,
+                body="test comment",
+            )
+
+    @pytest.mark.parametrize(
+        "good_repo",
+        [
+            "org/repo",
+            "my-org/my-repo",
+            "user.name/repo.name",
+            "Org123/Repo_456",
+        ],
+    )
+    async def test_valid_full_repo_does_not_raise_on_validation(self, good_repo: str) -> None:
+        """Valid full_repo passes the regex check (HTTP call is mocked)."""
+        from eedom.webhook.server import _post_pr_comment
+
+        mock_resp = AsyncMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("eedom.webhook.server.httpx.AsyncClient", return_value=mock_client):
+            # Should not raise — just needs to pass validation and attempt the HTTP call
+            await _post_pr_comment(
+                token="ghp_fake",
+                full_repo=good_repo,
+                pr_number=1,
+                body="test comment",
+            )
+
+
+# ---------------------------------------------------------------------------
+# 9. Token scrubbing in error logs (security: wave2-patch-8)
+# ---------------------------------------------------------------------------
+
+
+class TestTokenScrubbingInWebhookLogs:
+    def test_scrub_token_from_error_removes_token(self):
+        """_scrub_token_from_error replaces the raw token with [REDACTED]."""
+        from eedom.webhook.server import _scrub_token_from_error
+
+        token = "ghp_secret_abc123"
+        exc_msg = f"HTTPStatusError: 401 Bearer {token} is not valid"
+        result = _scrub_token_from_error(exc_msg, token)
+        assert token not in result
+        assert "[REDACTED]" in result
+
+    def test_scrub_token_from_error_is_noop_when_token_absent(self):
+        """_scrub_token_from_error does not modify text without the token."""
+        from eedom.webhook.server import _scrub_token_from_error
+
+        result = _scrub_token_from_error("Connection refused", "ghp_secret_abc123")
+        assert result == "Connection refused"
+
+    async def test_comment_failed_log_does_not_expose_token(self, client, secret, settings):
+        """When _post_pr_comment raises an exc containing the token, the token must not
+        appear in the 'error' field passed to the logger."""
+        body = _pr_body("opened")
+        sig = _sign(body, secret)
+        token_value = settings.github_token.get_secret_value()
+
+        mock_review_result = MagicMock(
+            results=[], verdict="clear", security_score=100.0, quality_score=100.0
+        )
+
+        async def _raise_with_token(*args, **kwargs):
+            raise Exception(f"Authorization failed: Bearer {token_value} rejected")
+
+        with (
+            patch("eedom.webhook.server.review_repository", return_value=mock_review_result),
+            patch("eedom.webhook.server._post_pr_comment", side_effect=_raise_with_token),
+            patch("eedom.webhook.server.logger") as mock_logger,
+        ):
+            resp = await client.post(
+                "/webhook",
+                content=body,
+                headers={
+                    "X-Hub-Signature-256": sig,
+                    "X-GitHub-Event": "pull_request",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200
+        # Find the webhook_comment_failed log call and assert token is scrubbed
+        for call in mock_logger.error.call_args_list:
+            args, kwargs = call
+            event = args[0] if args else ""
+            if "comment_failed" in str(event):
+                error_val = str(kwargs.get("error", ""))
+                assert (
+                    token_value not in error_val
+                ), f"Token exposed in webhook_comment_failed log: {error_val!r}"
+
+
+# ---------------------------------------------------------------------------
+# 10. Module __getattr__ caching — patch-18 (race condition fix)
+# ---------------------------------------------------------------------------
+
+
+class TestModuleGetattr:
+    def test_module_app_attr_is_cached_on_repeated_access(self, monkeypatch):
+        """Module-level app attribute must return the same object on every access.
+
+        Before the fix __getattr__ calls _load_app() each time, producing multiple
+        distinct instances and introducing a race on concurrent access.
+        After the fix the result is cached and _load_app() is called exactly once.
+        """
+        import eedom.webhook.server as srv
+
+        fake_app = object()
+        call_count = [0]
+
+        def fake_load_app():
+            call_count[0] += 1
+            return fake_app
+
+        monkeypatch.setattr(srv, "_load_app", fake_load_app)
+        # Reset cached instance if the fix has already been applied
+        if hasattr(srv, "_app_instance"):
+            monkeypatch.setattr(srv, "_app_instance", None)
+
+        result1 = srv.app
+        result2 = srv.app
+        result3 = srv.app
+
+        assert result1 is fake_app
+        assert result2 is fake_app
+        assert result3 is fake_app
+        assert (
+            call_count[0] == 1
+        ), "_load_app must be called exactly once (cached after first access)"
+
+
+# ---------------------------------------------------------------------------
+# 11. review_repository timeout — patch-19
+# ---------------------------------------------------------------------------
+
+
+class TestReviewTimeout:
+    async def test_review_timeout_logs_webhook_review_timeout(self, client, secret, monkeypatch):
+        """Hanging review_repository must time out and log webhook_review_timeout.
+
+        Before the fix there is no timeout enforcement, so a slow review just
+        completes normally and never produces a timeout log entry.
+        After the fix asyncio.wait_for wraps the call and logs webhook_review_timeout.
+        """
+        import time
+
+        import eedom.webhook.server as srv
+
+        body = _pr_body("opened")
+        sig = _sign(body, secret)
+
+        monkeypatch.setattr(srv, "_REVIEW_TIMEOUT_S", 0.05)  # 50 ms
+
+        def slow_review(*args, **kwargs):
+            time.sleep(0.3)  # 300 ms > 50 ms timeout
+            return MagicMock(verdict="clear", security_score=100.0, quality_score=100.0)
+
+        with (
+            patch("eedom.webhook.server.review_repository", side_effect=slow_review),
+            patch("eedom.webhook.server._post_pr_comment", new_callable=AsyncMock),
+            patch("eedom.webhook.server.logger") as mock_logger,
+        ):
+            resp = await client.post(
+                "/webhook",
+                content=body,
+                headers={
+                    "X-Hub-Signature-256": sig,
+                    "X-GitHub-Event": "pull_request",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200  # fail-open even on timeout
+        logged_error_events = [str(c.args[0]) for c in mock_logger.error.call_args_list]
+        assert any(
+            "timeout" in e for e in logged_error_events
+        ), f"Expected webhook_review_timeout in error logs; got: {logged_error_events}"
+
+
+# ---------------------------------------------------------------------------
+# 12. Input validation — DoS protection and Content-Type (patches 27 & 28)
+# ---------------------------------------------------------------------------
+
+
+class TestInputValidation:
+    # --- Payload size limit (patch-27) ---
+
+    async def test_oversized_payload_returns_413(self, client, secret):
+        """Payloads exceeding 1 MB must be rejected with 413."""
+        oversized_body = b"x" * (1024 * 1024 + 1)  # 1 MB + 1 byte
+        sig = _sign(oversized_body, secret)
+
+        resp = await client.post(
+            "/webhook",
+            content=oversized_body,
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "pull_request",
+                "Content-Type": "application/json",
+            },
+        )
+        assert resp.status_code == 413
+
+    async def test_exactly_1mb_payload_not_rejected_by_size(self, client, secret):
+        """Payloads at exactly 1 MB must not be rejected with 413."""
+        at_limit_body = b"x" * (1024 * 1024)
+        sig = _sign(at_limit_body, secret)
+
+        resp = await client.post(
+            "/webhook",
+            content=at_limit_body,
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "pull_request",
+                "Content-Type": "application/json",
+            },
+        )
+        assert resp.status_code != 413
+
+    # --- Content-Type validation (patch-28) ---
+
+    async def test_missing_content_type_returns_400(self, client, secret):
+        """Authenticated requests without Content-Type must be rejected with 400."""
+        body = _pr_body()
+        sig = _sign(body, secret)
+
+        resp = await client.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "pull_request",
+                # No Content-Type header
+            },
+        )
+        assert resp.status_code == 400
+
+    async def test_wrong_content_type_returns_400(self, client, secret):
+        """Authenticated requests with non-JSON Content-Type must be rejected with 400."""
+        body = _pr_body()
+        sig = _sign(body, secret)
+
+        resp = await client.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "pull_request",
+                "Content-Type": "text/plain",
+            },
+        )
+        assert resp.status_code == 400
+
+    async def test_application_json_content_type_not_rejected(self, client, secret):
+        """application/json Content-Type must not be rejected with 400."""
+        body = _pr_body("closed")  # closed action → ignored, no side effects needed
+        sig = _sign(body, secret)
+
+        resp = await client.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "pull_request",
+                "Content-Type": "application/json",
+            },
+        )
+        assert resp.status_code != 400

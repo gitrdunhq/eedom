@@ -49,6 +49,7 @@ class GitWorktreeSnapshot:
             cwd=self.repo_path,
             capture_output=True,
             text=True,
+            timeout=30,
         )
         shutil.rmtree(worktree_path, ignore_errors=True)
 

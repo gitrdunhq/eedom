@@ -75,6 +75,11 @@ class CatalogEntry:
         return needed
 
 
+_ALLOWED_UPSERT_COLUMNS: frozenset[str] = frozenset(CatalogEntry.__slots__) - frozenset(
+    {"catalog_id", "ecosystem", "package_name", "version"}
+)
+
+
 class PackageCatalog:
     """Read/write interface to the org-wide package catalog.
 
@@ -150,15 +155,19 @@ class PackageCatalog:
                         (ecosystem, package_name, version),
                     )
                     if fields:
-                        set_clause = ", ".join(f"{k} = %({k})s" for k in fields)
-                        fields["eco"] = ecosystem
-                        fields["pkg"] = package_name
-                        fields["ver"] = version
+                        safe = {k: v for k, v in fields.items() if k in _ALLOWED_UPSERT_COLUMNS}
+                        if not safe:
+                            conn.commit()
+                            return
+                        set_clause = ", ".join(f"{k} = %({k})s" for k in safe)
+                        safe["eco"] = ecosystem
+                        safe["pkg"] = package_name
+                        safe["ver"] = version
                         cur.execute(
                             f"UPDATE package_catalog SET {set_clause}, updated_at = now() "
                             "WHERE ecosystem = %(eco)s AND package_name = %(pkg)s "
                             "AND version = %(ver)s",
-                            fields,
+                            safe,
                         )
                 conn.commit()
         except Exception:

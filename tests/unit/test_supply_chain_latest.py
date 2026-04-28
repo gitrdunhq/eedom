@@ -318,3 +318,58 @@ class TestUnpinnedSeverity:
             f"SHA computed from wrong path. "
             f"Expected {expected_sha}, got {uv_findings[0]['sha256']!r}"
         )
+
+
+class TestPathTraversalInRun:
+    """run() must not process files that resolve outside repo_path."""
+
+    def test_traversal_dockerfile_outside_repo_is_blocked(self, tmp_path):
+        """A file path that traverses outside the repo must not be processed."""
+        plugin = SupplyChainPlugin()
+
+        # Create a Dockerfile OUTSIDE the repo with a floating tag
+        outside_dir = tmp_path.parent / "outside_repo_sc_test"
+        outside_dir.mkdir(exist_ok=True)
+        outside_dockerfile = outside_dir / "Dockerfile"
+        outside_dockerfile.write_text("FROM alpine:latest\n")
+
+        # A relative path that resolves outside tmp_path
+        traversal = "../outside_repo_sc_test/Dockerfile"
+
+        result = plugin.run([traversal], tmp_path)
+        docker_findings = [f for f in result.findings if f.get("type") == "docker_latest"]
+
+        # Must NOT find the outside Dockerfile's floating image
+        assert len(docker_findings) == 0, (
+            "Path traversal outside repo_path must be blocked — " f"got findings: {docker_findings}"
+        )
+
+    def test_traversal_compose_outside_repo_is_blocked(self, tmp_path):
+        """A compose file that traverses outside the repo must not be processed."""
+        plugin = SupplyChainPlugin()
+
+        outside_dir = tmp_path.parent / "outside_repo_compose_test"
+        outside_dir.mkdir(exist_ok=True)
+        outside_compose = outside_dir / "docker-compose.yml"
+        outside_compose.write_text("version: '3'\nservices:\n  app:\n    image: alpine:latest\n")
+
+        traversal = "../outside_repo_compose_test/docker-compose.yml"
+
+        result = plugin.run([traversal], tmp_path)
+        docker_findings = [f for f in result.findings if f.get("type") == "docker_latest"]
+
+        assert len(docker_findings) == 0, "Compose path traversal outside repo_path must be blocked"
+
+    def test_legitimate_dockerfile_inside_repo_still_works(self, tmp_path):
+        """A Dockerfile inside repo_path continues to be checked normally."""
+        plugin = SupplyChainPlugin()
+
+        df = tmp_path / "Dockerfile"
+        df.write_text("FROM python:latest\n")
+
+        result = plugin.run(["Dockerfile"], tmp_path)
+        docker_findings = [f for f in result.findings if f.get("type") == "docker_latest"]
+
+        assert (
+            len(docker_findings) == 1
+        ), "Legitimate Dockerfile inside repo should still be scanned"

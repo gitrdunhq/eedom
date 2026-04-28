@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _MAX_ADVISORY_LENGTH = 500
+# Valid PyPI package names: letters, digits, hyphens, dots, underscores (PEP 508).
+_VALID_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SUMMARY_MAX_LEN = 200
 
 _SYSTEM_PROMPT = """\
@@ -155,6 +157,10 @@ class TaskFitAdvisor:
         if not self._enabled:
             return ""
 
+        if not package_name.strip() or not _VALID_PACKAGE_NAME_RE.match(package_name):
+            logger.warning("taskfit.invalid_package_name", package=repr(package_name))
+            return ""
+
         if not self._endpoint or not self._model:
             logger.warning("taskfit.missing_config", endpoint=self._endpoint, model=self._model)
             return ""
@@ -273,8 +279,12 @@ class TaskFitAdvisor:
         try:
             data = response.json()
             text = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
             logger.warning("taskfit.parse_error", error=str(exc))
+            return ""
+
+        if not isinstance(text, str):
+            logger.warning("taskfit.parse_error", error="'content' field is not a string")
             return ""
 
         if len(text) > _MAX_ADVISORY_LENGTH:

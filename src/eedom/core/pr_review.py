@@ -198,19 +198,23 @@ def detect_gh_repo() -> str | None:
 
 def get_pr_diff_files(repo: str, pr_number: int) -> set[str]:
     """Fetch the list of files changed in a PR via gh CLI."""
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/pulls/{pr_number}/files",
-            "--jq",
-            ".[].filename",
-            "--paginate",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/pulls/{pr_number}/files",
+                "--jq",
+                ".[].filename",
+                "--paginate",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning("pr_review.get_diff_files_failed", error=str(e))
+        return set()
     if result.returncode != 0:
         stderr = result.stderr.strip()
         raise RuntimeError(f"Failed to fetch PR diff files for {repo}#{pr_number}: {stderr[:200]}")
@@ -222,23 +226,32 @@ def get_pr_diff_hunks(repo: str, pr_number: int) -> dict[str, list[tuple[int, in
 
     Returns {filename: [(start, end), ...]} for each file with a patch.
     """
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/pulls/{pr_number}/files",
-            "--paginate",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/pulls/{pr_number}/files",
+                "--paginate",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning("pr_review.get_diff_hunks_failed", error=str(e))
+        return {}
     if result.returncode != 0:
         stderr = result.stderr.strip()
         raise RuntimeError(f"Failed to fetch PR diff hunks for {repo}#{pr_number}: {stderr[:200]}")
 
     hunks: dict[str, list[tuple[int, int]]] = {}
-    for file_entry in json.loads(result.stdout):
+    try:
+        entries = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("pr_review.invalid_json_response", stdout=result.stdout[:200])
+        return {}
+    for file_entry in entries:
         filename = file_entry.get("filename", "")
         patch = file_entry.get("patch", "")
         if filename and patch:
@@ -266,21 +279,25 @@ def post_review(repo: str, pr_number: int, review: PRReview) -> bool:
             for c in review.comments
         ]
 
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/pulls/{pr_number}/reviews",
-            "--method",
-            "POST",
-            "--input",
-            "-",
-        ],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/pulls/{pr_number}/reviews",
+                "--method",
+                "POST",
+                "--input",
+                "-",
+            ],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning("pr_review.post_failed_exception", error=str(e))
+        return False
 
     if result.returncode != 0:
         logger.warning(

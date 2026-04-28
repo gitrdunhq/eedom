@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from eedom.core.memo import generate_memo
 from eedom.core.models import (
-    ReviewDecision,
-    ReviewRequest,
     DecisionVerdict,
     Finding,
     FindingCategory,
@@ -13,6 +11,8 @@ from eedom.core.models import (
     OperatingMode,
     PolicyEvaluation,
     RequestType,
+    ReviewDecision,
+    ReviewRequest,
     ScanResult,
     ScanResultStatus,
 )
@@ -233,3 +233,51 @@ class TestGenerateMemo:
 
         assert "platform" in memo
         assert "runtime" in memo
+
+
+class TestMemoTruncation:
+    """Tests for memo truncation behaviour."""
+
+    def test_short_memo_not_truncated(self) -> None:
+        """Memos under the limit are returned unchanged."""
+        from eedom.core.memo import _MAX_MEMO_LENGTH
+
+        dec = _decision(verdict="approve")
+        memo = generate_memo(dec)
+
+        assert len(memo) <= _MAX_MEMO_LENGTH
+        assert "*[truncated]*" not in memo
+
+    def test_truncation_stays_within_max_length(self) -> None:
+        """Truncated memo must not exceed _MAX_MEMO_LENGTH."""
+        from eedom.core.memo import _MAX_MEMO_LENGTH
+
+        # Many long rules to force truncation
+        long_rules = ["Rule: " + ("x" * 80) for _ in range(60)]
+        dec = _decision(verdict="reject", rules=long_rules)
+        memo = generate_memo(dec)
+
+        assert len(memo) <= _MAX_MEMO_LENGTH
+
+    def test_truncation_ends_at_paragraph_boundary(self) -> None:
+        """When truncated, memo must not end in the middle of a line.
+
+        Before fix: truncation sliced at a raw character offset, which could
+        land mid-word or mid-line.
+        After fix: truncation stops at the last paragraph break (double newline)
+        before the limit so the output remains valid Markdown.
+        """
+
+        long_rules = ["Rule: " + ("x" * 80) for _ in range(60)]
+        dec = _decision(verdict="reject", rules=long_rules)
+        memo = generate_memo(dec)
+
+        if "*[truncated]*" in memo:
+            # The memo must end cleanly — not truncate in the middle of a line
+            before_marker = memo.split("*[truncated]*")[0]
+            last_char = before_marker.rstrip(" ")[-1] if before_marker.strip() else ""
+            # After a paragraph-boundary truncation the last real char before the
+            # truncation marker is a newline (stripped) — not mid-word content
+            assert before_marker.endswith("\n\n") or before_marker.endswith(
+                "\n"
+            ), f"Expected truncation at a line boundary, got last chars: {repr(before_marker[-20:])}"

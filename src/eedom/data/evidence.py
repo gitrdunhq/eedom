@@ -49,8 +49,19 @@ class EvidenceStore:
             dest_dir = self._evidence_dir(key)
             dest_dir.mkdir(parents=True, exist_ok=True)
 
+            resolved_dest = dest_dir.resolve()
+            resolved_root = self._root.resolve()
+            # Guard 1: the key directory must not escape the evidence root via a symlink.
+            if not resolved_dest.is_relative_to(resolved_root):
+                logger.error(
+                    "path_traversal_attempt",
+                    evidence_key=key,
+                    artifact_name=artifact_name,
+                )
+                return ""
+            # Guard 2: the artifact path must stay within the key directory.
             resolved = (dest_dir / artifact_name).resolve()
-            if not resolved.is_relative_to(dest_dir.resolve()):
+            if not resolved.is_relative_to(resolved_dest):
                 logger.error(
                     "path_traversal_attempt",
                     evidence_key=key,
@@ -100,8 +111,19 @@ class EvidenceStore:
             dest_dir = self._evidence_dir(key)
             dest_dir.mkdir(parents=True, exist_ok=True)
 
+            resolved_dest = dest_dir.resolve()
+            resolved_root = self._root.resolve()
+            # Guard 1: the key directory must not escape the evidence root via a symlink.
+            if not resolved_dest.is_relative_to(resolved_root):
+                logger.error(
+                    "path_traversal_attempt",
+                    evidence_key=key,
+                    artifact_name=artifact_name,
+                )
+                return ""
+            # Guard 2: the artifact path must stay within the key directory.
             resolved = (dest_dir / artifact_name).resolve()
-            if not resolved.is_relative_to(dest_dir.resolve()):
+            if not resolved.is_relative_to(resolved_dest):
                 logger.error(
                     "path_traversal_attempt",
                     evidence_key=key,

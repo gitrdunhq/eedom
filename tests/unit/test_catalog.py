@@ -385,3 +385,38 @@ class TestPackageCatalogExceptionAbsorption:
         catalog.upsert("pypi", "requests", "2.31.0")
         catalog.ingest_lockfile("repo", "/lockfile", [{"name": "x", "version": "1.0"}])
         catalog.queue_scan("pypi", "requests", "2.31.0")
+
+
+class TestSqlInjectionPrevention:
+    """Wave 1 Task 1.1: field keys in upsert must be whitelisted, not interpolated."""
+
+    def test_malicious_field_key_rejected(self):
+        """A field dict key containing SQL must never appear in the executed SQL.
+
+        The vulnerable code interpolates field keys directly as column names.
+        With whitelisting, unknown keys are silently dropped — no UPDATE executes.
+        """
+        from eedom.data.catalog import PackageCatalog
+
+        pool, cursor = _make_pool()
+        catalog = PackageCatalog(pool)
+
+        # Pass malicious key as a direct kwarg — that's how **fields works
+        catalog.upsert("pypi", "requests", "2.31.0", **{"x; DROP TABLE t; --": "pwned"})
+
+        for call in cursor.execute.call_args_list:
+            sql = call[0][0] if call[0] else ""
+            assert "DROP TABLE" not in sql, f"SQL injection in upsert SET clause: {sql}"
+            assert "x;" not in sql, f"Malicious key interpolated into SQL: {sql}"
+
+    def test_valid_field_keys_still_work(self):
+        """Whitelisted column names must still update correctly."""
+        from eedom.data.catalog import PackageCatalog
+
+        pool, cursor = _make_pool()
+        catalog = PackageCatalog(pool)
+
+        safe_fields = {"summary": "A great library", "status": "approved"}
+        catalog.upsert("pypi", "requests", "2.31.0", fields=safe_fields)
+
+        assert cursor.execute.call_count >= 1

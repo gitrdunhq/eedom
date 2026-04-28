@@ -4,56 +4,67 @@
 
 from __future__ import annotations
 
+import re
 import sys
-import threading
-from collections.abc import Callable
 from pathlib import Path
 
 import click
 import structlog
 
+from eedom.cli.watch import _IGNORE_DIRS, _WATCH_EXTENSIONS, DebounceTimer  # noqa: F401
 from eedom.core.models import OperatingMode
 from eedom.plugins import get_default_registry
 
 logger = structlog.get_logger()
 
-# ---------------------------------------------------------------------------
-# Watch-mode constants
-# ---------------------------------------------------------------------------
-_WATCH_EXTENSIONS: frozenset[str] = frozenset(
-    {".py", ".ts", ".js", ".tf", ".yaml", ".yml", ".json"}
+_ALLOWED_TEAMS: frozenset[str] = frozenset(
+    {"backend", "frontend", "platform", "infra", "security", "data"}
 )
-_IGNORE_DIRS: frozenset[str] = frozenset({"__pycache__", ".git", ".eedom", ".dogfood"})
 
 
-class DebounceTimer:
-    """Fires a callback once after a quiet period, resetting on each new event.
+def _validate_repo_path(ctx: click.Context, param: click.Parameter, value: str) -> str:
+    """Validate that --repo-path exists and is a directory."""
+    if value is None:
+        return value  # type: ignore[return-value]
+    path = Path(value)
+    if not path.exists():
+        raise click.BadParameter(f"Path '{value}' does not exist")
+    if not path.is_dir():
+        raise click.BadParameter(f"Path '{value}' is not a directory")
+    return str(path.resolve())
 
-    Calling reset() cancels any in-flight timer and starts a fresh one.
-    The callback fires only after `delay` seconds of inactivity.
-    """
 
-    def __init__(self, delay: float, callback: Callable[[], None]) -> None:
-        self._delay = delay
-        self._callback = callback
-        self._timer: threading.Timer | None = None
-        self._lock = threading.Lock()
+def _validate_pr_url(ctx: click.Context, param: click.Parameter, value: str) -> str:
+    """Validate that --pr-url is a GitHub pull request URL."""
+    if value is None:
+        return value  # type: ignore[return-value]
+    if not re.match(r"https://github\.com/[^/]+/[^/]+/pull/\d+", value):
+        raise click.BadParameter(
+            f"Must be a valid GitHub PR URL "
+            f"(e.g. https://github.com/owner/repo/pull/123), got: {value}"
+        )
+    return value
 
-    def reset(self) -> None:
-        """Schedule (or reschedule) the callback after the debounce delay."""
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-            self._timer = threading.Timer(self._delay, self._callback)
-            self._timer.daemon = True
-            self._timer.start()
 
-    def cancel(self) -> None:
-        """Cancel any pending callback."""
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+def _validate_team(ctx: click.Context, param: click.Parameter, value: str) -> str:
+    """Validate that --team is in the allowed list."""
+    if value is None:
+        return value  # type: ignore[return-value]
+    if value not in _ALLOWED_TEAMS:
+        raise click.BadParameter(f"Team must be one of {sorted(_ALLOWED_TEAMS)}, got: {value}")
+    return value
+
+
+def _validate_gh_repo(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+    """Validate --repo is in owner/name format."""
+    if value is None:
+        return value
+    parts = value.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise click.BadParameter(
+            f"Invalid GitHub repo format — expected owner/name (e.g. acme/my-repo), got: {value!r}"
+        )
+    return value
 
 
 def _check_isolated_environment() -> None:
@@ -98,11 +109,27 @@ _register_subcommands()
 
 @cli.command()
 @click.option(
-    "--repo-path", required=True, type=click.Path(exists=False), help="Path to the repository root."
+    "--repo-path",
+    required=True,
+    type=click.Path(),
+    callback=_validate_repo_path,
+    help="Path to the repository root.",
 )
 @click.option("--diff", required=True, type=str, help="Path to diff file, or '-' for stdin.")
-@click.option("--pr-url", required=True, type=str, help="PR URL for context and comments.")
-@click.option("--team", required=True, type=str, help="Team name submitting the request.")
+@click.option(
+    "--pr-url",
+    required=True,
+    type=str,
+    callback=_validate_pr_url,
+    help="PR URL for context and comments.",
+)
+@click.option(
+    "--team",
+    required=True,
+    type=str,
+    callback=_validate_team,
+    help="Team name submitting the request.",
+)
 @click.option(
     "--operating-mode",
     required=True,
@@ -170,7 +197,7 @@ def evaluate(
         sys.exit(0)
 
     except Exception:
-        logger.exception("pipeline_failed_unexpectedly")
+        logger.error("pipeline_failed_unexpectedly", exc_info=True)
         sys.exit(1)
 
 
@@ -231,6 +258,8 @@ def evaluate(
     "gh_repo",
     type=str,
     default=None,
+    callback=_validate_gh_repo,
+    is_eager=False,
     help="GitHub repo (owner/name) for --pr mode. Auto-detected if omitted.",
 )
 def review(
@@ -293,7 +322,9 @@ def review(
                     parts = line.split(" b/")
                     if len(parts) == 2:
                         fpath = parts[1].strip()
-                        full = repo / fpath
+                        full = (repo / fpath).resolve()
+                        if not full.is_relative_to(repo.resolve()):
+                            continue
                         if (full.exists() or not fpath.startswith(".git")) and not should_ignore(
                             fpath, ignore_patterns
                         ):
@@ -396,7 +427,85 @@ def review(
     run_review()
 
     if watch:
-        _watch_and_rerun(repo_path=repo, run_review=run_review)
+        from eedom.cli.watch import watch_and_rerun
+
+        watch_and_rerun(repo_path=repo, run_review=run_review)
+
+
+@cli.command()
+@click.option("--repo-path", type=click.Path(exists=True), default=".", help="Repository root.")
+@click.option("--model", type=str, default="openai/gpt-oss-120b:free", help="LLM model ID.")
+@click.option(
+    "--api-key", type=str, default=None, help="API key (or OPENROUTER_EEDOM / ANTHROPIC_API_KEY)."
+)
+@click.option("--endpoint", type=str, default="https://openrouter.ai/api", help="LLM API base URL.")
+@click.option("--output", type=click.Path(), default=None, help="Write markdown report to file.")
+@click.option("--scanners", type=str, default=None, help="Comma-separated plugin names.")
+@click.option("--disable", type=str, default="", help="Comma-separated plugins to disable.")
+@click.option("--timeout", type=int, default=120, help="Per-concern API timeout in seconds.")
+@click.option("--max-tokens", type=int, default=12_000, help="Max tokens per concern cluster.")
+def audit(
+    repo_path: str,
+    model: str,
+    api_key: str | None,
+    endpoint: str,
+    output: str | None,
+    scanners: str | None,
+    disable: str,
+    timeout: int,
+    max_tokens: int,
+) -> None:
+    """Run a holistic trust audit — concern by concern via LLM (Alley-Oop)."""
+    import os as _os
+
+    from eedom.core.bootstrap import bootstrap_review
+    from eedom.core.concern_review import render_audit_markdown, run_audit
+    from eedom.core.ignore import load_ignore_patterns, should_ignore
+    from eedom.core.repo_config import RepoConfig, load_repo_config
+    from eedom.core.use_cases import ReviewOptions, review_repository
+
+    repo = Path(repo_path)
+    api_key = api_key or _os.environ.get("OPENROUTER_EEDOM") or _os.environ.get("ANTHROPIC_API_KEY")
+    _ctx = bootstrap_review(registry_factory=get_default_registry)
+    repo_config = (
+        load_repo_config(repo) if (repo / ".eagle-eyed-dom.yaml").exists() else RepoConfig()
+    )
+    disabled_names = set(repo_config.plugins.disabled or [])
+    if disable:
+        disabled_names.update(d.strip() for d in disable.split(",") if d.strip())
+
+    ignore_patterns = load_ignore_patterns(repo)
+    files: list[str] = []
+    for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
+        files.extend(
+            str(p)
+            for p in repo.rglob(ext)
+            if not should_ignore(str(p.relative_to(repo)), ignore_patterns)
+        )
+
+    names = scanners.split(",") if scanners else None
+    options = ReviewOptions(scanners=names, disabled=disabled_names)
+    click.echo(f"Running dom scanners on {len(files)} files…", err=True)
+    review_result = review_repository(_ctx, files, repo, options)
+
+    click.echo(f"Clustering and fanning out to {model}…", err=True)
+    report = run_audit(
+        repo_path=repo,
+        results=review_result.results,
+        files=files,
+        model=model,
+        api_key=api_key,
+        endpoint=endpoint,
+        timeout=timeout,
+        max_tokens_per_cluster=max_tokens,
+    )
+
+    md = render_audit_markdown(report)
+    if output:
+        Path(output).write_text(md)
+        click.echo(f"Audit written to {output} ({report.concern_count} concerns)")
+    else:
+        click.echo(md)
 
 
 def _read_diff(diff_path: str) -> str:
@@ -407,48 +516,6 @@ def _read_diff(diff_path: str) -> str:
         logger.warning("diff_file_not_found", path=diff_path)
         return ""
     return path.read_text()
-
-
-def _watch_and_rerun(repo_path: Path, run_review: Callable[[], None]) -> None:
-    """Start a watchdog observer and re-run review on relevant file changes.
-
-    Debounces events by 500 ms so rapid saves trigger only one re-run.
-    Exits cleanly on Ctrl+C with no stack trace.
-    """
-    try:
-        from watchdog.events import FileSystemEvent, FileSystemEventHandler
-        from watchdog.observers import Observer
-    except ImportError:
-        click.echo("watchdog is required for --watch mode. Install with: uv add watchdog", err=True)
-        return
-
-    debounce = DebounceTimer(delay=0.5, callback=run_review)
-
-    class _Handler(FileSystemEventHandler):
-        def on_any_event(self, event: FileSystemEvent) -> None:  # type: ignore[override]
-            if event.is_directory:
-                return
-            path = Path(str(event.src_path))
-            if path.suffix not in _WATCH_EXTENSIONS:
-                return
-            for part in path.parts:
-                if part in _IGNORE_DIRS:
-                    return
-            debounce.reset()
-
-    observer = Observer()
-    observer.schedule(_Handler(), str(repo_path), recursive=True)
-    observer.start()
-
-    click.echo(f"\nWatching {repo_path} for changes (Ctrl+C to exit)…")
-    try:
-        while observer.is_alive():
-            observer.join(timeout=1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        debounce.cancel()
-        observer.stop()
 
 
 if __name__ == "__main__":

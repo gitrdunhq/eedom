@@ -98,8 +98,25 @@ class OpaEvaluator:
     All failures degrade to needs_review -- this class never raises.
     """
 
-    def __init__(self, policy_path: str, timeout: int = 10) -> None:
-        self._policy_path = policy_path
+    def __init__(
+        self,
+        policy_path: str,
+        timeout: int = 10,
+        policy_base_dir: str | None = None,
+    ) -> None:
+        if policy_base_dir is not None:
+            resolved = Path(policy_path).resolve()
+            resolved_base = Path(policy_base_dir).resolve()
+            try:
+                resolved.relative_to(resolved_base)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Policy path {policy_path!r} resolves to {resolved}, "
+                    f"which is outside policy directory {resolved_base}"
+                ) from exc
+            self._policy_path = str(resolved)
+        else:
+            self._policy_path = policy_path
         self._timeout = timeout
 
     def evaluate(

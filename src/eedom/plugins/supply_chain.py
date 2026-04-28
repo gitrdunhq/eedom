@@ -116,6 +116,11 @@ class SupplyChainPlugin(ScannerPlugin):
         for f in files:
             p = Path(f)
             full = repo_path / p if not p.is_absolute() else p
+            try:
+                full.resolve().relative_to(repo_path.resolve())
+            except ValueError:
+                logger.warning("supply_chain.path_traversal_blocked", file=f)
+                continue
             if _is_dockerfile(p.name):
                 findings.extend(self._check_dockerfile_latest(str(full)))
             elif _is_compose(p.name):

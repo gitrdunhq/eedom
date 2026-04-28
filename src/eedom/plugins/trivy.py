@@ -59,6 +59,14 @@ class TrivyPlugin(ScannerPlugin):
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.TIMEOUT, "trivy", timeout=_TIMEOUT),
             )
+        if tool_result.exit_code != 0 and not tool_result.stdout:
+            return PluginResult(
+                plugin_name=self.name,
+                error=(
+                    f"[BINARY_CRASHED] trivy exited {tool_result.exit_code}"
+                    f": {tool_result.stderr[:200]}"
+                ),
+            )
 
         try:
             data = json.loads(tool_result.stdout) if tool_result.stdout else {}

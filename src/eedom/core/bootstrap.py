@@ -150,20 +150,42 @@ def bootstrap_review(registry_factory=None) -> ApplicationContext:
 def _make_decision_store(settings: EedomSettings) -> DecisionStorePort:
     """Return the appropriate DecisionStorePort for *settings*.
 
-    Logs a warning and falls back to NullDecisionStore when no DB DSN is
-    configured so the pipeline can proceed without persistence.
+    Returns a real DecisionRepository when *settings.db_dsn* is set and a
+    connection can be established.  Falls back to NullDecisionStore (with a
+    warning) when no DSN is configured or the connection attempt fails, so the
+    pipeline always proceeds regardless of persistence availability.
     """
     import structlog
 
     from eedom.adapters.persistence import NullDecisionStore
 
+    log = structlog.get_logger()
     dsn = getattr(settings, "db_dsn", None)
     if not dsn:
-        structlog.get_logger().warning(
+        log.warning(
             "decision_store_null",
             msg="No EEDOM_DB_DSN configured — decisions will not be persisted",
         )
-    return NullDecisionStore()
+        return NullDecisionStore()
+
+    try:
+        from eedom.data.db import DecisionRepository
+
+        repo = DecisionRepository(dsn=dsn)
+        if not repo.connect():
+            log.warning(
+                "decision_store_null",
+                msg="DB connection failed — falling back to NullDecisionStore",
+            )
+            return NullDecisionStore()
+        return repo
+    except Exception:
+        log.warning(
+            "decision_store_null",
+            msg="Failed to initialise DecisionRepository — falling back to NullDecisionStore",
+            exc_info=True,
+        )
+        return NullDecisionStore()
 
 
 def _make_audit_sink(settings: EedomSettings) -> AuditSinkPort:

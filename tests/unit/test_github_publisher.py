@@ -200,3 +200,105 @@ class TestAddLabel:
         with patch("subprocess.run", side_effect=FileNotFoundError("gh not found")):
             result = pub.add_label("org/repo", 1, "label")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Token scrubbing (security: wave2-patch-7)
+# ---------------------------------------------------------------------------
+
+
+class TestTokenScrubbing:
+    def test_scrub_token_replaces_token_with_redacted(self):
+        """_scrub_token must replace the raw token with [REDACTED]."""
+        token = "ghp_super_secret_token_12345"
+        publisher = GitHubPublisher(token=token)
+        result = publisher._scrub_token(f"Error: Bearer {token} is invalid")
+        assert token not in result
+        assert "[REDACTED]" in result
+
+    def test_scrub_token_is_noop_when_token_absent(self):
+        """_scrub_token must not modify text that does not contain the token."""
+        publisher = GitHubPublisher(token="ghp_mytoken")
+        result = publisher._scrub_token("Error: something else happened")
+        assert result == "Error: something else happened"
+
+    def test_run_scrubs_token_from_stderr_after_failed_command(self):
+        """_run must scrub the token from result.stderr when the command fails."""
+        token = "ghp_super_secret_12345"
+        publisher = GitHubPublisher(token=token)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = f"Error: authentication failed with token {token}"
+        mock_result.stdout = ""
+
+        with patch("subprocess.run", return_value=mock_result):
+            publisher._run(["gh", "pr", "comment", "1", "--repo", "org/repo", "--body", "test"])
+
+        # The mock_result.stderr attribute must have been overwritten with the scrubbed value.
+        assert token not in mock_result.stderr
+        assert "[REDACTED]" in mock_result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Subprocess timeout (security: wave4-patch-2)
+# ---------------------------------------------------------------------------
+
+
+class TestSubprocessTimeout:
+    """_run() must pass an explicit timeout to subprocess.run to prevent hangs."""
+
+    _CMD = ["gh", "pr", "comment", "1", "--repo", "org/repo", "--body", "test"]
+
+    def test_run_passes_timeout_kwarg_to_subprocess(self):
+        """_run() must call subprocess.run with a numeric timeout keyword argument."""
+        publisher = GitHubPublisher()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+            publisher._run(self._CMD)
+
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args[1]
+        assert "timeout" in call_kwargs, "subprocess.run must include timeout= parameter"
+        assert isinstance(call_kwargs["timeout"], (int, float)), "timeout must be numeric"
+        assert call_kwargs["timeout"] is not None
+
+    def test_post_comment_uses_timeout(self):
+        """post_comment must invoke subprocess with a timeout."""
+        publisher = GitHubPublisher()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+            publisher.post_comment("org/repo", 1, "body")
+
+        call_kwargs = mock_run.call_args[1]
+        assert "timeout" in call_kwargs, "post_comment subprocess call missing timeout"
+
+    def test_post_review_uses_timeout(self):
+        """post_review must invoke subprocess with a timeout."""
+        publisher = GitHubPublisher()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+            publisher.post_review("org/repo", 1, {"event": "APPROVE"})
+
+        call_kwargs = mock_run.call_args[1]
+        assert "timeout" in call_kwargs, "post_review subprocess call missing timeout"
+
+    def test_add_label_uses_timeout(self):
+        """add_label must invoke subprocess with a timeout."""
+        publisher = GitHubPublisher()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+            publisher.add_label("org/repo", 1, "bug")
+
+        call_kwargs = mock_run.call_args[1]
+        assert "timeout" in call_kwargs, "add_label subprocess call missing timeout"
+
+    def test_timeout_expired_returns_false(self):
+        """subprocess.TimeoutExpired must be caught and return False."""
+        import subprocess
+
+        publisher = GitHubPublisher()
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(self._CMD, 30)):
+            result = publisher._run(self._CMD)
+
+        assert result is False, "TimeoutExpired must return False, not propagate"
