@@ -5,30 +5,14 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 from eedom.core.errors import ErrorCode, error_msg
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
-
-CSPELL_DICTIONARIES: list[str] = [
-    "en-CA",
-    "softwareTerms",
-    "python",
-    "typescript",
-    "node",
-    "golang",
-    "java",
-    "rust",
-    "cpp",
-    "csharp",
-    "html",
-    "css",
-    "bash",
-    "docker",
-    "k8s",
-]
 
 
 class CspellPlugin(ScannerPlugin):
@@ -38,7 +22,7 @@ class CspellPlugin(ScannerPlugin):
 
     @property
     def description(self) -> str:
-        return "Code-aware spell checking (en-CA, 11 tech dictionaries)"
+        return "Code-aware spell checking (en-CA)"
 
     @property
     def category(self) -> PluginCategory:
@@ -48,78 +32,83 @@ class CspellPlugin(ScannerPlugin):
         return bool(files)
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
-        base_cmd = [
+        # cspell (Node.js) doesn't flush stdout in non-TTY mode.
+        # Write JSON to a temp file via @cspell/cspell-json-reporter.
+        out_path = Path(tempfile.mktemp(suffix=".json"))
+        cmd = [
             "cspell",
             "lint",
             "--no-progress",
             "--no-summary",
-            "--reporter",
-            "@cspell/cspell-json-reporter",
             "--locale",
             "en-CA",
+            "--reporter",
+            "default",
+            "--reporter",
+            f"@cspell/cspell-json-reporter:{out_path}",
+            *files,
         ]
 
         try:
             r = subprocess.run(
-                [*base_cmd, *files],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60,
                 check=False,
             )
         except FileNotFoundError:
+            out_path.unlink(missing_ok=True)
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.NOT_INSTALLED, "cspell"),
             )
         except subprocess.TimeoutExpired:
+            out_path.unlink(missing_ok=True)
             return PluginResult(
-                plugin_name=self.name, error=error_msg(ErrorCode.TIMEOUT, "cspell", timeout=0)
+                plugin_name=self.name,
+                error=error_msg(ErrorCode.TIMEOUT, "cspell", timeout=60),
             )
 
         findings = []
-        output = r.stdout or ""
-        if not output.strip() and r.stderr:
-            output = r.stderr
 
-        # Try JSON reporter output first (structured, reliable)
-        import json as _json
-
-        parsed_json = False
-        with contextlib.suppress((_json.JSONDecodeError, KeyError, TypeError)):
-            data = _json.loads(output)
-            for issue in data.get("issues", []):
-                findings.append(
-                    {
-                        "file": issue.get("uri", issue.get("filePath", "")),
-                        "line": issue.get("row", issue.get("line", 0)),
-                        "word": issue.get("text", ""),
-                        "suggestions": ", ".join(issue.get("suggestions", [])),
-                    }
-                )
-            parsed_json = True
-
-        # Fallback: regex parse for legacy text output
-        if not parsed_json:
-            pattern = re.compile(
-                r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?\s*-?\s*Unknown word\s*"
-                r"\((?P<word>[^)]+)\)(?:\s+Suggestions:\s+\[(?P<suggestions>[^\]]*)\])?"
-            )
-            for line in output.strip().split("\n"):
-                if not line:
-                    continue
-                match = pattern.match(line.strip())
-                if not match:
-                    continue
-                with contextlib.suppress(ValueError):
+        # Try JSON file output first
+        if out_path.exists() and out_path.stat().st_size > 2:
+            with contextlib.suppress(json.JSONDecodeError, KeyError, TypeError):
+                data = json.loads(out_path.read_text())
+                for issue in data.get("issues", []):
                     findings.append(
                         {
-                            "file": match.group("file"),
-                            "line": int(match.group("line")),
-                            "word": match.group("word"),
-                            "suggestions": match.group("suggestions") or "",
+                            "file": issue.get("uri", "").removeprefix("file://"),
+                            "line": issue.get("row", 0),
+                            "word": issue.get("text", ""),
+                            "suggestions": ", ".join(
+                                s if isinstance(s, str) else str(s)
+                                for s in issue.get("suggestions", [])
+                            ),
                         }
                     )
+        out_path.unlink(missing_ok=True)
+
+        # Fallback: parse text output from default reporter
+        if not findings:
+            output = r.stdout or r.stderr or ""
+            pattern = re.compile(
+                r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?\s*-?\s*Unknown word\s*"
+                r"\((?P<word>[^)]+)\)"
+            )
+            for line in output.strip().split("\n"):
+                match = pattern.match(line.strip())
+                if match:
+                    with contextlib.suppress(ValueError):
+                        findings.append(
+                            {
+                                "file": match.group("file"),
+                                "line": int(match.group("line")),
+                                "word": match.group("word"),
+                                "suggestions": "",
+                            }
+                        )
 
         return PluginResult(
             plugin_name=self.name,
@@ -127,11 +116,7 @@ class CspellPlugin(ScannerPlugin):
             summary={"total": len(findings)},
         )
 
-    def render(
-        self,
-        result: PluginResult,
-        template_dir: Path | None = None,
-    ) -> str:
+    def render(self, result: PluginResult, template_dir: Path | None = None) -> str:
         if result.error:
             return f"**cspell**: {result.error}"
         if not result.findings:
