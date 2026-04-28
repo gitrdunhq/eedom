@@ -69,6 +69,17 @@ Port range 12000-13000 only. Never use common ports.
 
 Every source file has a `# tested-by: tests/unit/test_X.py` comment. TDD red-green is mandatory. Hypothesis property-based tests cover boundary invariants.
 
+**Tests run in containers only.** Use `make test`. Never use `EEDOM_ALLOW_HOST_TESTS=1` — host environment can't guarantee parity with CI or other contributors.
+
+### Split TDD Across Agents (Context Poisoning Prevention)
+
+When using subagents for implementation, split RED and GREEN across two separate agents:
+
+1. **Agent 1 (RED):** writes failing tests from the acceptance criteria. Commits. Confirms tests fail.
+2. **Agent 2 (GREEN):** reads the failing tests, implements the minimum code to pass them. Runs full suite.
+
+The test agent never sees the implementation. The code agent never writes its own tests. This prevents context poisoning — where an agent writes tests that match its planned implementation rather than tests that verify behavior.
+
 ### Property-Based Testing (DPS-12)
 
 Code at security, cryptographic, state, or trust boundaries requires formal property domain mapping. Each test maps to a named domain and formal property type: SAFETY (bad thing never happens), LIVENESS (good thing eventually happens), INVARIANT (always true), PERFORMANCE (within bounds).
