@@ -67,8 +67,9 @@ def _data_imports():
 class ReviewPipeline:
     """End-to-end review pipeline — stateless per call."""
 
-    def __init__(self, config: EedomSettings) -> None:
+    def __init__(self, config: EedomSettings, context=None) -> None:
         self._config = config
+        self._context = context
 
     def evaluate(
         self,
@@ -136,10 +137,13 @@ class ReviewPipeline:
             combined_timeout=config.combined_scanner_timeout,
         )
 
-        opa = OpaEvaluator(
-            policy_path=config.opa_policy_path,
-            timeout=config.opa_timeout,
-        )
+        if self._context is None:
+            opa = OpaEvaluator(
+                policy_path=config.opa_policy_path,
+                timeout=config.opa_timeout,
+            )
+        else:
+            opa = None
 
         evidence = d["EvidenceStore"](root_path=config.evidence_path)
         pypi_client = d["PyPIClient"](timeout=config.pypi_timeout)
@@ -201,7 +205,25 @@ class ReviewPipeline:
                         "transitive_dep_count": transitive_dep_count,
                     }
 
-                    policy_eval = opa.evaluate(findings, package_metadata)
+                    if self._context is not None:
+                        from eedom.core.policy_port import PolicyInput
+
+                        pd = self._context.policy_engine.evaluate(
+                            PolicyInput(findings=[], packages=[package_metadata], config={})
+                        )
+                        verdict_str = getattr(pd, "verdict", "needs_review")
+                        try:
+                            _v = DecisionVerdict(verdict_str)
+                        except (ValueError, AttributeError):
+                            _v = DecisionVerdict.needs_review
+                        policy_eval = PolicyEvaluation(
+                            decision=_v,
+                            triggered_rules=getattr(pd, "triggered_rules", []),
+                            policy_bundle_version="port-injected",
+                        )
+                    else:
+                        assert opa is not None
+                        policy_eval = opa.evaluate(findings, package_metadata)
                     db.save_policy_evaluation(req.request_id, policy_eval)
 
                     pipeline_duration = time.monotonic() - pipeline_start

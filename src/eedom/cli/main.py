@@ -13,7 +13,6 @@ import click
 import structlog
 
 from eedom.core.models import OperatingMode
-from eedom.plugins import get_default_registry
 
 logger = structlog.get_logger()
 
@@ -141,9 +140,11 @@ def evaluate(
     try:
         import orjson
 
+        from eedom.core.bootstrap import bootstrap as _bootstrap
         from eedom.core.pipeline import ReviewPipeline
 
-        pipeline = ReviewPipeline(config)
+        _context = _bootstrap(config)
+        pipeline = ReviewPipeline(config, context=_context)
         decisions = pipeline.evaluate(
             diff_text=diff_text,
             pr_url=pr_url,
@@ -251,11 +252,13 @@ def review(
     gh_repo: str | None,
 ) -> None:
     """Run Eagle Eyed Dom plugin review on a repo or diff."""
+    from eedom.core.bootstrap import bootstrap_test
     from eedom.core.plugin import PluginCategory
     from eedom.core.renderer import render_comment
     from eedom.core.repo_config import RepoConfig, load_repo_config
 
-    registry = get_default_registry()
+    _ctx = bootstrap_test()
+    registry = _ctx.analyzer_registry
     repo = Path(repo_path)
     names = scanners.split(",") if scanners else None
     cats = [PluginCategory(c.strip()) for c in category.split(",")] if category else None

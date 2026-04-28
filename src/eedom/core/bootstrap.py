@@ -54,6 +54,9 @@ class _FakeAnalyzerRegistry:
     def run_all(self, files: list, repo_path: Path, **kwargs) -> list:
         return []
 
+    def list(self, category=None, names=None) -> list:
+        return []
+
 
 class _FakePolicyEngine:
     """Always-approve policy engine — never invokes OPA."""
