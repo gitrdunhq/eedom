@@ -70,7 +70,7 @@ class EedomSettings(BaseSettings):
     pypi_timeout: int = 10
 
     # OPA policy path
-    opa_policy_path: str = "./policies"
+    opa_policy_path: str = "./policies/policy.rego"
 
     # Enabled scanners (comma-separated in env, e.g. "syft,trivy,osv-scanner")
     enabled_scanners: list[str] = Field(default=_SCANNERS_DEFAULT)
