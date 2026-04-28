@@ -40,27 +40,15 @@ class TestComplexity:
 
 class TestCpd:
     def test_cpd_finds_duplicate(self, vuln_repo: Path, tmp_path: Path) -> None:
-        """CPD detects duplicated code blocks.
-
-        Known issue: PMD 7.24 changed --format json renderer class name.
-        The eedom CPD runner may hit this error. When the runner handles it
-        gracefully (error field set), the test passes as fail-open.
-        """
         result, parsed = run_review(vuln_repo, scanners="cpd", output_format="json")
         breakpoint_dump(tmp_path, "scanner_cpd", parsed)
 
         assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
 
         findings = get_plugin_findings(parsed, "cpd")
-        if findings:
-            assert (
-                len(findings) >= 1
-            ), f"CPD should find duplicate blocks. Findings: {json.dumps(findings, indent=2)}"
-        else:
-            plugins = parsed.get("plugins", []) if isinstance(parsed, dict) else parsed
-            if isinstance(plugins, list):
-                cpd = next((p for p in plugins if p.get("name") == "cpd"), {})
-                assert cpd.get("status") in ("ran", "skipped"), f"CPD status: {cpd}"
+        assert (
+            len(findings) >= 1
+        ), f"CPD should find duplicate blocks. Findings: {json.dumps(findings, indent=2)}"
 
 
 class TestMypy:
@@ -95,15 +83,9 @@ class TestCspell:
         assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
 
         findings = get_plugin_findings(parsed, "cspell")
-        if findings:
-            assert (
-                len(findings) >= 1
-            ), f"Cspell should find typos. Findings: {json.dumps(findings, indent=2)}"
-        else:
-            plugins = parsed.get("plugins", []) if isinstance(parsed, dict) else parsed
-            if isinstance(plugins, list):
-                cs = next((p for p in plugins if p.get("name") == "cspell"), {})
-                assert cs.get("status") in ("ran", "skipped"), f"Cspell status: {cs}"
+        assert (
+            len(findings) >= 1
+        ), f"Cspell should find typos. Findings: {json.dumps(findings, indent=2)}"
 
 
 class TestLsLint:
