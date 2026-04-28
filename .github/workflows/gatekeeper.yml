@@ -83,6 +83,18 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
+      - name: Run e2e tests (container)
+        if: steps.docs.outputs.docs_only != 'true' && steps.runtime.outputs.container == 'true'
+        run: |
+          $ENGINE run --rm --user root --entrypoint "" \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -e EEDOM_E2E=1 \
+            -e EEDOM_ALLOW_GLOBAL=1 \
+            eedom:latest \
+            sh -c "pip install -q --no-cache-dir uv && uv pip install -q --no-cache pytest && python3 -m pytest /workspace/tests/e2e/ -v --tb=short"
+        env:
+          ENGINE: ${{ steps.runtime.outputs.engine }}
+
       - name: Run eedom review (container)
         if: steps.docs.outputs.docs_only != 'true' && steps.runtime.outputs.container == 'true'
         run: |
