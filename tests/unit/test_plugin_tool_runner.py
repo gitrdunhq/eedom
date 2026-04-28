@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from eedom.core.tool_runner import ToolInvocation, ToolResult
 from eedom.plugins.gitleaks import GitleaksPlugin
@@ -136,14 +137,14 @@ class TestGitleaksPluginToolRunner:
         assert result.summary.get("leaks") == 0
 
     def test_gitleaks_findings_via_tool_runner(self, tmp_path: Path) -> None:
-        """A leak in stdout is surfaced as a finding even when routed through ToolRunner.
-
-        FAILS because the plugin doesn't accept tool_runner yet.
-        """
-        fake = FakeToolRunner(_ok(_GITLEAKS_LEAK_OUTPUT, exit_code=1))
+        """A leak in the report file is surfaced as a finding via ToolRunner."""
+        report = tmp_path / "gl-report.json"
+        report.write_text(_GITLEAKS_LEAK_OUTPUT)
+        fake = FakeToolRunner(_ok("", exit_code=1))
         plugin = GitleaksPlugin(tool_runner=fake)
 
-        result = plugin.run([], tmp_path)
+        with patch("tempfile.mktemp", return_value=str(report)):
+            result = plugin.run([], tmp_path)
 
         assert result.error == ""
         assert len(result.findings) == 1
