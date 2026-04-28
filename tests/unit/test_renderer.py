@@ -17,6 +17,7 @@ from eedom.core.renderer import (  # noqa: PLC2701
 def _vuln_result() -> PluginResult:
     return PluginResult(
         plugin_name="osv-scanner",
+        category="dependency",
         findings=[
             {
                 "id": "CVE-2023-0286",
@@ -209,6 +210,7 @@ class TestPerPackageRendering:
         return PluginResult(
             plugin_name=plugin_name,
             package_root=package_root,
+            category="dependency",
             findings=[{"severity": severity, "id": "CVE-T3-1", "message": "test finding"}],
             summary={},
         )
@@ -225,15 +227,14 @@ class TestPerPackageRendering:
         """Results with package_root=None render identically to current behavior."""
         result = PluginResult(
             plugin_name="semgrep",
+            category="code",
             findings=[{"severity": "high", "id": "CVE-1", "message": "x"}],
             summary={},
         )
         md = render_comment([result], repo="org/repo", pr_num=1, title="test")
-        # No per-package section headers
         assert "## apps/" not in md
         assert "## libs/" not in md
-        # Standard verdict still applies
-        assert "BLOCKED" in md
+        assert "PASS WITH WARNINGS" in md
 
     def test_multi_package_section_headers(self):
         """Two packages get separate section headers."""

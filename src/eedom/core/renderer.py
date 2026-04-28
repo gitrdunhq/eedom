@@ -260,7 +260,8 @@ def _build_sections(
         summary_rows.append((label, str(count)))
 
         has_crit = any(f.get("severity") in ("critical", "high") for f in r.findings)
-        if has_crit:
+        is_security = r.category in {"dependency", "supply_chain", "infra"}
+        if has_crit and is_security:
             verdict = "blocked"
         elif count and verdict != "blocked":
             verdict = "warnings"
