@@ -110,6 +110,15 @@ def analyze_file(path: Path) -> dict:
     functions = len(re.findall(r"^def \w+", text, re.MULTILINE))
     methods = len(re.findall(r"^    def \w+", text, re.MULTILINE))
 
+    import_modules = []
+    for imp in imports:
+        m = re.match(r"from\s+([\w.]+)", imp) or re.match(r"import\s+([\w.]+)", imp)
+        if m:
+            import_modules.append(m.group(1))
+
+    public_api = re.findall(r"^(?:class|def)\s+(\w+)", text, re.MULTILINE)
+    public_api = [name for name in public_api if not name.startswith("_")]
+
     return {
         "path": rel,
         "category": classify_category(rel),
@@ -125,10 +134,84 @@ def analyze_file(path: Path) -> dict:
         "functions": functions,
         "methods": methods,
         "imports": len(imports),
+        "import_modules": import_modules,
+        "public_api": public_api,
         "tested_by": tested_by(text),
         "over_500": len(lines) > 500,
         "last_modified": git_last_modified(path),
     }
+
+
+def _enrich_dependency_graph(files: list[dict]) -> None:
+    """Add imported_by and blast_radius to each file in-place."""
+    path_to_module: dict[str, str] = {}
+    for f in files:
+        p = f["path"]
+        if p.startswith("src/"):
+            mod = p[4:].replace("/", ".").removesuffix(".py").removesuffix(".__init__")
+        else:
+            mod = p.replace("/", ".").removesuffix(".py").removesuffix(".__init__")
+        path_to_module[f["path"]] = mod
+
+    module_to_path: dict[str, str] = {v: k for k, v in path_to_module.items()}
+
+    for f in files:
+        imported_by = []
+        my_mod = path_to_module.get(f["path"], "")
+        for other in files:
+            if other["path"] == f["path"]:
+                continue
+            for imp in other.get("import_modules", []):
+                if imp == my_mod or imp.startswith(my_mod + "."):
+                    imported_by.append(other["path"])
+                    break
+        f["imported_by"] = imported_by
+        f["blast_radius"] = len(imported_by)
+
+    for f in files:
+        deps = []
+        for imp in f.get("import_modules", []):
+            resolved = module_to_path.get(imp)
+            if not resolved:
+                for mod, path in module_to_path.items():
+                    if imp.startswith(mod + ".") or mod.startswith(imp + "."):
+                        resolved = path
+                        break
+            if resolved:
+                deps.append(resolved)
+        f["depends_on"] = deps
+
+
+def _cluster_concerns(src_files: list[dict]) -> list[dict]:
+    """Group source files into concern clusters by shared imports."""
+    clusters: dict[str, list[str]] = {}
+    for f in src_files:
+        parts = Path(f["path"]).parts
+        key = "/".join(parts[:3]) if len(parts) >= 3 else f["path"]
+        clusters.setdefault(key, []).append(f["path"])
+
+    result = []
+    for key, paths in sorted(clusters.items()):
+        members = [f for f in src_files if f["path"] in paths]
+        total_tokens = sum(m["tokens"] for m in members)
+        total_lines = sum(m["lines"] for m in members)
+        ext_deps = set()
+        for m in members:
+            for dep in m.get("depends_on", []):
+                if dep not in paths:
+                    ext_deps.add(dep)
+        result.append(
+            {
+                "concern": key,
+                "files": paths,
+                "file_count": len(paths),
+                "total_tokens": total_tokens,
+                "total_lines": total_lines,
+                "external_deps": sorted(ext_deps),
+                "max_blast_radius": max((m["blast_radius"] for m in members), default=0),
+            }
+        )
+    return sorted(result, key=lambda c: -c["total_tokens"])
 
 
 def aggregate(files: list[dict], label: str) -> dict:
@@ -180,8 +263,11 @@ def main() -> None:
     over_500 = [f["path"] for f in src_files if f["over_500"]]
     untested = [f["path"] for f in src_files if not f["tested_by"] and f["lines"] > 0]
 
+    _enrich_dependency_graph(files)
+    concerns = _cluster_concerns(src_files)
+
     report = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "generated_at": datetime.now(UTC).isoformat(),
         "commit": commit,
         "branch": branch,
@@ -200,6 +286,7 @@ def main() -> None:
             "over_500_lines": over_500,
             "missing_tested_by": untested[:20],
         },
+        "concerns": concerns,
         "files": sorted(files, key=lambda f: -f["tokens"]),
     }
 
