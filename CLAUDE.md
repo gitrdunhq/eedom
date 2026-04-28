@@ -20,7 +20,7 @@ make preflight                         # Format + lint + test + dogfood
 opa test policies/                     # OPA Rego policy tests
 ```
 
-**Tests MUST run in a container.** `make test` handles this automatically. Bare `uv run pytest` will abort with an error unless `EEDOM_ALLOW_HOST_TESTS=1` is set.
+**Tests MUST run in a container.** `make test` handles this automatically. Never use `EEDOM_ALLOW_HOST_TESTS=1`.
 
 Container:
 ```bash
