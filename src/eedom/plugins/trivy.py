@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 from eedom.core.errors import ErrorCode, error_msg
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
+from eedom.core.subprocess_runner import SubprocessToolRunner
+from eedom.core.tool_runner import ToolInvocation, ToolRunnerPort
 
 _SEV_MAP = {
     "CRITICAL": "critical",
@@ -19,8 +20,15 @@ _SEV_MAP = {
     "UNKNOWN": "info",
 }
 
+_TIMEOUT = 60
+
 
 class TrivyPlugin(ScannerPlugin):
+    def __init__(self, tool_runner: ToolRunnerPort | None = None) -> None:
+        self._runner: ToolRunnerPort = (
+            tool_runner if tool_runner is not None else SubprocessToolRunner()
+        )
+
     @property
     def name(self) -> str:
         return "trivy"
@@ -37,25 +45,23 @@ class TrivyPlugin(ScannerPlugin):
         return True
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
-        try:
-            r = subprocess.run(
-                ["trivy", "fs", "--format", "json", "--scanners", "vuln", str(repo_path)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
-        except FileNotFoundError:
+        cmd = ["trivy", "fs", "--format", "json", "--scanners", "vuln", str(repo_path)]
+        tool_result = self._runner.run(
+            ToolInvocation(cmd=cmd, cwd=str(repo_path), timeout=_TIMEOUT)
+        )
+
+        if tool_result.not_installed:
             return PluginResult(
                 plugin_name=self.name, error=error_msg(ErrorCode.NOT_INSTALLED, "trivy")
             )
-        except subprocess.TimeoutExpired:
+        if tool_result.timed_out:
             return PluginResult(
-                plugin_name=self.name, error=error_msg(ErrorCode.TIMEOUT, "trivy", timeout=0)
+                plugin_name=self.name,
+                error=error_msg(ErrorCode.TIMEOUT, "trivy", timeout=_TIMEOUT),
             )
 
         try:
-            data = json.loads(r.stdout) if r.stdout else {}
+            data = json.loads(tool_result.stdout) if tool_result.stdout else {}
         except json.JSONDecodeError:
             return PluginResult(
                 plugin_name=self.name, error=error_msg(ErrorCode.PARSE_ERROR, "trivy")
