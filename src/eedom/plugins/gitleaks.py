@@ -51,6 +51,9 @@ class GitleaksPlugin(ScannerPlugin):
         repo_path: Path,
         timeout: int = 60,
     ) -> PluginResult:
+        import tempfile
+
+        report_file = Path(tempfile.mktemp(suffix=".json", prefix="gitleaks-"))
         cmd = [
             "gitleaks",
             "dir",
@@ -58,7 +61,7 @@ class GitleaksPlugin(ScannerPlugin):
             "--report-format",
             "json",
             "--report-path",
-            "/dev/stdout",
+            str(report_file),
             "--no-banner",
         ]
         custom_config = repo_path / ".eedom" / "gitleaks.toml"
@@ -69,24 +72,31 @@ class GitleaksPlugin(ScannerPlugin):
         result = self._runner.run(ToolInvocation(cmd=cmd, cwd=str(repo_path), timeout=timeout))
 
         if result.not_installed:
+            report_file.unlink(missing_ok=True)
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.NOT_INSTALLED, "gitleaks"),
             )
         if result.timed_out:
+            report_file.unlink(missing_ok=True)
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.TIMEOUT, "gitleaks", timeout=timeout),
             )
 
-        if not result.stdout or result.stdout.strip() == "[]":
+        report_text = ""
+        if report_file.exists():
+            report_text = report_file.read_text()
+            report_file.unlink(missing_ok=True)
+
+        if not report_text or report_text.strip() == "[]":
             return PluginResult(
                 plugin_name=self.name,
                 summary={"leaks": 0},
             )
 
         try:
-            raw = json.loads(result.stdout)
+            raw = json.loads(report_text)
         except json.JSONDecodeError:
             return PluginResult(
                 plugin_name=self.name,
