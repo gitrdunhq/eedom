@@ -61,11 +61,15 @@ class TestGitleaksPlugin:
         assert len(result.findings) == 0
 
     @patch("eedom.core.subprocess_runner.subprocess.run")
-    def test_detects_leaks(self, mock_run):
+    def test_detects_leaks(self, mock_run, tmp_path):
+        report = tmp_path / "gl.json"
+        report.write_text(LEAK_OUTPUT)
         mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = LEAK_OUTPUT
-        p = GitleaksPlugin()
-        result = p.run(["config.py"], Path("/workspace"))
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        with patch("tempfile.mktemp", return_value=str(report)):
+            p = GitleaksPlugin()
+            result = p.run(["config.py"], Path("/workspace"))
         assert len(result.findings) == 2
         assert result.findings[0]["rule"] == "aws-access-token"
         assert result.findings[0]["file"] == "config.py"
@@ -73,11 +77,15 @@ class TestGitleaksPlugin:
         assert result.summary["leaks"] == 2
 
     @patch("eedom.core.subprocess_runner.subprocess.run")
-    def test_secrets_not_in_findings(self, mock_run):
+    def test_secrets_not_in_findings(self, mock_run, tmp_path):
+        report = tmp_path / "gl.json"
+        report.write_text(LEAK_OUTPUT)
         mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = LEAK_OUTPUT
-        p = GitleaksPlugin()
-        result = p.run(["config.py"], Path("/workspace"))
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        with patch("tempfile.mktemp", return_value=str(report)):
+            p = GitleaksPlugin()
+            result = p.run(["config.py"], Path("/workspace"))
         for f in result.findings:
             assert "AKIAIOSFODNN7EXAMPLE" not in str(f)
             assert "sk-prod-abc123" not in str(f)
@@ -92,11 +100,15 @@ class TestGitleaksPlugin:
         assert "NOT_INSTALLED" in result.error
 
     @patch("eedom.core.subprocess_runner.subprocess.run")
-    def test_render_leaks(self, mock_run):
+    def test_render_leaks(self, mock_run, tmp_path):
+        report = tmp_path / "gl.json"
+        report.write_text(LEAK_OUTPUT)
         mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = LEAK_OUTPUT
-        p = GitleaksPlugin()
-        result = p.run(["config.py"], Path("/workspace"))
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        with patch("tempfile.mktemp", return_value=str(report)):
+            p = GitleaksPlugin()
+            result = p.run(["config.py"], Path("/workspace"))
         md = p.render(result)
         assert "Secrets" in md
         assert "aws-access-token" in md
