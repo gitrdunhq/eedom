@@ -79,6 +79,24 @@ class PluginFinding:
         d.update(self.metadata)
         return d
 
+    # ------------------------------------------------------------------
+    # Dict-compatible access — backward compat for finding.get("key")
+    # callers that predate the typed PluginFinding contract.
+    # ------------------------------------------------------------------
+
+    def get(self, key: str, default=None):
+        if hasattr(self, key):
+            return getattr(self, key)
+        return self.metadata.get(key, default)
+
+    def __getitem__(self, key: str):
+        if hasattr(self, key):
+            return getattr(self, key)
+        return self.metadata[key]
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key) or key in self.metadata
+
 
 def normalize_finding(raw: dict) -> PluginFinding:
     known = {}

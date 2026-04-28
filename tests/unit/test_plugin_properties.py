@@ -124,7 +124,9 @@ class TestPluginIsolation:
         reg.register(_DeterministicPlugin())
         results = reg.run_all(files, Path("."))
         good = [r for r in results if r.plugin_name == "deterministic"]
-        assert good[0].findings == [{"file": f, "issue": "test"} for f in sorted(files)]
+        findings = good[0].findings
+        assert [f.get("file") for f in findings] == sorted(files)
+        assert all(f.get("issue") == "test" for f in findings)
 
 
 # ── PROP-003: Registry Determinism ──
