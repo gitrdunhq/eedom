@@ -106,26 +106,22 @@ class TestReviewUsesContextAnalyzerRegistry:
         mock_registry.run_all.assert_called()
 
     def test_review_command_does_not_call_get_default_registry(self) -> None:
-        """After #161, the review command must not call get_default_registry().
+        """After #161, get_default_registry must not be imported in cli/main.py."""
+        import ast
+        import inspect
 
-        FAILS (RED): The review command currently calls get_default_registry()
-        on every invocation. This assertion will fail because the mock IS called
-        when it must NOT be called after the refactor.
-        """
-        with patch("eedom.cli.main.get_default_registry") as mock_get_default:
-            mock_get_default.return_value.run_all.return_value = []
-            mock_get_default.return_value.list.return_value = []
+        from eedom.cli import main as cli_module
 
-            runner = CliRunner()
-            with runner.isolated_filesystem():
-                runner.invoke(
-                    cli,
-                    ["review", "--repo-path", ".", "--all"],
-                    env=_RUNNER_ENV,
-                )
-
-        # Fails because get_default_registry IS currently called.
-        mock_get_default.assert_not_called()
+        source = inspect.getsource(cli_module)
+        tree = ast.parse(source)
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "get_default_registry"
+        ]
+        assert len(calls) == 0, "cli/main.py must not call get_default_registry()"
 
 
 # ---------------------------------------------------------------------------
@@ -195,25 +191,24 @@ class TestBootstrapTestInjection:
         bootstrap_test is patched, get_default_registry is NOT called. Currently
         it IS still called, so the assertion fails.
         """
-        fake_ctx, _, _ = _make_fake_context()
+        import ast
+        import inspect
 
-        with patch("eedom.core.bootstrap.bootstrap_test", return_value=fake_ctx):
-            with patch("eedom.cli.main.get_default_registry") as mock_get_default:
-                mock_get_default.return_value.run_all.return_value = []
-                mock_get_default.return_value.list.return_value = []
+        from eedom.cli import main as cli_module
 
-                runner = CliRunner()
-                with runner.isolated_filesystem():
-                    runner.invoke(
-                        cli,
-                        ["review", "--repo-path", ".", "--all"],
-                        env=_RUNNER_ENV,
-                    )
-
-                # After #161: bootstrap_test provides the registry, so
-                # get_default_registry must NOT be called.
-                # Currently FAILS because the CLI always calls get_default_registry.
-                mock_get_default.assert_not_called()
+        source = inspect.getsource(cli_module)
+        tree = ast.parse(source)
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "get_default_registry"
+        ]
+        assert len(calls) == 0, (
+            "With bootstrap providing the registry, "
+            "get_default_registry() should not appear in cli/main.py"
+        )
 
 
 # ---------------------------------------------------------------------------
