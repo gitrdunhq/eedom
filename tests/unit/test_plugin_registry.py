@@ -379,10 +379,11 @@ class _FixedFindingPlugin(ScannerPlugin):
 
 
 class _MockOpaPlugin(ScannerPlugin):
-    """Pretends to be the OPA plugin — records findings it receives per-call."""
+    """Pretends to be the OPA plugin — records files received per-call."""
 
     def __init__(self) -> None:
         self.received_findings: list[list[dict]] = []
+        self.received_files: list[list[str]] = []
 
     @property
     def name(self) -> str:
@@ -411,6 +412,7 @@ class _MockOpaPlugin(ScannerPlugin):
         **kwargs,
     ) -> PluginResult:
         self.received_findings.append(list(findings or []))
+        self.received_files.append(list(files))
         return PluginResult(plugin_name=self.name)
 
 
@@ -509,7 +511,11 @@ class TestPackageUnitsRunAll:
         assert "apps/b/index.ts" not in scoped
 
     def test_opa_receives_per_package_findings_not_global_merged(self):
-        """OPA is called once per package with only that package's findings."""
+        """OPA (wildcard) is called once per package and sees only that package's files.
+
+        After #158: no findings= injection.  Scoping is now verified via the
+        files argument passed to each run() invocation.
+        """
         from eedom.core.manifest_discovery import PackageUnit
 
         reg = PluginRegistry()
@@ -529,20 +535,17 @@ class TestPackageUnitsRunAll:
         reg.run_all(files, Path("."), package_units=[pkg_a, pkg_b])
 
         # OPA called twice — once per package
-        assert len(opa.received_findings) == 2
+        assert len(opa.received_files) == 2
 
-        # Each OPA call receives only its package's findings (1 file → 1 finding each)
-        all_files_seen = {f["file"] for call in opa.received_findings for f in call}
+        # Each call sees only its package's files (no cross-package mixing)
+        all_files_seen = {f for call in opa.received_files for f in call}
         assert "apps/a/index.ts" in all_files_seen
         assert "apps/b/index.ts" in all_files_seen
 
-        # No call should have findings from BOTH packages
-        for call_findings in opa.received_findings:
-            files_in_call = {f["file"] for f in call_findings}
+        for call_files in opa.received_files:
             assert not (
-                any("apps/a" in fpath for fpath in files_in_call)
-                and any("apps/b" in fpath for fpath in files_in_call)
-            ), f"OPA call mixed findings from different packages: {files_in_call}"
+                any("apps/a" in f for f in call_files) and any("apps/b" in f for f in call_files)
+            ), f"OPA call mixed files from different packages: {call_files}"
 
     def test_single_package_unit_behaves_same_as_no_units(self):
         """A single PackageUnit at root produces 1 result, same as no units."""
@@ -691,8 +694,13 @@ class TestPluginDependencyGraph:
         assert order.index("C") < order.index("A")
 
     def test_opa_plugin_uses_depends_on_not_hardcoded_name(self):
-        """A plugin with depends_on=['*'] — regardless of name — receives scan findings."""
-        received: list[dict] = []
+        """A plugin with depends_on=['*'] — regardless of name — runs last.
+
+        After #158: depends_on=["*"] is ordering-only; no findings= are
+        injected.  The wildcard plugin runs after all non-wildcard plugins.
+        """
+        order: list[str] = []
+        was_called = {"value": False}
 
         class _NonOpaWildcard(ScannerPlugin):
             @property
@@ -718,10 +726,9 @@ class TestPluginDependencyGraph:
                 self,
                 files: list[str],
                 repo_path: Path,
-                findings: list[dict] | None = None,
-                **kwargs,
             ) -> PluginResult:
-                received.extend(findings or [])
+                was_called["value"] = True
+                order.append("not-opa-policy")
                 return PluginResult(plugin_name="not-opa-policy")
 
         class _FindingsPlugin(ScannerPlugin):
@@ -741,6 +748,7 @@ class TestPluginDependencyGraph:
                 return True
 
             def run(self, files: list[str], repo_path: Path) -> PluginResult:
+                order.append("scan-source")
                 return PluginResult(
                     plugin_name="scan-source",
                     findings=[{"issue": "cve-test"}],
@@ -751,11 +759,12 @@ class TestPluginDependencyGraph:
         reg.register(_NonOpaWildcard())
         reg.run_all(["a.py"], Path("."))
 
-        assert len(received) == 1
-        assert received[0]["issue"] == "cve-test"
+        assert was_called["value"], "Wildcard plugin was never called"
+        assert "scan-source" in order
+        assert order[-1] == "not-opa-policy", f"Wildcard plugin did not run last: {order}"
 
     def test_real_opa_plugin_declares_depends_on_wildcard(self):
         """OpaPlugin.depends_on == ['*'] — driven by property, not hard-coded name check."""
-        from eedom.plugins.opa import OpaPlugin
+        from eedom.plugins._opa import OpaPlugin
 
         assert OpaPlugin().depends_on == ["*"]
