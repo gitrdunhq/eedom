@@ -308,30 +308,18 @@ def review(
         return files
 
     def run_review() -> None:
-        from eedom.core.manifest_discovery import PackageUnit, discover_packages
+        from eedom.core.use_cases import ReviewOptions, review_repository
 
         files = _build_file_list()
 
-        package_units: list[PackageUnit] | None = None
-        if package:
-            pkg_path = Path(package)
-            units = discover_packages(pkg_path)
-            package_units = units if units else None
-        elif run_all:
-            all_units = discover_packages(repo)
-            if len(all_units) > 1:
-                package_units = all_units
-            # else: single package at repo root → pass package_units=None (backward compat)
-
-        results = registry.run_all(
-            files,
-            repo,
-            names=names,
+        options = ReviewOptions(
+            scanners=names,
             categories=cats,
-            disabled_names=disabled_names,
-            enabled_names=enabled_names,
-            package_units=package_units,
+            disabled=disabled_names,
+            enabled=enabled_names,
         )
+        review_result = review_repository(_ctx, files, repo, options)
+        results = review_result.results
 
         if output_format == "sarif" or pr is not None:
             import orjson
