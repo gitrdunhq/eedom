@@ -4,6 +4,8 @@ Rules for AI agents working on the eedom codebase. Read CLAUDE.md first — it h
 
 ## Agent Execution Model
 
+**Quality over speed. Always.** Do not panic about throughput, do not combine phases to "save time," do not skip steps because a task looks small. A correct codebase built slowly is worth more than a broken one built fast. Every shortcut we take now becomes a bug we debug later.
+
 Opus orchestrates. Sonnet implements. Never use Opus for mechanical code changes.
 
 ### Split TDD — Two Agents Per Task
@@ -14,6 +16,8 @@ Every implementation task uses two sequential agents to prevent context poisonin
 2. **GREEN agent** — reads the failing tests, implements minimum code to pass. Runs full suite. Commits.
 
 The RED agent never sees the implementation. The GREEN agent never writes its own tests. If the same agent writes both, it writes tests that match its planned implementation rather than tests that verify behavior.
+
+**No exceptions.** Not for small tasks. Not for "obvious" implementations. Not to save time. Every task, every time: RED agent → commit → GREEN agent → commit.
 
 ### Acceptance Checklist
 
