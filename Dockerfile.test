@@ -1,35 +1,48 @@
+# syntax=docker/dockerfile:1
 # Test image — installs eedom from source with dev deps.
 # Unlike the runtime Dockerfile, this always reflects the current checkout.
 #
-# Build:  podman build -f Dockerfile.test -t eedom-test:latest .
-# Run:    podman run --rm -v .:/workspace:ro -w /workspace eedom-test:latest python3 -m pytest tests/ -v
+# Build:  make test-amd64
+# Run:    podman run --rm --platform linux/amd64 --security-opt apparmor=unconfined eedom-test:amd64 python3 -m pytest tests/ -v
 
-FROM python:3.12-slim-bookworm
+# docker-library/python revision:
+# 3362634339580d3232e65a66dd5a36c47ae7ff14
+FROM docker.io/library/python@sha256:d384a24aebd583543abb00fa47b2a434ec3a96559c6f244cc3cfcbe9e136a798
+
+LABEL org.opencontainers.image.base.revision="3362634339580d3232e65a66dd5a36c47ae7ff14" \
+      org.opencontainers.image.uv.revision="0e961dd9a2bb6f73493d9e8398b725ad2d3b3837"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv
-
 # Venv lives outside /workspace so the host's ro mount can't shadow it.
 ENV UV_PROJECT_ENVIRONMENT=/opt/test-venv \
     VIRTUAL_ENV=/opt/test-venv
 
+# astral-sh/uv revision:
+# 0e961dd9a2bb6f73493d9e8398b725ad2d3b3837
+COPY --from=ghcr.io/astral-sh/uv@sha256:3b7b60a81d3c57ef471703e5c83fd4aaa33abcd403596fb22ab07db85ae91347 /uv /usr/local/bin/uv
+
 WORKDIR /workspace
 
 COPY pyproject.toml uv.lock LICENSE README.md ./
-RUN uv sync --frozen --group dev
+RUN --security=insecure uv sync --frozen --group dev --no-install-project
 
-COPY src/ src/
-COPY tests/ tests/
-COPY policies/ policies/
+COPY . .
 
-RUN uv sync --frozen --group dev
+RUN --security=insecure uv sync --frozen --group dev
 
 # Extra deps for integration tests (mypy for type-check plugin, pyarrow for parquet pipeline)
-RUN uv pip install mypy pyarrow
+RUN --security=insecure uv pip install mypy==1.15.0 pyarrow==24.0.0
 
-ENV EEDOM_ALLOW_GLOBAL=1
+RUN groupadd -r eedom \
+    && useradd -r -g eedom -m -d /home/eedom -s /bin/sh eedom \
+    && chown -R eedom:eedom /workspace /home/eedom /opt/test-venv
+
+ENV EEDOM_ALLOW_GLOBAL=1 \
+    XDG_CACHE_HOME=/home/eedom/.cache
+
+USER eedom
 
 ENTRYPOINT ["uv", "run"]
