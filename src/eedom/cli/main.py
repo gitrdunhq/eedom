@@ -182,7 +182,7 @@ def evaluate(
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["markdown", "sarif"]),
+    type=click.Choice(["markdown", "sarif", "json"]),
     default="markdown",
     help="Output format.",
 )
@@ -374,6 +374,17 @@ def review(
                 click.echo(f"SARIF written to {output}")
             else:
                 click.echo(sarif_text)
+            return
+
+        if output_format == "json":
+            from eedom.core.json_report import render_json
+
+            json_text = render_json(results, repo=repo_name or str(repo))
+            if output:
+                Path(output).write_text(json_text)
+                click.echo(f"JSON written to {output}")
+            else:
+                click.echo(json_text)
             return
 
         md = render_comment(
