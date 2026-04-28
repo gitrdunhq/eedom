@@ -7,6 +7,7 @@ Pure function: no I/O. Converts plugin results to a SARIF 2.1.0 document.
 from __future__ import annotations
 
 import contextlib
+import json
 from pathlib import Path
 
 from eedom.core.plugin import PluginResult
@@ -158,3 +159,11 @@ def to_sarif(
         "version": "2.1.0",
         "runs": [_plugin_to_run(r, repo_path, max_findings_per_run) for r in results],
     }
+
+
+class SarifRenderer:
+    """ReportRendererPort implementation that produces a SARIF v2.1.0 JSON string."""
+
+    def render(self, report) -> str:  # report: ReviewReport
+        doc = to_sarif(report.plugin_results)
+        return json.dumps(doc, indent=2)

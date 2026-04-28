@@ -63,3 +63,10 @@ def render_json(
     }
 
     return orjson.dumps(doc, option=orjson.OPT_INDENT_2).decode()
+
+
+class JsonRenderer:
+    """ReportRendererPort implementation that produces a structured JSON string."""
+
+    def render(self, report) -> str:  # report: ReviewReport
+        return render_json(report.plugin_results)
