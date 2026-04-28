@@ -50,7 +50,7 @@ def _make_fake_context():
         evidence_store=base.evidence_store,
         package_index=base.package_index,
         audit_sink=base.audit_sink,
-        pr_publisher=base.pr_publisher,
+        publisher=base.publisher,
     )
     return fake_ctx, mock_registry, mock_policy
 
@@ -85,16 +85,10 @@ class TestCLIImportsBootstrap:
 
 class TestReviewUsesContextAnalyzerRegistry:
     def test_review_command_routes_through_context_analyzer_registry(self) -> None:
-        """The review command must call ctx.analyzer_registry.run_all, not get_default_registry().
-
-        FAILS (RED): The CLI currently calls get_default_registry() directly,
-        which constructs a real PluginRegistry. The mock_registry injected here
-        via a patched bootstrap_test will never be invoked because the CLI
-        entirely bypasses bootstrap.
-        """
+        """The review command must call ctx.analyzer_registry.run_all via bootstrap_review()."""
         fake_ctx, mock_registry, _ = _make_fake_context()
 
-        with patch("eedom.core.bootstrap.bootstrap_test", return_value=fake_ctx):
+        with patch("eedom.core.bootstrap.bootstrap_review", return_value=fake_ctx):
             runner = CliRunner()
             with runner.isolated_filesystem():
                 runner.invoke(
@@ -103,8 +97,6 @@ class TestReviewUsesContextAnalyzerRegistry:
                     env=_RUNNER_ENV,
                 )
 
-        # Fails because the CLI never called bootstrap_test(), so
-        # mock_registry.run_all was never exercised.
         mock_registry.run_all.assert_called()
 
     def test_review_command_does_not_call_get_default_registry(self) -> None:

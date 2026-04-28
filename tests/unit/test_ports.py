@@ -53,6 +53,9 @@ class TestFakeAnalyzerRegistrySatisfiesPort:
             def run_all(self, files: list, repo_path: Path, **kwargs) -> list:
                 return []
 
+            def list(self, category=None, names=None) -> list:
+                return []
+
         assert isinstance(FakeRegistry(), AnalyzerRegistryPort)
 
     def test_fake_returns_list_of_plugin_results(self) -> None:
@@ -60,6 +63,9 @@ class TestFakeAnalyzerRegistrySatisfiesPort:
 
         class FakeRegistry:
             def run_all(self, files: list, repo_path: Path, **kwargs) -> list:
+                return []
+
+            def list(self, category=None, names=None) -> list:
                 return []
 
         registry = FakeRegistry()

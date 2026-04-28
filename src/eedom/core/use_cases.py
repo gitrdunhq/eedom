@@ -80,8 +80,8 @@ def review_repository(
         repo_path,
         names=options.scanners,
         categories=options.categories,
-        disabled_names=options.disabled or None,
-        enabled_names=options.enabled or None,
+        disabled_names=options.disabled,
+        enabled_names=options.enabled,
     )
 
     verdict = _derive_verdict(plugin_results)

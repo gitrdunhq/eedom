@@ -87,13 +87,15 @@ def build_app(
     """Construct and return the Starlette ASGI application.
 
     Accepts a *settings* instance and an optional *context* so the app is
-    fully testable without touching the real environment.  When *context* is
-    ``None`` a test-safe context is created via ``bootstrap_test()``.
+    fully testable without touching the real environment.  Callers must supply
+    a context; use ``bootstrap_test()`` in tests and ``bootstrap(settings)``
+    in production (see ``_load_app``).
     """
     if context is None:
-        from eedom.core.bootstrap import bootstrap_test
-
-        context = bootstrap_test()
+        raise ValueError(
+            "build_app() requires an ApplicationContext. "
+            "Pass bootstrap_test() in tests or bootstrap(EedomSettings()) in production."
+        )
 
     async def webhook(request: Request) -> Response:
         body = await request.body()
@@ -183,8 +185,12 @@ def build_app(
 
 def _load_app() -> Starlette:
     """Load settings from env and return the production app instance."""
+    from eedom.core.bootstrap import bootstrap as _bootstrap
+    from eedom.core.config import EedomSettings
+
     settings = WebhookSettings()  # type: ignore[call-arg]
-    return build_app(settings)
+    context = _bootstrap(EedomSettings())  # type: ignore[call-arg]
+    return build_app(settings, context=context)
 
 
 # Module-level app for: uvicorn eedom.webhook.server:app

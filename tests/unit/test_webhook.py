@@ -66,9 +66,10 @@ def settings(secret: str):
 
 @pytest.fixture
 def app(settings):
+    from eedom.core.bootstrap import bootstrap_test
     from eedom.webhook.server import build_app
 
-    return build_app(settings)
+    return build_app(settings, context=bootstrap_test())
 
 
 @pytest.fixture
@@ -86,13 +87,12 @@ async def client(app) -> httpx.AsyncClient:
 
 
 def _quiet_processing_mocks():
-    """Returns a context manager tuple that silences subprocess + GH API calls."""
-    mock_result = MagicMock()
-    mock_result.stdout = "## Eagle Eyed Dom Review\n\nAll clear."
-    mock_result.stderr = ""
-    mock_result.returncode = 0
+    """Returns a context manager tuple that silences review + GH API calls."""
+    mock_review_result = MagicMock(
+        results=[], verdict="clear", security_score=100.0, quality_score=100.0
+    )
     return (
-        patch("eedom.webhook.server.subprocess.run", return_value=mock_result),
+        patch("eedom.webhook.server.review_repository", return_value=mock_review_result),
         patch("eedom.webhook.server._post_pr_comment", new_callable=AsyncMock),
     )
 
@@ -157,14 +157,18 @@ class TestSignatureValidation:
 
 
 class TestEventParsing:
-    # 4. pull_request.opened triggers review subprocess and comment
+    # 4. pull_request.opened triggers review_repository and comment
     async def test_pull_request_opened_triggers_review(self, client, secret):
         body = _pr_body("opened")
         sig = _sign(body, secret)
 
-        mock_result = MagicMock(stdout="## Review result", stderr="", returncode=0)
+        mock_review_result = MagicMock(
+            results=[], verdict="clear", security_score=100.0, quality_score=100.0
+        )
         with (
-            patch("eedom.webhook.server.subprocess.run", return_value=mock_result) as mock_run,
+            patch(
+                "eedom.webhook.server.review_repository", return_value=mock_review_result
+            ) as mock_review,
             patch("eedom.webhook.server._post_pr_comment", new_callable=AsyncMock) as mock_comment,
         ):
             resp = await client.post(
@@ -178,16 +182,20 @@ class TestEventParsing:
             )
 
         assert resp.status_code == 200
-        mock_run.assert_called_once()
+        mock_review.assert_called_once()
         mock_comment.assert_awaited_once()
 
     async def test_pull_request_synchronize_triggers_review(self, client, secret):
         body = _pr_body("synchronize")
         sig = _sign(body, secret)
 
-        mock_result = MagicMock(stdout="ok", stderr="", returncode=0)
+        mock_review_result = MagicMock(
+            results=[], verdict="clear", security_score=100.0, quality_score=100.0
+        )
         with (
-            patch("eedom.webhook.server.subprocess.run", return_value=mock_result) as mock_run,
+            patch(
+                "eedom.webhook.server.review_repository", return_value=mock_review_result
+            ) as mock_review,
             patch("eedom.webhook.server._post_pr_comment", new_callable=AsyncMock),
         ):
             resp = await client.post(
@@ -201,7 +209,7 @@ class TestEventParsing:
             )
 
         assert resp.status_code == 200
-        mock_run.assert_called_once()
+        mock_review.assert_called_once()
 
     # 5. Non-pull_request event returns 200 and does NOT trigger review
     async def test_non_pull_request_event_ignored(self, client, secret):

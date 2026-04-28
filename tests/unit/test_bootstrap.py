@@ -67,13 +67,13 @@ class TestApplicationContextDataclass:
         fields = {f.name for f in dataclasses.fields(ApplicationContext)}
         assert "package_index" in fields, "ApplicationContext must have a 'package_index' field"
 
-    def test_application_context_has_exactly_nine_fields(self) -> None:
+    def test_application_context_has_exactly_eight_fields(self) -> None:
         from eedom.core.bootstrap import ApplicationContext
 
         field_names = {f.name for f in dataclasses.fields(ApplicationContext)}
         assert (
-            len(field_names) == 9
-        ), f"ApplicationContext must have exactly 9 fields, got: {field_names}"
+            len(field_names) == 8
+        ), f"ApplicationContext must have exactly 8 fields, got: {field_names}"
 
 
 # ---------------------------------------------------------------------------

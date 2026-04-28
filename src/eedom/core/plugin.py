@@ -125,7 +125,7 @@ def normalize_finding(raw: dict) -> PluginFinding:
 @dataclass
 class PluginResult:
     plugin_name: str
-    findings: list[dict] = field(default_factory=list)
+    findings: list[PluginFinding | dict] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
     error: str = ""
     package_root: str | None = None

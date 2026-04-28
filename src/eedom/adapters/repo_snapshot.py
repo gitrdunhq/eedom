@@ -30,6 +30,7 @@ class GitWorktreeSnapshot:
             cwd=self.repo_path,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         if result.returncode != 0:
             shutil.rmtree(temp_dir, ignore_errors=True)

@@ -209,7 +209,7 @@ class ReviewPipeline:
                         from eedom.core.policy_port import PolicyInput
 
                         pd = self._context.policy_engine.evaluate(
-                            PolicyInput(findings=[], packages=[package_metadata], config={})
+                            PolicyInput(findings=findings, packages=[package_metadata], config={})
                         )
                         verdict_str = getattr(pd, "verdict", "needs_review")
                         try:

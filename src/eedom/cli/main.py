@@ -13,6 +13,7 @@ import click
 import structlog
 
 from eedom.core.models import OperatingMode
+from eedom.plugins import get_default_registry
 
 logger = structlog.get_logger()
 
@@ -252,12 +253,12 @@ def review(
     gh_repo: str | None,
 ) -> None:
     """Run Eagle Eyed Dom plugin review on a repo or diff."""
-    from eedom.core.bootstrap import bootstrap_test
+    from eedom.core.bootstrap import bootstrap_review
     from eedom.core.plugin import PluginCategory
     from eedom.core.renderer import render_comment
     from eedom.core.repo_config import RepoConfig, load_repo_config
 
-    _ctx = bootstrap_test()
+    _ctx = bootstrap_review(registry_factory=get_default_registry)
     registry = _ctx.analyzer_registry
     repo = Path(repo_path)
     names = scanners.split(",") if scanners else None

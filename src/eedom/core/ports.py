@@ -18,6 +18,8 @@ class AnalyzerRegistryPort(Protocol):
 
     def run_all(self, files: list, repo_path: Path, **kwargs) -> list: ...
 
+    def list(self, category=None, names=None) -> list: ...
+
 
 @runtime_checkable
 class DecisionStorePort(Protocol):

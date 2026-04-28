@@ -9,7 +9,7 @@ Three public symbols:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,15 +44,11 @@ class ApplicationContext:
     evidence_store: EvidenceStorePort
     package_index: PackageIndexPort
     audit_sink: AuditSinkPort
-    pr_publisher: PullRequestPublisherPort
-    publisher: PullRequestPublisherPort = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.publisher = self.pr_publisher
+    publisher: PullRequestPublisherPort
 
 
 # ---------------------------------------------------------------------------
-# Fake implementations for bootstrap_test()
+# Fake implementations for bootstrap_test() and bootstrap_review()
 # ---------------------------------------------------------------------------
 
 
@@ -109,8 +105,79 @@ def bootstrap_test() -> ApplicationContext:
         evidence_store=NullEvidenceStore(),
         package_index=_FakePackageIndex(),
         audit_sink=NullAuditSink(),
-        pr_publisher=NullPublisher(),
+        publisher=NullPublisher(),
     )
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_review() — minimal context for plugin review command
+# ---------------------------------------------------------------------------
+
+
+def bootstrap_review(registry_factory=None) -> ApplicationContext:
+    """Return an ApplicationContext suitable for the review command.
+
+    Uses the real plugin registry (or *registry_factory* when provided) for
+    the analyzer and no-op adapters for everything else.  Does NOT require
+    EedomSettings so it works without a full production configuration.
+    """
+    from eedom.adapters.github_publisher import NullPublisher
+    from eedom.adapters.persistence import NullAuditSink, NullDecisionStore, NullEvidenceStore
+    from eedom.core.subprocess_runner import SubprocessToolRunner
+
+    if registry_factory is None:
+        from eedom.plugins import get_default_registry
+
+        registry_factory = get_default_registry
+
+    return ApplicationContext(
+        analyzer_registry=registry_factory(),
+        policy_engine=_FakePolicyEngine(),
+        tool_runner=SubprocessToolRunner(),
+        decision_store=NullDecisionStore(),
+        evidence_store=NullEvidenceStore(),
+        package_index=_FakePackageIndex(),
+        audit_sink=NullAuditSink(),
+        publisher=NullPublisher(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Production adapter helpers — keep Null* instantiation out of bootstrap()
+# ---------------------------------------------------------------------------
+
+
+def _make_decision_store(settings: EedomSettings) -> DecisionStorePort:
+    """Return the appropriate DecisionStorePort for *settings*.
+
+    Logs a warning and falls back to NullDecisionStore when no DB DSN is
+    configured so the pipeline can proceed without persistence.
+    """
+    import structlog
+
+    from eedom.adapters.persistence import NullDecisionStore
+
+    dsn = getattr(settings, "db_dsn", None)
+    if not dsn:
+        structlog.get_logger().warning(
+            "decision_store_null",
+            msg="No EEDOM_DB_DSN configured — decisions will not be persisted",
+        )
+    return NullDecisionStore()
+
+
+def _make_audit_sink(settings: EedomSettings) -> AuditSinkPort:
+    """Return the appropriate AuditSinkPort for *settings*."""
+    from eedom.adapters.persistence import NullAuditSink
+
+    return NullAuditSink()
+
+
+def _make_publisher(settings: EedomSettings) -> PullRequestPublisherPort:
+    """Return the appropriate PullRequestPublisherPort for *settings*."""
+    from eedom.adapters.github_publisher import NullPublisher
+
+    return NullPublisher()
 
 
 # ---------------------------------------------------------------------------
@@ -124,14 +191,13 @@ def bootstrap(settings: EedomSettings) -> ApplicationContext:
     All heavy imports are deferred to this function so that import-time cost
     is only paid when the production composition root is actually needed.
     """
-    from eedom.adapters.github_publisher import NullPublisher
-    from eedom.adapters.persistence import FileEvidenceStore, NullAuditSink, NullDecisionStore
+    from eedom.adapters.persistence import FileEvidenceStore
     from eedom.core.opa_adapter import OpaRegoAdapter
-    from eedom.core.registry import PluginRegistry
     from eedom.core.subprocess_runner import SubprocessToolRunner
+    from eedom.plugins import get_default_registry
 
     tool_runner = SubprocessToolRunner()
-    registry = PluginRegistry()
+    registry = get_default_registry()
 
     # OPA policy path — use the bundled policies directory by default.
     policy_path = str(Path(__file__).parent.parent.parent.parent / "policies" / "policy.rego")
@@ -142,9 +208,9 @@ def bootstrap(settings: EedomSettings) -> ApplicationContext:
         analyzer_registry=registry,
         policy_engine=policy_engine,
         tool_runner=tool_runner,
-        decision_store=NullDecisionStore(),
+        decision_store=_make_decision_store(settings),
         evidence_store=FileEvidenceStore(base_dir=Path(settings.evidence_path)),
         package_index=_FakePackageIndex(),
-        audit_sink=NullAuditSink(),
-        pr_publisher=NullPublisher(),
+        audit_sink=_make_audit_sink(settings),
+        publisher=_make_publisher(settings),
     )
