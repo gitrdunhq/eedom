@@ -49,6 +49,8 @@ def _make_fake_context():
         decision_store=base.decision_store,
         evidence_store=base.evidence_store,
         package_index=base.package_index,
+        audit_sink=base.audit_sink,
+        pr_publisher=base.pr_publisher,
     )
     return fake_ctx, mock_registry, mock_policy
 

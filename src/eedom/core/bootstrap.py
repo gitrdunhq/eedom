@@ -9,16 +9,18 @@ Three public symbols:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from eedom.core.policy_port import PolicyDecision, PolicyEnginePort, PolicyInput
 from eedom.core.ports import (
     AnalyzerRegistryPort,
+    AuditSinkPort,
     DecisionStorePort,
     EvidenceStorePort,
     PackageIndexPort,
+    PullRequestPublisherPort,
 )
 from eedom.core.tool_runner import ToolInvocation, ToolResult, ToolRunnerPort
 
@@ -41,6 +43,12 @@ class ApplicationContext:
     decision_store: DecisionStorePort
     evidence_store: EvidenceStorePort
     package_index: PackageIndexPort
+    audit_sink: AuditSinkPort
+    pr_publisher: PullRequestPublisherPort
+    publisher: PullRequestPublisherPort = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.publisher = self.pr_publisher
 
 
 # ---------------------------------------------------------------------------
@@ -63,20 +71,6 @@ class _FakePolicyEngine:
 
     def evaluate(self, input: PolicyInput) -> PolicyDecision:
         return PolicyDecision(verdict="approve")
-
-
-class _FakeDecisionStore:
-    """No-op decision store — never writes to a real DB."""
-
-    def save_decision(self, decision) -> None:
-        return None
-
-
-class _FakeEvidenceStore:
-    """No-op evidence store — never hits the filesystem."""
-
-    def write_artifact(self, path: str, content: bytes) -> str:
-        return ""
 
 
 class _FakePackageIndex:
@@ -104,13 +98,18 @@ def bootstrap_test() -> ApplicationContext:
     Safe to call without any real infrastructure (no DB, no OPA, no
     subprocesses, no filesystem side-effects).
     """
+    from eedom.adapters.github_publisher import NullPublisher
+    from eedom.adapters.persistence import NullAuditSink, NullDecisionStore, NullEvidenceStore
+
     return ApplicationContext(
         analyzer_registry=_FakeAnalyzerRegistry(),
         policy_engine=_FakePolicyEngine(),
         tool_runner=_FakeToolRunner(),
-        decision_store=_FakeDecisionStore(),
-        evidence_store=_FakeEvidenceStore(),
+        decision_store=NullDecisionStore(),
+        evidence_store=NullEvidenceStore(),
         package_index=_FakePackageIndex(),
+        audit_sink=NullAuditSink(),
+        pr_publisher=NullPublisher(),
     )
 
 
@@ -125,6 +124,8 @@ def bootstrap(settings: EedomSettings) -> ApplicationContext:
     All heavy imports are deferred to this function so that import-time cost
     is only paid when the production composition root is actually needed.
     """
+    from eedom.adapters.github_publisher import NullPublisher
+    from eedom.adapters.persistence import FileEvidenceStore, NullAuditSink, NullDecisionStore
     from eedom.core.opa_adapter import OpaRegoAdapter
     from eedom.core.registry import PluginRegistry
     from eedom.core.subprocess_runner import SubprocessToolRunner
@@ -137,15 +138,13 @@ def bootstrap(settings: EedomSettings) -> ApplicationContext:
 
     policy_engine = OpaRegoAdapter(policy_path=policy_path, tool_runner=tool_runner)
 
-    # No production concrete implementations exist yet for DecisionStore,
-    # EvidenceStore, or PackageIndex — use the same fakes as bootstrap_test()
-    # until adapters are added.
-    # TODO: replace with real adapters when production implementations land.
     return ApplicationContext(
         analyzer_registry=registry,
         policy_engine=policy_engine,
         tool_runner=tool_runner,
-        decision_store=_FakeDecisionStore(),
-        evidence_store=_FakeEvidenceStore(),
+        decision_store=NullDecisionStore(),
+        evidence_store=FileEvidenceStore(base_dir=Path(settings.evidence_path)),
         package_index=_FakePackageIndex(),
+        audit_sink=NullAuditSink(),
+        pr_publisher=NullPublisher(),
     )
