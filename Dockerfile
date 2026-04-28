@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Eagle Eyed Dom — DHI hardened multi-stage production image
 #
-# Build:  podman build --platform linux/arm64 -t eedom:latest .
+# Build:  podman build --platform linux/amd64 --security-opt apparmor=unconfined -t eedom:amd64 .
 # Test:   EEDOM_IMAGE=eedom:latest uv run pytest tests/integration/test_dockerfile.py -v
 
 # ── Version pins ─────────────────────────────────────────────────────────────
@@ -20,6 +20,19 @@ ARG CSPELL_VERSION=8.18.1
 ARG LS_LINT_VERSION=2.3.1
 ARG PMD_VERSION=7.24.0
 
+# ── Source revision pins ─────────────────────────────────────────────────────
+# GitHub release assets are still addressed by release version because that is
+# how upstream publishes binaries; each asset is sha256-verified below and the
+# dereferenced source commit is pinned here for auditability.
+ARG SYFT_COMMIT=390cf6cce0463d44c20270dea637bcb3833eee02
+ARG TRIVY_COMMIT=8a3177aedf7ee0864920eb1852eef031cd3742b8
+ARG OSV_COMMIT=30bcc134e23fbc35731021ee43ec433c483715d7
+ARG OPA_COMMIT=37b80cb7b620c82049fb5775fe83b841ff3677ba
+ARG GITLEAKS_COMMIT=83d9cd684c87d95d656c1458ef04895a7f1cbd8e
+ARG KUBE_LINTER_COMMIT=10ae003038c81855aca8489df5e35da150f4dc2e
+ARG JQ_COMMIT=71c2ab509a8628dbbad4bc7b3f98a64aa90d3297
+ARG LS_LINT_COMMIT=b530dd769e259aa9fc546cc3c0098e6a0c82870e
+
 # ── SHA256 checksums — per architecture ──────────────────────────────────────
 # Build fails hard if any hash mismatches — no silent pass.
 # PMD is architecture-independent (Java).
@@ -33,6 +46,7 @@ ARG KUBE_LINTER_SHA256_ARM64=802e1b09eabd08f6f0a060a6b8ab2bf7bc7e6bf4f673bb26923
 ARG LS_LINT_SHA256_ARM64=2abdb71243c619f0bb29587be5c228bec84c107985f2c066139ef0ec35fd3a99
 ARG PMD_SHA256=110934b36d39c19094d1b77386931978093f238f2c2f1851748822b69c7367ac
 
+# AMD64 checksums
 ARG SYFT_SHA256_AMD64=7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a
 ARG TRIVY_SHA256_AMD64=8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9
 ARG OSV_SHA256_AMD64=bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b
@@ -41,13 +55,17 @@ ARG GITLEAKS_SHA256_AMD64=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca
 ARG JQ_SHA256_AMD64=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
 ARG KUBE_LINTER_SHA256_AMD64=1a6d8419b11971372971fdbc22682b684ebfb7cf1c39591662d1b6ca736c41df
 ARG LS_LINT_SHA256_AMD64=b5a0d2e4427ad039fbc574551f17679f38f142b25d15e0e538769f8cf15af397
+ARG UV_COMMIT=0e961dd9a2bb6f73493d9e8398b725ad2d3b3837
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 1: builder
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.12-slim-trixie AS builder
+# docker-library/python revision:
+# 3362634339580d3232e65a66dd5a36c47ae7ff14
+FROM docker.io/library/python@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84b417650f38336bbc43117 AS builder
 
 ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION KUBE_LINTER_VERSION PMD_VERSION LS_LINT_VERSION
+ARG SYFT_COMMIT TRIVY_COMMIT OSV_COMMIT OPA_COMMIT GITLEAKS_COMMIT KUBE_LINTER_COMMIT JQ_COMMIT LS_LINT_COMMIT UV_COMMIT
 ARG SEMGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION
 ARG SYFT_SHA256_ARM64 TRIVY_SHA256_ARM64 OSV_SHA256_ARM64 OPA_SHA256_ARM64 GITLEAKS_SHA256_ARM64 JQ_SHA256_ARM64 KUBE_LINTER_SHA256_ARM64 LS_LINT_SHA256_ARM64 PMD_SHA256
 ARG SYFT_SHA256_AMD64 TRIVY_SHA256_AMD64 OSV_SHA256_AMD64 OPA_SHA256_AMD64 GITLEAKS_SHA256_AMD64 JQ_SHA256_AMD64 KUBE_LINTER_SHA256_AMD64 LS_LINT_SHA256_AMD64
@@ -119,24 +137,39 @@ RUN for b in syft trivy osv-scanner opa gitleaks kube-linter ls-lint; do \
     done > /staging/scripts/checksums.txt \
     && sha256sum /staging/jq/jq | sed 's|/staging/jq/jq|/usr/bin/jq|' >> /staging/scripts/checksums.txt
 
+RUN printf '%s\n' \
+      "python=docker-library/python@3362634339580d3232e65a66dd5a36c47ae7ff14" \
+      "uv=${UV_COMMIT}" \
+      "syft=${SYFT_COMMIT}" \
+      "trivy=${TRIVY_COMMIT}" \
+      "osv-scanner=${OSV_COMMIT}" \
+      "opa=${OPA_COMMIT}" \
+      "gitleaks=${GITLEAKS_COMMIT}" \
+      "kube-linter=${KUBE_LINTER_COMMIT}" \
+      "jq=${JQ_COMMIT}" \
+      "ls-lint=${LS_LINT_COMMIT}" \
+    > /staging/scripts/release-revisions.txt
+
 # ── Python: lockfile-based venv install ──────────────────────────────────────
-RUN pip install --no-cache-dir uv
+# astral-sh/uv revision:
+# 0e961dd9a2bb6f73493d9e8398b725ad2d3b3837
+COPY --from=ghcr.io/astral-sh/uv@sha256:3b7b60a81d3c57ef471703e5c83fd4aaa33abcd403596fb22ab07db85ae91347 /uv /usr/local/bin/uv
 WORKDIR /opt/eedom
 
 COPY pyproject.toml uv.lock LICENSE README.md ./
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra all --no-editable --no-install-project
 
 COPY src/ src/
 COPY policies/ policies/
 COPY migrations/ migrations/
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra all --no-editable
 
 # Scanner tools — external CLIs installed into the same venv, version-pinned by ARG.
 # Not in the lockfile because scancode-toolkit's transitive dep (extractcode-7z)
 # lacks arm64 wheels, breaking cross-platform uv sync.
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
     uv pip install \
       "semgrep==${SEMGREP_VERSION}" \
       "scancode-toolkit==${SCANCODE_VERSION}" \
@@ -160,14 +193,15 @@ RUN printf '%s\n' \
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 2: runtime
 # ════════════════════════════════════════════════════════════════════════════
-FROM python:3.12-slim-trixie
+FROM docker.io/library/python@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84b417650f38336bbc43117
 
 ARG CSPELL_VERSION
 ARG PMD_VERSION
 
 LABEL org.opencontainers.image.title="Eagle Eyed Dom" \
       org.opencontainers.image.description="DHI hardened multi-stage production scanner" \
-      org.opencontainers.image.source="https://github.com/gitrdunhq/eedom"
+      org.opencontainers.image.source="https://github.com/gitrdunhq/eedom" \
+      org.opencontainers.image.base.revision="3362634339580d3232e65a66dd5a36c47ae7ff14"
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
@@ -208,6 +242,7 @@ COPY --from=builder /opt/eedom/policies/ /opt/eedom/policies/
 
 RUN mkdir -p /opt/eedom/scripts
 COPY --from=builder /staging/scripts/checksums.txt /opt/eedom/scripts/checksums.txt
+COPY --from=builder /staging/scripts/release-revisions.txt /opt/eedom/scripts/release-revisions.txt
 COPY scripts/verify-checksums.sh /opt/eedom/scripts/verify-checksums.sh
 RUN chmod +x /opt/eedom/scripts/verify-checksums.sh
 
