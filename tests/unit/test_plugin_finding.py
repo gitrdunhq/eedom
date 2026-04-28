@@ -73,6 +73,83 @@ class TestPluginFindingContract:
         assert isinstance(d, dict)
 
 
+class TestPluginFindingDictCompat:
+    """Dict-compatible access on PluginFinding for backward compat with finding.get() consumers."""
+
+    def test_get_known_field_returns_value(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad", package="requests")
+        assert f.get("severity") == "high"
+        assert f.get("package") == "requests"
+
+    def test_get_missing_field_returns_default(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad")
+        assert f.get("nonexistent") is None
+        assert f.get("nonexistent", "fallback") == "fallback"
+
+    def test_get_metadata_key_returns_value(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad", metadata={"entropy": 4.5})
+        assert f.get("entropy") == 4.5
+
+    def test_get_metadata_missing_key_returns_default(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad", metadata={"x": 1})
+        assert f.get("missing_key") is None
+        assert f.get("missing_key", 99) == 99
+
+    def test_getitem_known_field_returns_value(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="critical", message="rce")
+        assert f["id"] == "CVE-1"
+        assert f["severity"] == "critical"
+        assert f["message"] == "rce"
+
+    def test_getitem_metadata_key_returns_value(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(
+            id="CVE-1", severity="high", message="bad", metadata={"fingerprint": "abc"}
+        )
+        assert f["fingerprint"] == "abc"
+
+    def test_getitem_missing_key_raises_key_error(self) -> None:
+        import pytest
+
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad")
+        with pytest.raises(KeyError):
+            _ = f["totally_nonexistent_key"]
+
+    def test_contains_known_field_returns_true(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad")
+        assert "severity" in f
+        assert "id" in f
+        assert "message" in f
+        assert "file" in f
+
+    def test_contains_metadata_key_returns_true(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad", metadata={"entropy": 4.5})
+        assert "entropy" in f
+
+    def test_contains_missing_key_returns_false(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="CVE-1", severity="high", message="bad")
+        assert "totally_nonexistent_key" not in f
+
+
 class TestNormalizeFindings:
     def test_normalize_dict_to_plugin_finding(self) -> None:
         from eedom.core.plugin import PluginFinding, normalize_finding
