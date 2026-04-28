@@ -28,6 +28,19 @@ test:
 test-host:
 	@EEDOM_ALLOW_HOST_TESTS=1 uv run pytest tests/ -v
 
+test-e2e:
+	@$(CONTAINER_ENGINE) build -t eedom:latest .
+	@$(CONTAINER_ENGINE) run --rm \
+		-v "$(CURDIR):/workspace:ro" \
+		-w /workspace \
+		-e EEDOM_E2E=1 \
+		-e EEDOM_ALLOW_GLOBAL=1 \
+		--entrypoint "" \
+		eedom:latest \
+		python3 -m pytest tests/e2e/ -v
+
+test-all: test test-e2e
+
 dev:
 	@uv sync --group dev
 
