@@ -576,6 +576,16 @@ class TestIsolatedEnvironmentCheck:
         monkeypatch.setattr(_sys, "base_prefix", "/usr")
         monkeypatch.delenv("EEDOM_ALLOW_GLOBAL", raising=False)
 
+        _real_exists = Path.exists
+        _container_sentinels = {"/.dockerenv", "/run/.containerenv"}
+
+        def _patched_exists(self: Path) -> bool:
+            if str(self) in _container_sentinels:
+                return False
+            return _real_exists(self)
+
+        monkeypatch.setattr(Path, "exists", _patched_exists)
+
         runner = CliRunner()
         result = runner.invoke(cli, ["review", "--repo-path", "."])
         assert result.exit_code == 1

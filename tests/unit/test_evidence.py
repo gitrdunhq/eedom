@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 
 def _random_request_id() -> str:
     return "test-request-abc123"
@@ -148,6 +150,8 @@ class TestEvidenceStore:
 
     def test_store_failure_logs_and_returns_empty_string(self, tmp_path: Path) -> None:
         """On storage failure, store() should log error and return empty string."""
+        if os.getuid() == 0:
+            pytest.skip("root bypasses chmod — cannot test permission failure")
         from eedom.data.evidence import EvidenceStore
 
         # Use a path that will fail (read-only directory)
@@ -167,6 +171,8 @@ class TestEvidenceStore:
 
     def test_store_file_failure_logs_and_returns_empty_string(self, tmp_path: Path) -> None:
         """On storage failure, store_file() should log error and return empty string."""
+        if os.getuid() == 0:
+            pytest.skip("root bypasses chmod — cannot test permission failure")
         from eedom.data.evidence import EvidenceStore
 
         read_only_dir = tmp_path / "readonly2"
