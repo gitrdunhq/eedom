@@ -30,6 +30,80 @@ class Actionability(StrEnum):
     accept = "accept"
 
 
+_FINDING_KNOWN_KEYS = {
+    "id",
+    "severity",
+    "message",
+    "file",
+    "line",
+    "url",
+    "category",
+    "package",
+    "version",
+    "fixed_version",
+    "rule_id",
+    "summary",
+    "description",
+}
+
+
+@dataclass
+class PluginFinding:
+    id: str
+    severity: str
+    message: str
+    file: str = ""
+    line: int = 0
+    url: str = ""
+    category: str = ""
+    package: str = ""
+    version: str = ""
+    fixed_version: str = ""
+    rule_id: str = ""
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        d = {
+            "id": self.id,
+            "severity": self.severity,
+            "message": self.message,
+            "file": self.file,
+            "line": self.line,
+            "url": self.url,
+            "category": self.category,
+            "package": self.package,
+            "version": self.version,
+            "fixed_version": self.fixed_version,
+            "rule_id": self.rule_id,
+        }
+        d.update(self.metadata)
+        return d
+
+
+def normalize_finding(raw: dict) -> PluginFinding:
+    known = {}
+    metadata = {}
+    for k, v in raw.items():
+        if k in _FINDING_KNOWN_KEYS:
+            known[k] = v
+        else:
+            metadata[k] = v
+    return PluginFinding(
+        id=str(known.get("id", known.get("rule_id", ""))),
+        severity=str(known.get("severity", "info")),
+        message=str(known.get("message", known.get("description", known.get("summary", "")))),
+        file=str(known.get("file", "")),
+        line=int(known.get("line", 0)),
+        url=str(known.get("url", "")),
+        category=str(known.get("category", "")),
+        package=str(known.get("package", "")),
+        version=str(known.get("version", "")),
+        fixed_version=str(known.get("fixed_version", "")),
+        rule_id=str(known.get("rule_id", "")),
+        metadata=metadata,
+    )
+
+
 @dataclass
 class PluginResult:
     plugin_name: str

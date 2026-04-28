@@ -1,0 +1,124 @@
+# tested-by: tests/unit/test_plugin_finding.py
+"""Tests for the PluginFinding typed contract primitive."""
+
+from __future__ import annotations
+
+
+class TestPluginFindingContract:
+    def test_finding_has_required_fields(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(
+            id="CVE-2025-1234",
+            severity="critical",
+            message="Remote code execution",
+        )
+        assert f.id == "CVE-2025-1234"
+        assert f.severity == "critical"
+        assert f.message == "Remote code execution"
+
+    def test_finding_has_optional_location_fields(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(
+            id="CVE-1",
+            severity="high",
+            message="test",
+            file="src/app.py",
+            line=42,
+        )
+        assert f.file == "src/app.py"
+        assert f.line == 42
+
+    def test_finding_defaults(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(id="X", severity="info", message="x")
+        assert f.file == ""
+        assert f.line == 0
+        assert f.url == ""
+        assert f.category == ""
+        assert f.package == ""
+        assert f.version == ""
+        assert f.fixed_version == ""
+        assert f.rule_id == ""
+        assert f.metadata == {}
+
+    def test_metadata_preserves_unknown_keys(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(
+            id="X",
+            severity="info",
+            message="x",
+            metadata={"entropy": 4.5, "fingerprint": "abc123"},
+        )
+        assert f.metadata["entropy"] == 4.5
+        assert f.metadata["fingerprint"] == "abc123"
+
+    def test_finding_to_dict(self) -> None:
+        from eedom.core.plugin import PluginFinding
+
+        f = PluginFinding(
+            id="CVE-1",
+            severity="high",
+            message="bad",
+            file="x.py",
+            line=10,
+        )
+        d = f.to_dict()
+        assert d["id"] == "CVE-1"
+        assert d["severity"] == "high"
+        assert d["file"] == "x.py"
+        assert isinstance(d, dict)
+
+
+class TestNormalizeFindings:
+    def test_normalize_dict_to_plugin_finding(self) -> None:
+        from eedom.core.plugin import PluginFinding, normalize_finding
+
+        raw = {
+            "id": "CVE-2025-1234",
+            "severity": "critical",
+            "message": "RCE vulnerability",
+            "file": "app.py",
+            "line": 10,
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-1234",
+            "package": "requests",
+            "version": "2.25.0",
+            "fixed_version": "2.31.0",
+            "custom_field": "preserved",
+        }
+        finding = normalize_finding(raw)
+        assert isinstance(finding, PluginFinding)
+        assert finding.id == "CVE-2025-1234"
+        assert finding.severity == "critical"
+        assert finding.package == "requests"
+        assert finding.fixed_version == "2.31.0"
+        assert finding.metadata["custom_field"] == "preserved"
+
+    def test_normalize_missing_fields_get_defaults(self) -> None:
+        from eedom.core.plugin import PluginFinding, normalize_finding
+
+        raw = {"severity": "high", "message": "something bad"}
+        finding = normalize_finding(raw)
+        assert isinstance(finding, PluginFinding)
+        assert finding.id == ""
+        assert finding.file == ""
+        assert finding.line == 0
+
+    def test_normalize_preserves_all_unknown_keys_in_metadata(self) -> None:
+        from eedom.core.plugin import normalize_finding
+
+        raw = {
+            "id": "X",
+            "severity": "info",
+            "message": "x",
+            "entropy": 4.5,
+            "fingerprint": "abc",
+            "logical_resource_ids": ["MyBucket"],
+        }
+        finding = normalize_finding(raw)
+        assert finding.metadata["entropy"] == 4.5
+        assert finding.metadata["fingerprint"] == "abc"
+        assert finding.metadata["logical_resource_ids"] == ["MyBucket"]
