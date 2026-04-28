@@ -63,6 +63,19 @@ class GitHubPublisher:
         return self._run(["gh", "pr", "edit", str(pr_num), "--repo", repo, "--add-label", label])
 
 
+class NullPublisher:
+    """No-op PullRequestPublisherPort for testing and dry-run contexts."""
+
+    def post_comment(self, repo: str, pr_num: int, body: str) -> bool:
+        return True
+
+    def post_review(self, repo: str, pr_num: int, review: dict[str, Any]) -> bool:
+        return True
+
+    def add_label(self, repo: str, pr_num: int, label: str) -> bool:
+        return True
+
+
 assert isinstance(GitHubPublisher(), PullRequestPublisherPort), (
     "GitHubPublisher must satisfy PullRequestPublisherPort"
 )

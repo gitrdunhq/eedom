@@ -15,6 +15,8 @@ from pathlib import Path
 
 import structlog
 
+from eedom.core.use_cases import ReviewOptions, ReviewResult, review_repository
+
 logger = structlog.get_logger(__name__)
 
 _MANIFEST_FILES: dict[str, str] = {
@@ -55,6 +57,23 @@ _MANIFEST_FILES: dict[str, str] = {
 
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_.@\-/]+$")
+
+
+def run_pipeline_with_context(
+    context: object,
+    diff_text: str,
+    pr_url: str,
+    team: str,
+    repo_path: str,
+) -> ReviewResult:
+    """Run the review pipeline using the injected ApplicationContext.
+
+    Delegates to review_repository() so callers can inject bootstrap_test()
+    for unit tests without any subprocess.run invocations.
+    """
+    files = extract_changed_files(diff_text)
+    options = ReviewOptions()
+    return review_repository(context, files, Path(repo_path), options)
 
 
 def extract_changed_files(diff_text: str) -> list[str]:
