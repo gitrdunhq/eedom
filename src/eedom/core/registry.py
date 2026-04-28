@@ -34,21 +34,27 @@ def _normalize_findings(findings: list) -> list[PluginFinding]:
 def _topological_sort(plugins: list[ScannerPlugin]) -> list[ScannerPlugin]:
     """Return *plugins* sorted so every dependency runs before its dependent.
 
-    Ignores dependencies on plugin names that are not in the current list
-    (unknown deps are silently skipped — no error).  Raises ``ValueError``
-    on circular dependencies.
+    A ``depends_on=["*"]`` entry is expanded to "depends on every plugin in
+    this run that does NOT itself use ``"*"``", effectively pinning wildcard
+    plugins to the end of execution.  Other unknown dep names are silently
+    skipped.  Raises ``ValueError`` on circular dependencies.
     """
     if not plugins:
         return []
 
     by_name = {p.name: p for p in plugins}
+    non_wildcard_names = {p.name for p in plugins if "*" not in p.depends_on}
 
     # Build a graph: each plugin -> set of plugins it must run *after*
     graph: dict[str, set[str]] = {}
     for p in plugins:
-        # Only count deps that are actually registered; drop unknown names
-        known_deps = {d for d in p.depends_on if d in by_name}
-        graph[p.name] = known_deps
+        if "*" in p.depends_on:
+            # Wildcard: run after every non-wildcard plugin in this batch
+            graph[p.name] = non_wildcard_names - {p.name}
+        else:
+            # Only count deps that are actually registered; drop unknown names
+            known_deps = {d for d in p.depends_on if d in by_name}
+            graph[p.name] = known_deps
 
     try:
         sorter = TopologicalSorter(graph)
@@ -110,16 +116,17 @@ class PluginRegistry:
         When *package_units* is provided (a list of
         ``eedom.core.manifest_discovery.PackageUnit``), each plugin is executed
         once per package.  Files are scoped to the package root and results are
-        tagged with ``PluginResult.package_root``.  OPA (policy) plugins receive
-        only per-package findings, not the global merged list.  When
-        *package_units* is ``None`` the existing single-pass behaviour is used
-        unchanged.
+        tagged with ``PluginResult.package_root``.  When *package_units* is
+        ``None`` the existing single-pass behaviour is used unchanged.
+
+        All plugins are treated uniformly — no findings= injection.  A plugin
+        with ``depends_on=["*"]`` is sorted after all other plugins by the
+        topological sorter (ordering semantics only).
         """
         disabled_set: set[str] = set(disabled_names) if disabled_names else set()
         enabled_set: set[str] = set(enabled_names) if enabled_names else set()
 
-        scan_plugins = []
-        policy_plugins = []
+        plugins: list[ScannerPlugin] = []
         for plugin in self._plugins.values():
             if names and plugin.name not in names:
                 continue
@@ -127,34 +134,18 @@ class PluginRegistry:
                 continue
             if plugin.name in disabled_set and plugin.name not in enabled_set:
                 continue
-            # depends_on=["*"] marks a policy plugin (run after all scan plugins
-            # and receive merged findings).  Replaces the former hard-coded
-            # ``plugin.name == "opa"`` check.
-            if "*" in plugin.depends_on:
-                policy_plugins.append(plugin)
-            else:
-                scan_plugins.append(plugin)
+            plugins.append(plugin)
 
-        # Topologically sort scan plugins so each depends_on constraint is honoured.
+        # Topologically sort all plugins; depends_on=["*"] plugins land last.
         # Raises ValueError on circular dependencies.
-        scan_plugins = _topological_sort(scan_plugins)
+        plugins = _topological_sort(plugins)
 
         if package_units is not None:
-            return self._run_all_per_package(
-                files, repo_path, scan_plugins, policy_plugins, package_units
-            )
+            return self._run_all_per_package(files, repo_path, plugins, package_units)
 
         results: list[PluginResult] = []
-        for plugin in scan_plugins:
+        for plugin in plugins:
             results.append(self._run_one(plugin, files, repo_path))
-
-        if policy_plugins:
-            all_findings: list[dict] = []
-            for r in results:
-                if not r.error:
-                    all_findings.extend(r.findings)
-            for plugin in policy_plugins:
-                results.append(self._run_policy(plugin, files, repo_path, all_findings))
 
         return results
 
@@ -162,8 +153,7 @@ class PluginRegistry:
         self,
         files: list[str],
         repo_path: Path,
-        scan_plugins: list[ScannerPlugin],
-        policy_plugins: list[ScannerPlugin],
+        plugins: list[ScannerPlugin],
         package_units: list,
     ) -> list[PluginResult]:
         """Execute plugins once per PackageUnit, scoping files to each package root."""
@@ -173,53 +163,12 @@ class PluginRegistry:
             pkg_root_str = str(unit_root)
             unit_files = [f for f in files if _is_under(f, unit_root)]
 
-            unit_scan_results: list[PluginResult] = []
-            for plugin in scan_plugins:
+            for plugin in plugins:
                 r = self._run_one(plugin, unit_files, repo_path)
                 r.package_root = pkg_root_str
-                unit_scan_results.append(r)
+                results.append(r)
 
-            if policy_plugins:
-                unit_findings: list[dict] = []
-                for r in unit_scan_results:
-                    if not r.error:
-                        unit_findings.extend(r.findings)
-                for plugin in policy_plugins:
-                    r = self._run_policy(plugin, unit_files, repo_path, unit_findings)
-                    r.package_root = pkg_root_str
-                    unit_scan_results.append(r)
-
-            results.extend(unit_scan_results)
         return results
-
-    def _run_policy(
-        self,
-        plugin: ScannerPlugin,
-        files: list[str],
-        repo_path: Path,
-        findings: list[dict],
-    ) -> PluginResult:
-        cat = plugin.category.value
-        if not plugin.can_run(files, repo_path):
-            reason, remediation = plugin.skip_reason()
-            return PluginResult(
-                plugin_name=plugin.name,
-                summary={"status": "skipped"},
-                category=cat,
-                skip_reason=reason,
-                skip_remediation=remediation,
-            )
-        try:
-            result = plugin.run(files, repo_path, findings=findings)
-            result.category = cat
-            return result
-        except Exception as exc:
-            logger.warning(
-                "plugin.policy_failed",
-                plugin=plugin.name,
-                error=str(exc),
-            )
-            return PluginResult(plugin_name=plugin.name, error=str(exc), category=cat)
 
     def _run_one(
         self,
