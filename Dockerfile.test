@@ -10,11 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+RUN pip install --no-cache-dir uv
+
+# Venv lives outside /workspace so the host's ro mount can't shadow it.
+ENV UV_PROJECT_ENVIRONMENT=/opt/test-venv \
+    VIRTUAL_ENV=/opt/test-venv
 
 WORKDIR /workspace
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock LICENSE README.md ./
 RUN uv sync --frozen --group dev
 
 COPY src/ src/

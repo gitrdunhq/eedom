@@ -69,7 +69,9 @@ jobs:
 
       - name: Install dependencies (native)
         if: steps.docs.outputs.docs_only != 'true' && steps.runtime.outputs.container == 'false'
-        run: uv sync --group dev
+        run: |
+          uv sync --group dev
+          command -v cspell &>/dev/null || npm install -g cspell --no-fund --no-audit
 
       - name: Generate PR diff
         if: steps.docs.outputs.docs_only != 'true' && github.event_name == 'pull_request'

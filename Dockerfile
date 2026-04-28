@@ -14,11 +14,11 @@ ARG JQ_VERSION=1.7.1
 ARG KUBE_LINTER_VERSION=0.8.3
 ARG SEMGREP_VERSION=1.67.0
 ARG SCANCODE_VERSION=32.3.0
-ARG PMD_VERSION=7.24.0
 ARG LIZARD_VERSION=1.17.13
 ARG MYPY_VERSION=1.15.0
 ARG CSPELL_VERSION=8.18.1
 ARG LS_LINT_VERSION=2.3.1
+ARG PMD_VERSION=7.24.0
 
 # ── SHA256 checksums — per architecture ──────────────────────────────────────
 # Build fails hard if any hash mismatches — no silent pass.
@@ -33,14 +33,13 @@ ARG KUBE_LINTER_SHA256_ARM64=802e1b09eabd08f6f0a060a6b8ab2bf7bc7e6bf4f673bb26923
 ARG LS_LINT_SHA256_ARM64=2abdb71243c619f0bb29587be5c228bec84c107985f2c066139ef0ec35fd3a99
 ARG PMD_SHA256=110934b36d39c19094d1b77386931978093f238f2c2f1851748822b69c7367ac
 
-# AMD64 checksums — populate when adding amd64 support
-ARG SYFT_SHA256_AMD64=PLACEHOLDER
-ARG TRIVY_SHA256_AMD64=PLACEHOLDER
-ARG OSV_SHA256_AMD64=PLACEHOLDER
-ARG OPA_SHA256_AMD64=PLACEHOLDER
-ARG GITLEAKS_SHA256_AMD64=PLACEHOLDER
-ARG JQ_SHA256_AMD64=PLACEHOLDER
-ARG KUBE_LINTER_SHA256_AMD64=PLACEHOLDER
+ARG SYFT_SHA256_AMD64=7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a
+ARG TRIVY_SHA256_AMD64=8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9
+ARG OSV_SHA256_AMD64=bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b
+ARG OPA_SHA256_AMD64=a9d9481e463e7af8cb1a2cd7c3deb764f0327b3281c54e632546c2f425fc0824
+ARG GITLEAKS_SHA256_AMD64=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+ARG JQ_SHA256_AMD64=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
+ARG KUBE_LINTER_SHA256_AMD64=1a6d8419b11971372971fdbc22682b684ebfb7cf1c39591662d1b6ca736c41df
 ARG LS_LINT_SHA256_AMD64=b5a0d2e4427ad039fbc574551f17679f38f142b25d15e0e538769f8cf15af397
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -49,9 +48,9 @@ ARG LS_LINT_SHA256_AMD64=b5a0d2e4427ad039fbc574551f17679f38f142b25d15e0e538769f8
 FROM python:3.12-slim-trixie AS builder
 
 ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION KUBE_LINTER_VERSION PMD_VERSION LS_LINT_VERSION
+ARG SEMGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION
 ARG SYFT_SHA256_ARM64 TRIVY_SHA256_ARM64 OSV_SHA256_ARM64 OPA_SHA256_ARM64 GITLEAKS_SHA256_ARM64 JQ_SHA256_ARM64 KUBE_LINTER_SHA256_ARM64 LS_LINT_SHA256_ARM64 PMD_SHA256
 ARG SYFT_SHA256_AMD64 TRIVY_SHA256_AMD64 OSV_SHA256_AMD64 OPA_SHA256_AMD64 GITLEAKS_SHA256_AMD64 JQ_SHA256_AMD64 KUBE_LINTER_SHA256_AMD64 LS_LINT_SHA256_AMD64
-ARG SEMGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION CSPELL_VERSION
 ARG TARGETARCH
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
@@ -65,6 +64,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN mkdir -p /staging/gobin /staging/jq /staging/pmd /staging/scripts
 
 # ── All Go/native binaries — single layer, arch-aware ────────────────────────
+# kube-linter uses no arch suffix for amd64, _arm64 suffix for arm64.
 RUN set -eux; \
     case "${TARGETARCH}" in \
         "amd64") \
@@ -74,7 +74,7 @@ RUN set -eux; \
             OPA_ARCH="amd64_static"; OPA_SHA="${OPA_SHA256_AMD64}"; \
             GITLEAKS_ARCH="x64";     GITLEAKS_SHA="${GITLEAKS_SHA256_AMD64}"; \
             JQ_ARCH="amd64";         JQ_SHA="${JQ_SHA256_AMD64}"; \
-            KL_ARCH="amd64";         KL_SHA="${KUBE_LINTER_SHA256_AMD64}"; \
+            KL_SUFFIX="";           KL_SHA="${KUBE_LINTER_SHA256_AMD64}"; \
             LL_ARCH="amd64";         LL_SHA="${LS_LINT_SHA256_AMD64}" ;; \
         "arm64") \
             SYFT_ARCH="arm64";       SYFT_SHA="${SYFT_SHA256_ARM64}"; \
@@ -83,7 +83,7 @@ RUN set -eux; \
             OPA_ARCH="arm64_static"; OPA_SHA="${OPA_SHA256_ARM64}"; \
             GITLEAKS_ARCH="arm64";   GITLEAKS_SHA="${GITLEAKS_SHA256_ARM64}"; \
             JQ_ARCH="arm64";         JQ_SHA="${JQ_SHA256_ARM64}"; \
-            KL_ARCH="arm64";         KL_SHA="${KUBE_LINTER_SHA256_ARM64}"; \
+            KL_SUFFIX="_arm64";     KL_SHA="${KUBE_LINTER_SHA256_ARM64}"; \
             LL_ARCH="arm64";         LL_SHA="${LS_LINT_SHA256_ARM64}" ;; \
         *) echo "Fatal: unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
@@ -100,7 +100,7 @@ RUN set -eux; \
     curl -sSfL -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GITLEAKS_ARCH}.tar.gz"; \
     echo "${GITLEAKS_SHA}  /tmp/gitleaks.tar.gz" | sha256sum --strict -c -; \
     tar -xzf /tmp/gitleaks.tar.gz -C /staging/gobin gitleaks; \
-    curl -sSfL -o /tmp/kube-linter.tar.gz "https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux_${KL_ARCH}.tar.gz"; \
+    curl -sSfL -o /tmp/kube-linter.tar.gz "https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux${KL_SUFFIX}.tar.gz"; \
     echo "${KL_SHA}  /tmp/kube-linter.tar.gz" | sha256sum --strict -c -; \
     tar -xzf /tmp/kube-linter.tar.gz -C /staging/gobin kube-linter; \
     curl -sSfL -o /staging/gobin/ls-lint "https://github.com/loeffel-io/ls-lint/releases/download/v${LS_LINT_VERSION}/ls-lint-linux-${LL_ARCH}"; \
@@ -119,57 +119,43 @@ RUN for b in syft trivy osv-scanner opa gitleaks kube-linter ls-lint; do \
     done > /staging/scripts/checksums.txt \
     && sha256sum /staging/jq/jq | sed 's|/staging/jq/jq|/usr/bin/jq|' >> /staging/scripts/checksums.txt
 
-# ── Python packages ──────────────────────────────────────────────────────────
-# pip --target isolates from system Python. Deps first (cached), source last.
-#
-# TODO(#115): Replace inline pins with `pip install --require-hashes -r requirements.lock`
-#             generated via `uv pip compile --generate-hashes`. Delete the inline block below.
+# ── Python: lockfile-based venv install ──────────────────────────────────────
+RUN pip install --no-cache-dir uv
 WORKDIR /opt/eedom
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --target=/opt/pysite \
-      click==8.3.3 "pydantic==2.13.3" "pydantic-settings==2.14.0" "structlog==25.5.0" \
-      "httpx==0.28.1" "psycopg[binary]==3.3.3" "psycopg-pool==3.3.0" "orjson==3.11.8" \
-      "packaging==26.1" "pyarrow==24.0.0" "agent-framework-github-copilot==1.0.0b260423" \
-      "jinja2==3.1.6" "pyyaml==6.0.3" "watchdog==6.0.0" "rich>=13.7.0" \
-      "semgrep==${SEMGREP_VERSION}" "scancode-toolkit==${SCANCODE_VERSION}" \
-      "lizard==${LIZARD_VERSION}" "mypy==${MYPY_VERSION}"
+COPY pyproject.toml uv.lock LICENSE README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra all --no-editable --no-install-project
 
-COPY pyproject.toml LICENSE README.md ./
 COPY src/ src/
 COPY policies/ policies/
 COPY migrations/ migrations/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra all --no-editable
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --target=/opt/pysite .
+# Scanner tools — external CLIs installed into the same venv, version-pinned by ARG.
+# Not in the lockfile because scancode-toolkit's transitive dep (extractcode-7z)
+# lacks arm64 wheels, breaking cross-platform uv sync.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install \
+      "semgrep==${SEMGREP_VERSION}" \
+      "scancode-toolkit==${SCANCODE_VERSION}" \
+      "lizard==${LIZARD_VERSION}" \
+      "mypy==${MYPY_VERSION}"
 
-# ── Module entry point fixes ────────────────────────────────────────���────────
-# pip --target does not create console_scripts. Plugin runners call bare tool
-# names, so we need `python3 -m <module>` to work. These overrides are needed
-# until we switch to a real venv (#117) which creates proper entry points.
-
-# Semgrep ≥1.38 __main__.py deliberately exits 2 with a deprecation notice.
+# scancode's plugin loader crashes on arm64 (extractcode-libarchive has no arm64 wheel).
+# Replace the console_script with a wrapper that defers the import.
 RUN printf '%s\n' \
-      'from semgrep.cli import cli' \
-      'if __name__ == "__main__":' \
-      '    cli()' \
-    > /opt/pysite/semgrep/__main__.py
-
-# scancode-toolkit ships no __main__.py. Short-circuit --version to avoid
-# the full plugin load which triggers ctypes/libarchive imports.
-RUN printf '%s\n' \
+      '#!/opt/eedom/.venv/bin/python3' \
       'import sys' \
-      'if len(sys.argv) >= 2 and sys.argv[1] == "--version":' \
-      '    try:' \
-      '        from importlib.metadata import version as _v' \
-      '        print("ScanCode version " + _v("scancode-toolkit"))' \
-      '    except Exception:' \
-      '        print("ScanCode version unavailable")' \
+      'if "--version" in sys.argv:' \
+      '    from importlib.metadata import version' \
+      '    print("ScanCode version", version("scancode-toolkit"))' \
       '    sys.exit(0)' \
       'from scancode.cli import scancode' \
-      'if __name__ == "__main__":' \
-      '    scancode()' \
-    > /opt/pysite/scancode/__main__.py
+      'scancode()' \
+    > /opt/eedom/.venv/bin/scancode \
+    && chmod +x /opt/eedom/.venv/bin/scancode
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 2: runtime
@@ -200,11 +186,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get autoremove -y
 
 # Non-root user — scanners must not run as root.
-RUN groupadd -r eedom && useradd -r -g eedom -m -d /home/eedom -s /bin/false eedom
-
-# ClamAV directories — present but empty. Signatures are fetched at scan time
-# via `freshclam --quiet` in the CI workflow, never baked into the image.
-RUN mkdir -p /var/lib/clamav /var/log/clamav \
+RUN groupadd -r eedom && useradd -r -g eedom -m -d /home/eedom -s /bin/false eedom \
+    && mkdir -p /var/lib/clamav /var/log/clamav \
     && chown -R eedom:eedom /var/lib/clamav /var/log/clamav \
     && chmod 0750 /var/lib/clamav /var/log/clamav
 
@@ -218,11 +201,9 @@ COPY --from=builder /staging/gobin/kube-linter /usr/local/bin/kube-linter
 COPY --from=builder /staging/gobin/ls-lint    /usr/local/bin/ls-lint
 COPY --from=builder /staging/pmd/              /opt/pmd/
 COPY --from=builder /staging/jq/jq             /usr/bin/jq
-COPY --from=builder /opt/pysite/               /opt/pysite/
 
-# Jinja2 templates — not picked up by pip --target (see #118)
-COPY src/eedom/templates/ /opt/pysite/eedom/templates/
-
+# Venv with all Python deps + eedom itself — console_scripts are in .venv/bin/
+COPY --from=builder /opt/eedom/.venv /opt/eedom/.venv
 COPY --from=builder /opt/eedom/policies/ /opt/eedom/policies/
 
 RUN mkdir -p /opt/eedom/scripts
@@ -230,23 +211,16 @@ COPY --from=builder /staging/scripts/checksums.txt /opt/eedom/scripts/checksums.
 COPY scripts/verify-checksums.sh /opt/eedom/scripts/verify-checksums.sh
 RUN chmod +x /opt/eedom/scripts/verify-checksums.sh
 
-# ── CLI wrappers ─────────────────────────────────────────────────────────────
-# pip --target does not generate console_scripts. Shell wrappers bridge the gap.
-# TODO(#117): Replace with venv approach that creates proper entry points.
-RUN printf '#!/bin/sh\nexec python3 -m eedom.cli.main "$@"\n' > /usr/local/bin/eedom \
-    && chmod +x /usr/local/bin/eedom \
-    && for tool in semgrep scancode lizard mypy; do \
-         printf '#!/bin/sh\nexec python3 -m %s "$@"\n' "$tool" > "/usr/local/bin/$tool" \
-         && chmod +x "/usr/local/bin/$tool"; \
-       done \
-    && printf '#!/bin/sh\nexec /opt/pmd/pmd-bin-%s/bin/pmd "$@"\n' "${PMD_VERSION}" > /usr/local/bin/pmd \
+# PMD wrapper — Java-based, not in the venv
+RUN printf '#!/bin/sh\nexec /opt/pmd/pmd-bin-%s/bin/pmd "$@"\n' "${PMD_VERSION}" > /usr/local/bin/pmd \
     && chmod +x /usr/local/bin/pmd
 
 # Entrypoint verifies binary integrity before running eedom
 RUN printf '#!/bin/sh\n/opt/eedom/scripts/verify-checksums.sh || exit 1\nexec eedom "$@"\n' > /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/entrypoint.sh
 
-ENV PYTHONPATH=/opt/pysite \
+ENV PATH="/opt/eedom/.venv/bin:$PATH" \
+    VIRTUAL_ENV="/opt/eedom/.venv" \
     TRIVY_CACHE_DIR=/home/eedom/.cache/trivy \
     MYPY_CACHE_DIR=/home/eedom/.cache/mypy \
     SEMGREP_USER_DATA_FOLDER=/home/eedom/.cache/semgrep \
