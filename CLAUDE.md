@@ -108,6 +108,16 @@ Not every module needs all 14. Pick the domains that match your boundary. Group 
 
 `docs/CAPABILITIES.md` is the canonical feature inventory — optimized for LLM ingestion and human comparison. **Update it whenever you add, remove, or modify**: a plugin, semgrep rule, code graph check, OPA policy rule, CLI command, output format, or integration. Keep counts accurate. Update the LAST VERIFIED date.
 
+## Commit Message Discipline
+
+release-please uses conventional commit prefixes for semver bumps. Be conservative:
+
+- `feat:` → **minor** bump (0.x.0) — new user-facing capabilities only
+- `fix:` → **patch** bump (0.0.x) — bug fixes, config fixes, CI fixes, behavior corrections
+- `chore:` → **no bump** — docs, refactors, test-only changes, housekeeping, dependency updates
+
+Do NOT use `feat:` for config tweaks, CI fixes, or internal refactors. If it doesn't change what a user sees or does, it's `fix:` or `chore:`.
+
 ## Code Conventions
 
 - structlog for logging, never print()
