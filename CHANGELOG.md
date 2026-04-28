@@ -7,6 +7,14 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.8](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.7...eedom-v0.2.8) (2026-04-28)
+
+
+### Bug Fixes
+
+* modernize Dockerfile — venv, lockfile installs, amd64 checksums (closes [#141](https://github.com/gitrdunhq/eedom/issues/141)) ([e95540d](https://github.com/gitrdunhq/eedom/commit/e95540dcee18c2fd1f0c348eb142dc68154502ad))
+* tie version strings to importlib.metadata (closes [#194](https://github.com/gitrdunhq/eedom/issues/194)) ([9500d53](https://github.com/gitrdunhq/eedom/commit/9500d53206c4e83ab493836707d4b343f064ca7f))
+
 ## [0.2.7](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.6...eedom-v0.2.7) (2026-04-28)
 
 
