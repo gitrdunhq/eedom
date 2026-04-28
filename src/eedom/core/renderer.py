@@ -286,6 +286,13 @@ def _default_render(result: PluginResult) -> str:
     return "\n".join(lines)
 
 
+class MarkdownRenderer:
+    """ReportRendererPort implementation that produces a markdown PR comment."""
+
+    def render(self, report) -> str:  # report: ReviewReport
+        return render_comment(report.plugin_results)
+
+
 def _extract_mi(
     results: list[PluginResult],
 ) -> tuple[str, int, str, float, int, int]:
