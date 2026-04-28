@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deliberately insecure CloudFormation for cfn-nag testing
+
+Resources:
+  InsecureBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: insecure-bucket-no-encryption
+
+  InsecureSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Wide open ingress
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
