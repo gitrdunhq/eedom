@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from eedom.core.plugin import PluginResult
+from eedom.core.version import get_version
 
 _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/"
@@ -132,6 +133,7 @@ def _plugin_to_run(
         "tool": {
             "driver": {
                 "name": tool_name,
+                "version": get_version(),
             }
         },
         "results": sarif_results,

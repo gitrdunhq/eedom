@@ -11,6 +11,7 @@ from pathlib import Path
 import jinja2
 
 from eedom.core.plugin import PluginResult
+from eedom.core.version import get_version
 
 _MAX_COMMENT_LENGTH = 65536
 
@@ -22,7 +23,7 @@ CATEGORY_PRIORITY: dict[str, int] = {
     "quality": 4,
 }
 _DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
-_VERSION = "1.2.0"
+_VERSION = get_version()
 
 _SEVERITY_WEIGHTS: dict[str, int] = {
     "critical": 10,
