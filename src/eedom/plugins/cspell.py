@@ -78,7 +78,10 @@ class CspellPlugin(ScannerPlugin):
             )
 
         findings = []
-        for line in (r.stdout or "").strip().split("\n"):
+        output = r.stdout or ""
+        if not output.strip() and r.stderr:
+            output = r.stderr
+        for line in output.strip().split("\n"):
             if not line or " - Unknown word " not in line:
                 continue
             parts = line.split(" - Unknown word ")

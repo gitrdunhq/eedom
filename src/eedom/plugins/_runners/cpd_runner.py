@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
+import xml.etree.ElementTree as ET  # noqa: N817
 from pathlib import Path
 
 import structlog
@@ -26,6 +26,37 @@ _CPD_LANGUAGES: dict[str, str] = {
     ".html": "html",
     ".xml": "xml",
 }
+
+
+def _parse_cpd_xml(xml_text: str, lang: str) -> list[dict]:
+    """Parse PMD CPD XML output into a list of duplication dicts."""
+    dupes: list[dict] = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return dupes
+    for dup_el in root.findall("duplication"):
+        locs = []
+        for file_el in dup_el.findall("file"):
+            locs.append(
+                {
+                    "file": file_el.get("path", ""),
+                    "start_line": int(file_el.get("line", "0")),
+                    "end_line": int(file_el.get("endline", "0")),
+                }
+            )
+        if len(locs) >= 2:
+            fragment_el = dup_el.find("codefragment")
+            dupes.append(
+                {
+                    "tokens": int(dup_el.get("tokens", "0")),
+                    "lines": int(dup_el.get("lines", "0")),
+                    "language": lang,
+                    "locations": locs,
+                    "fragment": (fragment_el.text or "")[:200] if fragment_el is not None else "",
+                }
+            )
+    return dupes
 
 
 def run_cpd(
@@ -58,7 +89,7 @@ def run_cpd(
             "--language",
             lang,
             "--format",
-            "json",
+            "xml",
             "--dir",
             repo_path,
             "--non-recursive",
@@ -72,27 +103,7 @@ def run_cpd(
                 check=False,
             )
             if result.stdout:
-                data = json.loads(result.stdout)
-                for dup in data.get("duplications", []):
-                    locs = []
-                    for loc in dup.get("files", []):
-                        locs.append(
-                            {
-                                "file": loc.get("id", ""),
-                                "start_line": loc.get("beginLine", 0),
-                                "end_line": loc.get("endLine", 0),
-                            }
-                        )
-                    if len(locs) >= 2:
-                        all_dupes.append(
-                            {
-                                "tokens": dup.get("tokens", 0),
-                                "lines": dup.get("lines", 0),
-                                "language": lang,
-                                "locations": locs,
-                                "fragment": dup.get("codefragment", "")[:200],
-                            }
-                        )
+                all_dupes.extend(_parse_cpd_xml(result.stdout, lang))
             total_scanned += len(files)
         except FileNotFoundError:
             from eedom.core.errors import ErrorCode, error_msg
