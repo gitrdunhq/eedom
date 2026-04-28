@@ -71,7 +71,7 @@ _TRIVY_OUTPUT_MISSING_FIXED = json.dumps(
 class TestTrivyPluginFixedVersion:
     """TrivyPlugin findings must include fixed_version from FixedVersion field."""
 
-    @patch("eedom.plugins.trivy.subprocess.run")
+    @patch("eedom.core.subprocess_runner.subprocess.run")
     def test_finding_includes_fixed_version_field(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=_TRIVY_OUTPUT, stderr="", returncode=0)
         plugin = TrivyPlugin()
@@ -80,7 +80,7 @@ class TestTrivyPluginFixedVersion:
 
         assert all("fixed_version" in f for f in result.findings)
 
-    @patch("eedom.plugins.trivy.subprocess.run")
+    @patch("eedom.core.subprocess_runner.subprocess.run")
     def test_fixed_version_populated_when_present(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=_TRIVY_OUTPUT, stderr="", returncode=0)
         plugin = TrivyPlugin()
@@ -90,7 +90,7 @@ class TestTrivyPluginFixedVersion:
         finding = next(f for f in result.findings if f["id"] == "CVE-2023-32681")
         assert finding["fixed_version"] == "2.31.0"
 
-    @patch("eedom.plugins.trivy.subprocess.run")
+    @patch("eedom.core.subprocess_runner.subprocess.run")
     def test_fixed_version_empty_string_when_no_fix_available(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=_TRIVY_OUTPUT, stderr="", returncode=0)
         plugin = TrivyPlugin()
@@ -100,7 +100,7 @@ class TestTrivyPluginFixedVersion:
         finding = next(f for f in result.findings if f["id"] == "CVE-2024-00001")
         assert finding["fixed_version"] == ""
 
-    @patch("eedom.plugins.trivy.subprocess.run")
+    @patch("eedom.core.subprocess_runner.subprocess.run")
     def test_fixed_version_empty_string_when_key_absent_in_trivy_output(
         self, mock_run: MagicMock
     ) -> None:

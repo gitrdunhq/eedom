@@ -8,7 +8,6 @@ Secrets are NEVER included in findings — only rule ID, file, and line.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import structlog
@@ -19,11 +18,18 @@ from eedom.core.plugin import (
     PluginResult,
     ScannerPlugin,
 )
+from eedom.core.subprocess_runner import SubprocessToolRunner
+from eedom.core.tool_runner import ToolInvocation, ToolRunnerPort
 
 logger = structlog.get_logger(__name__)
 
 
 class GitleaksPlugin(ScannerPlugin):
+    def __init__(self, tool_runner: ToolRunnerPort | None = None) -> None:
+        self._runner: ToolRunnerPort = (
+            tool_runner if tool_runner is not None else SubprocessToolRunner()
+        )
+
     @property
     def name(self) -> str:
         return "gitleaks"
@@ -60,37 +66,27 @@ class GitleaksPlugin(ScannerPlugin):
             cmd.extend(["--config", str(custom_config)])
             logger.info("gitleaks.custom_config", path=str(custom_config))
 
-        try:
-            r = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except FileNotFoundError:
+        result = self._runner.run(ToolInvocation(cmd=cmd, cwd=str(repo_path), timeout=timeout))
+
+        if result.not_installed:
             return PluginResult(
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.NOT_INSTALLED, "gitleaks"),
             )
-        except subprocess.TimeoutExpired:
+        if result.timed_out:
             return PluginResult(
                 plugin_name=self.name,
-                error=error_msg(
-                    ErrorCode.TIMEOUT,
-                    "gitleaks",
-                    timeout=timeout,
-                ),
+                error=error_msg(ErrorCode.TIMEOUT, "gitleaks", timeout=timeout),
             )
 
-        if not r.stdout or r.stdout.strip() == "[]":
+        if not result.stdout or result.stdout.strip() == "[]":
             return PluginResult(
                 plugin_name=self.name,
                 summary={"leaks": 0},
             )
 
         try:
-            raw = json.loads(r.stdout)
+            raw = json.loads(result.stdout)
         except json.JSONDecodeError:
             return PluginResult(
                 plugin_name=self.name,
