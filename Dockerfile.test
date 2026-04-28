@@ -27,8 +27,8 @@ COPY policies/ policies/
 
 RUN uv sync --frozen --group dev
 
-# mypy for the type-checking plugin tests
-RUN uv pip install mypy
+# Extra deps for integration tests (mypy for type-check plugin, pyarrow for parquet pipeline)
+RUN uv pip install mypy pyarrow
 
 ENV EEDOM_ALLOW_GLOBAL=1
 

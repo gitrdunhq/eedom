@@ -37,7 +37,6 @@ from eedom.core.models import (
     ScanResult,
     ScanResultStatus,
 )
-from eedom.core.policy import OpaEvaluator
 
 # ---------------------------------------------------------------------------
 # Diff fixtures
@@ -200,6 +199,37 @@ def _warn_policy() -> PolicyEvaluation:
 
 
 # ---------------------------------------------------------------------------
+# PolicyDecision factories (for OpaRegoAdapter mock — returns PolicyDecision, not PolicyEvaluation)
+# ---------------------------------------------------------------------------
+
+
+def _reject_policy_decision():
+    from eedom.core.policy_port import PolicyDecision
+
+    return PolicyDecision(
+        verdict="reject",
+        deny_reasons=[f"critical_vuln: {CVE_ID} is a critical vulnerability"],
+        triggered_rules=[f"critical_vuln: {CVE_ID} is a critical vulnerability"],
+    )
+
+
+def _approve_policy_decision():
+    from eedom.core.policy_port import PolicyDecision
+
+    return PolicyDecision(verdict="approve")
+
+
+def _warn_policy_decision():
+    from eedom.core.policy_port import PolicyDecision
+
+    return PolicyDecision(
+        verdict="approve_with_constraints",
+        warn_reasons=["medium_vuln: medium severity vulnerability detected"],
+        triggered_rules=["medium_vuln: medium severity vulnerability detected"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Invocation helpers
 # ---------------------------------------------------------------------------
 
@@ -279,7 +309,10 @@ class TestFullPipelineRejectOnCriticalVuln:
                 "eedom.core.pipeline.ScanOrchestrator",
                 mock_orchestrator_cls,
             ),
-            patch.object(OpaEvaluator, "evaluate", return_value=_reject_policy()),
+            patch(
+                "eedom.core.opa_adapter.OpaRegoAdapter.evaluate",
+                return_value=_reject_policy_decision(),
+            ),
             patch.object(
                 DependencyDiffDetector,
                 "parse_requirements_diff",
@@ -329,7 +362,10 @@ class TestFullPipelineApproveCleanPackage:
                 "eedom.core.pipeline.ScanOrchestrator",
                 mock_orchestrator_cls,
             ),
-            patch.object(OpaEvaluator, "evaluate", return_value=_approve_policy()),
+            patch(
+                "eedom.core.opa_adapter.OpaRegoAdapter.evaluate",
+                return_value=_approve_policy_decision(),
+            ),
             patch.object(
                 DependencyDiffDetector,
                 "parse_requirements_diff",
@@ -377,7 +413,10 @@ class TestFullPipelineScannerTimeoutContinues:
                 "eedom.core.pipeline.ScanOrchestrator",
                 mock_orchestrator_cls,
             ),
-            patch.object(OpaEvaluator, "evaluate", return_value=_warn_policy()),
+            patch(
+                "eedom.core.opa_adapter.OpaRegoAdapter.evaluate",
+                return_value=_warn_policy_decision(),
+            ),
             patch.object(
                 DependencyDiffDetector,
                 "parse_requirements_diff",
@@ -450,7 +489,10 @@ class TestEvidenceFilesWritten:
                 "eedom.core.pipeline.ScanOrchestrator",
                 mock_orchestrator_cls,
             ),
-            patch.object(OpaEvaluator, "evaluate", return_value=_approve_policy()),
+            patch(
+                "eedom.core.opa_adapter.OpaRegoAdapter.evaluate",
+                return_value=_approve_policy_decision(),
+            ),
             patch.object(
                 DependencyDiffDetector,
                 "parse_requirements_diff",

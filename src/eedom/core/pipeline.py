@@ -206,10 +206,23 @@ class ReviewPipeline:
                     }
 
                     if self._context is not None:
+                        from eedom.core.plugin import PluginFinding
                         from eedom.core.policy_port import PolicyInput
 
+                        plugin_findings = [
+                            PluginFinding(
+                                id=f.advisory_id or "",
+                                severity=f.severity.value,
+                                message=f.description,
+                            )
+                            for f in findings
+                        ]
                         pd = self._context.policy_engine.evaluate(
-                            PolicyInput(findings=findings, packages=[package_metadata], config={})
+                            PolicyInput(
+                                findings=plugin_findings,
+                                packages=[package_metadata],
+                                config={},
+                            )
                         )
                         verdict_str = getattr(pd, "verdict", "needs_review")
                         try:
