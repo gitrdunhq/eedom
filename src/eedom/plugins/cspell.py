@@ -53,7 +53,8 @@ class CspellPlugin(ScannerPlugin):
             "lint",
             "--no-progress",
             "--no-summary",
-            "--show-suggestions",
+            "--reporter",
+            "@cspell/cspell-json-reporter",
             "--locale",
             "en-CA",
         ]
@@ -97,29 +98,45 @@ class CspellPlugin(ScannerPlugin):
         output = r.stdout or ""
         if not output.strip() and r.stderr:
             output = r.stderr
-        pattern = re.compile(
-            r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?\s*-?\s*Unknown word\s*"
-            r"\((?P<word>[^)]+)\)(?:\s+Suggestions:\s+\[(?P<suggestions>[^\]]*)\])?"
-        )
-        for line in output.strip().split("\n"):
-            if not line:
-                continue
-            match = pattern.match(line.strip())
-            if not match:
-                continue
-            file_path = match.group("file")
-            line_no = match.group("line")
-            word = match.group("word")
-            suggestions = match.group("suggestions") or ""
-            with contextlib.suppress(ValueError):
+
+        # Try JSON reporter output first (structured, reliable)
+        import json as _json
+
+        parsed_json = False
+        with contextlib.suppress((_json.JSONDecodeError, KeyError, TypeError)):
+            data = _json.loads(output)
+            for issue in data.get("issues", []):
                 findings.append(
                     {
-                        "file": file_path,
-                        "line": int(line_no),
-                        "word": word,
-                        "suggestions": suggestions,
+                        "file": issue.get("uri", issue.get("filePath", "")),
+                        "line": issue.get("row", issue.get("line", 0)),
+                        "word": issue.get("text", ""),
+                        "suggestions": ", ".join(issue.get("suggestions", [])),
                     }
                 )
+            parsed_json = True
+
+        # Fallback: regex parse for legacy text output
+        if not parsed_json:
+            pattern = re.compile(
+                r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?\s*-?\s*Unknown word\s*"
+                r"\((?P<word>[^)]+)\)(?:\s+Suggestions:\s+\[(?P<suggestions>[^\]]*)\])?"
+            )
+            for line in output.strip().split("\n"):
+                if not line:
+                    continue
+                match = pattern.match(line.strip())
+                if not match:
+                    continue
+                with contextlib.suppress(ValueError):
+                    findings.append(
+                        {
+                            "file": match.group("file"),
+                            "line": int(match.group("line")),
+                            "word": match.group("word"),
+                            "suggestions": match.group("suggestions") or "",
+                        }
+                    )
 
         return PluginResult(
             plugin_name=self.name,
