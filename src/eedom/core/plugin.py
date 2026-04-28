@@ -38,6 +38,8 @@ class PluginResult:
     error: str = ""
     package_root: str | None = None
     category: str = ""
+    skip_reason: str = ""
+    skip_remediation: str = ""
 
 
 class ScannerPlugin(abc.ABC):
@@ -64,6 +66,9 @@ class ScannerPlugin(abc.ABC):
         ordering constraint.
         """
         return []
+
+    def skip_reason(self) -> tuple[str, str]:
+        return ("Scanner prerequisites not met", "Check scanner documentation")
 
     @abc.abstractmethod
     def can_run(self, files: list[str], repo_path: Path) -> bool: ...

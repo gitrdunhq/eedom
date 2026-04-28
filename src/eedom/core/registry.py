@@ -195,10 +195,13 @@ class PluginRegistry:
     ) -> PluginResult:
         cat = plugin.category.value
         if not plugin.can_run(files, repo_path):
+            reason, remediation = plugin.skip_reason()
             return PluginResult(
                 plugin_name=plugin.name,
                 summary={"status": "skipped"},
                 category=cat,
+                skip_reason=reason,
+                skip_remediation=remediation,
             )
         try:
             result = plugin.run(files, repo_path, findings=findings)
@@ -220,10 +223,13 @@ class PluginRegistry:
     ) -> PluginResult:
         cat = plugin.category.value
         if not plugin.can_run(files, repo_path):
+            reason, remediation = plugin.skip_reason()
             return PluginResult(
                 plugin_name=plugin.name,
                 summary={"status": "skipped"},
                 category=cat,
+                skip_reason=reason,
+                skip_remediation=remediation,
             )
         try:
             result = plugin.run(files, repo_path)
