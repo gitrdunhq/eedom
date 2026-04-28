@@ -51,3 +51,79 @@ rules:
       Use subprocess.run() with explicit args list and timeout.
     severity: ERROR
     languages: [python]
+
+  - id: org.security.sql-fstring-interpolation
+    patterns:
+      - pattern: |
+          $CURSOR.execute(f"...", ...)
+      - pattern: |
+          $CURSOR.execute(f"...")
+    paths:
+      exclude:
+        - tests/
+    message: >
+      SQL query built with f-string interpolation. This is a SQL injection vector.
+      FIX: Use parameterized queries — pass values via the second argument to
+      execute(sql, params). For column names, whitelist against a frozenset of
+      allowed names. Never interpolate user-controlled values into SQL strings.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.sql-format-interpolation
+    patterns:
+      - pattern: |
+          $CURSOR.execute("...".format(...), ...)
+      - pattern: |
+          $CURSOR.execute("...".format(...))
+    paths:
+      exclude:
+        - tests/
+    message: >
+      SQL query built with .format() interpolation. This is a SQL injection vector.
+      FIX: Use parameterized queries with ? (sqlite3) or %s (psycopg2) placeholders.
+      Pass values as the second argument to execute(). For IN clauses, build the
+      placeholder string with ",".join("?" for _ in values) and pass the list.
+    severity: ERROR
+    languages: [python]
+
+  - id: org.security.path-no-resolve-check
+    patterns:
+      - pattern: |
+          $FULL = $ROOT / $USER_INPUT
+      - pattern-not-inside: |
+          ...
+          $FULL.resolve()
+          ...
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Path constructed from user input without resolve() + containment check.
+      FIX: Always call .resolve() on the constructed path, then verify
+      resolved.is_relative_to(root.resolve()) before any file operation.
+      This prevents path traversal via ../ and symlink attacks.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.security.hardcoded-secret-default
+    patterns:
+      - pattern: |
+          $VAR: ... = "sk-..."
+      - pattern: |
+          $VAR: ... = "ghp_..."
+      - pattern: |
+          $VAR: ... = "token_..."
+      - pattern: |
+          $VAR = "sk-..."
+      - pattern: |
+          $VAR = "ghp_..."
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Hardcoded secret value in source code.
+      FIX: Load secrets from environment variables or a secrets manager.
+      Use pydantic SecretStr for typed secret fields with automatic masking.
+      Default to None, not a hardcoded value.
+    severity: ERROR
+    languages: [python]

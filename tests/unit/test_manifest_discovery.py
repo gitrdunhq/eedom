@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from eedom.core.manifest_discovery import PackageUnit, discover_packages
 
 # ---------------------------------------------------------------------------
@@ -363,3 +364,92 @@ class TestPackageUnitFrozen:
         )
         with pytest.raises((ValidationError, TypeError)):
             unit.ecosystem = "rust"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Test: malformed ecosystem values are validated and skipped
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedEcosystem:
+    def test_empty_ecosystem_is_skipped(self, tmp_path: Path) -> None:
+        """An empty ecosystem string must be skipped — not added to units."""
+        from unittest.mock import patch
+
+        _write(tmp_path / "package.json", '{"name": "test"}')
+        malformed_map = {"package.json": ""}
+        with patch("eedom.core.manifest_discovery.MANIFEST_MAP", malformed_map):
+            units = discover_packages(tmp_path)
+        assert len(units) == 0
+
+    def test_ecosystem_with_slash_is_skipped(self, tmp_path: Path) -> None:
+        """An ecosystem value containing '/' must be skipped."""
+        from unittest.mock import patch
+
+        _write(tmp_path / "package.json", '{"name": "test"}')
+        malformed_map = {"package.json": "npm/malicious"}
+        with patch("eedom.core.manifest_discovery.MANIFEST_MAP", malformed_map):
+            units = discover_packages(tmp_path)
+        assert len(units) == 0
+
+    def test_valid_ecosystem_still_discovered(self, tmp_path: Path) -> None:
+        """Valid ecosystems are unaffected by the validation guard."""
+        _write(tmp_path / "package.json", '{"name": "test"}')
+        units = discover_packages(tmp_path)
+        assert len(units) == 1
+        assert units[0].ecosystem == "npm"
+
+
+# ---------------------------------------------------------------------------
+# Test: path traversal via symlinks is rejected
+# ---------------------------------------------------------------------------
+
+
+class TestSymlinkPathTraversal:
+    def test_symlink_to_outside_file_rejected(self, tmp_path: Path) -> None:
+        """A package.json symlink pointing outside the repo root must be skipped."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+
+        outside_manifest = outside_dir / "package.json"
+        outside_manifest.write_text('{"name": "evil"}')
+
+        # Symlink inside repo → outside file
+        inside_dir = repo_root / "subdir"
+        inside_dir.mkdir()
+        (inside_dir / "package.json").symlink_to(outside_manifest)
+
+        units = discover_packages(repo_root)
+
+        assert len(units) == 0, "Symlink escaping repo root must be rejected"
+
+    def test_symlink_via_relative_traversal_rejected(self, tmp_path: Path) -> None:
+        """A symlink using ../../ traversal to escape the repo root must be skipped."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        subdir = repo_root / "subdir"
+        subdir.mkdir()
+
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        outside_manifest = outside_dir / "package.json"
+        outside_manifest.write_text('{"name": "evil"}')
+
+        (subdir / "package.json").symlink_to("../../outside/package.json")
+
+        units = discover_packages(repo_root)
+
+        assert len(units) == 0, "Relative-traversal symlink must be rejected"
+
+    def test_normal_manifest_inside_repo_still_discovered(self, tmp_path: Path) -> None:
+        """A plain (non-symlink) manifest inside the repo is unaffected by the fix."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _write(repo_root / "package.json", '{"name": "valid"}')
+
+        units = discover_packages(repo_root)
+
+        assert len(units) == 1
+        assert units[0].manifest == repo_root / "package.json"

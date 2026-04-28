@@ -83,11 +83,23 @@ class GitleaksPlugin(ScannerPlugin):
                 plugin_name=self.name,
                 error=error_msg(ErrorCode.TIMEOUT, "gitleaks", timeout=timeout),
             )
+        # gitleaks: 0=clean, 1=leaks found (normal), other=crash
+        if result.exit_code not in (0, 1) and not report_file.exists():
+            return PluginResult(
+                plugin_name=self.name,
+                error=(
+                    f"[BINARY_CRASHED] gitleaks exited {result.exit_code}: {result.stderr[:200]}"
+                ),
+            )
 
         report_text = ""
         if report_file.exists():
-            report_text = report_file.read_text()
-            report_file.unlink(missing_ok=True)
+            try:
+                report_text = report_file.read_text()
+            except OSError:
+                logger.warning("gitleaks.read_report_failed", path=str(report_file))
+            finally:
+                report_file.unlink(missing_ok=True)
 
         if not report_text or report_text.strip() == "[]":
             return PluginResult(

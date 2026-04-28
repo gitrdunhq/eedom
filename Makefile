@@ -15,10 +15,10 @@ lint:
 	@echo "Linting complete"
 
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-CONTAINER_SECURITY_OPT ?= --security-opt apparmor=unconfined
 CONTAINER_COMMAND := $(notdir $(CONTAINER_ENGINE))
-TEST_BUILD_COMMAND ?= $(if $(filter docker,$(CONTAINER_COMMAND)),$(CONTAINER_ENGINE) buildx build --allow security.insecure --load,$(CONTAINER_ENGINE) build $(CONTAINER_SECURITY_OPT))
-PROD_BUILD_COMMAND ?= $(if $(filter docker,$(CONTAINER_COMMAND)),$(CONTAINER_ENGINE) buildx build --allow security.insecure --load,$(CONTAINER_ENGINE) build $(CONTAINER_SECURITY_OPT))
+CONTAINER_RUN_SECURITY := $(if $(filter podman,$(CONTAINER_COMMAND)),--security-opt apparmor=unconfined,--security-opt seccomp=unconfined)
+TEST_BUILD_COMMAND ?= $(if $(filter docker,$(CONTAINER_COMMAND)),$(CONTAINER_ENGINE) buildx build --allow security.insecure --load,$(CONTAINER_ENGINE) build --security-opt apparmor=unconfined)
+PROD_BUILD_COMMAND ?= $(if $(filter docker,$(CONTAINER_COMMAND)),$(CONTAINER_ENGINE) buildx build --allow security.insecure --load,$(CONTAINER_ENGINE) build --security-opt apparmor=unconfined)
 TEST_PLATFORM ?= linux/amd64
 TEST_IMAGE ?= eedom-test:amd64
 PROD_PLATFORM ?= linux/amd64
@@ -31,9 +31,10 @@ test:
 	@$(MAKE) test-build
 	@$(CONTAINER_ENGINE) run --rm \
 		--platform $(TEST_PLATFORM) \
-		$(CONTAINER_SECURITY_OPT) \
+		$(CONTAINER_RUN_SECURITY) \
+		--entrypoint "" \
 		$(TEST_IMAGE) \
-		python3 -m pytest tests/ -v
+		/opt/test-venv/bin/python -m pytest tests/ -v
 
 test-amd64: test
 

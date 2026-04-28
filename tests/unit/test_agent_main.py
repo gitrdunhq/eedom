@@ -221,4 +221,85 @@ class TestAgentConfig:
 
     def test_default_db_dsn_triggers_null_repository(self):
         config = _make_settings()
-        assert "unused" in config.db_dsn
+        assert "localhost" in config.db_dsn
+
+
+class TestAgentTierViolation:
+    """Finding 3 — Tier violation: agent must not pass plugin functions directly.
+
+    GitHubCopilotAgent must NOT receive individual plugin callables
+    (evaluate_change, check_package, scan_code, scan_duplicates, scan_k8s,
+    analyze_complexity) in its tools= parameter.  Plugin orchestration belongs
+    in the use-case / tool_helpers tier, not in the presentation-tier entry
+    point.
+
+    TODO: Fix requires creating eedom/agent/use_cases.py, calling
+    use_cases.review_repository() in _run_agent_session, passing tools=[],
+    and adapting _extract_reject_from_tool_results to the pre-computed result.
+    Deferred because it restructures multiple call sites across main.py.
+    Track in GitHub issue: [see-something] tier-violation: agent passes plugins directly (main.py:136)
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "DEFERRED: tier violation — _run_agent_session passes plugin callables "
+            "directly to GitHubCopilotAgent. Fix requires eedom/agent/use_cases.py "
+            "and restructuring _run_agent_session + _extract_reject_from_tool_results."
+        ),
+    )
+    @pytest.mark.asyncio
+    async def test_run_agent_session_does_not_pass_plugin_tools_directly(self):
+        """Agent framework must not receive individual plugin functions as tools."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from eedom.agent.main import GatekeeperAgent
+
+        config = _make_settings()
+        agent = GatekeeperAgent(config)
+
+        captured_tools: list = []
+
+        def fake_copilot_agent(**kwargs):
+            captured_tools.extend(kwargs.get("tools", []))
+            instance = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "ok"
+            mock_response.value = {}
+            instance.run = AsyncMock(return_value=mock_response)
+            return instance
+
+        with patch(
+            "agent_framework_github_copilot.GitHubCopilotAgent",
+            side_effect=fake_copilot_agent,
+        ):
+            await agent._run_agent_session(
+                diff_text="diff --git a/requirements.txt b/requirements.txt\n+requests==2.31.0",
+                pr_url="https://github.com/org/repo/pull/1",
+                team="platform",
+            )
+
+        # Plugin functions that MUST NOT be wired directly into the agent framework.
+        # Orchestration belongs in tool_helpers / use-case tier.
+        # @tool-decorated functions become FunctionTool objects with .name (not .__name__).
+        forbidden = {
+            "evaluate_change",
+            "check_package",
+            "scan_code",
+            "scan_duplicates",
+            "scan_k8s",
+            "analyze_complexity",
+        }
+
+        def _tool_name(fn) -> str | None:
+            # FunctionTool (agent_framework) exposes .name; plain callables use .__name__
+            if hasattr(fn, "name") and isinstance(fn.name, str):
+                return fn.name
+            return getattr(fn, "__name__", None)
+
+        passed_names = {n for fn in captured_tools if (n := _tool_name(fn)) is not None}
+        violations = forbidden & passed_names
+        assert violations == set(), (
+            f"Tier violation: GitHubCopilotAgent received plugin callables directly: "
+            f"{violations}. Route through use-case / tool_helpers instead."
+        )

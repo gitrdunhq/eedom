@@ -18,10 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Venv lives outside /workspace so the host's ro mount can't shadow it.
 ENV UV_PROJECT_ENVIRONMENT=/opt/test-venv \
-    VIRTUAL_ENV=/opt/test-venv
+    VIRTUAL_ENV=/opt/test-venv \
+    UV_NO_PROGRESS=1
 
-# astral-sh/uv revision:
-# 0e961dd9a2bb6f73493d9e8398b725ad2d3b3837
 COPY --from=ghcr.io/astral-sh/uv@sha256:3b7b60a81d3c57ef471703e5c83fd4aaa33abcd403596fb22ab07db85ae91347 /uv /usr/local/bin/uv
 
 WORKDIR /workspace

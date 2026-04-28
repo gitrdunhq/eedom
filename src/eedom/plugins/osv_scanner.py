@@ -20,6 +20,8 @@ from eedom.core.plugin import (
 
 logger = structlog.get_logger()
 
+_MAX_FINDINGS = 1000
+
 _SEV_MAP = {
     "CRITICAL": "critical",
     "HIGH": "high",
@@ -152,7 +154,7 @@ class OsvScannerPlugin(ScannerPlugin):
                             "ecosystem": pkg_info.get("ecosystem", "?"),
                         }
                     )
-        return findings
+        return findings[:_MAX_FINDINGS]
 
     def _resolve_severity(self, vuln: dict) -> str:
         sev = "info"
@@ -201,7 +203,7 @@ class OsvScannerPlugin(ScannerPlugin):
                 seen.add(key)
                 icon = "🔴" if v["severity"] == "critical" else "🟠"
                 link = f"[{v['id']}]({v['url']})"
-                summary = v["summary"][:80]
+                summary = str(v.get("summary") or v.get("message") or "")[:80]
                 lines.append(
                     f"| {icon} {link} | `{v['package']}`"
                     f" | {v['version']} | {v['severity']}"

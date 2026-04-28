@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from eedom.core.plugin import PluginCategory
+from eedom.core.registry import _normalize_findings
 from eedom.plugins.osv_scanner import OsvScannerPlugin
 
 OSV_RESPONSE = {
@@ -141,6 +142,20 @@ class TestOsvPlugin:
         assert "CVE-2023-0286" in md
         assert "nvd.nist.gov" in md
 
+    @patch("eedom.plugins.osv_scanner.subprocess.run")
+    def test_render_after_registry_normalization(self, mock_run):
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = json.dumps(OSV_RESPONSE)
+        p = OsvScannerPlugin()
+        result = p.run(["requirements.txt"], Path("."))
+        result.findings = _normalize_findings(result.findings)
+
+        md = p.render(result)
+
+        assert "Critical/High" in md
+        assert "CVE-2023-0286" in md
+        assert "Vulnerable OpenSSL" in md
+
     def test_render_error(self):
         from eedom.core.plugin import PluginResult
 
@@ -159,3 +174,51 @@ class TestOsvPlugin:
         result = PluginResult(plugin_name="osv-scanner")
         md = p.render(result)
         assert md == ""
+
+
+def _make_osv_data(n: int) -> dict:
+    """Build an OSV-format dict with n findings (one vuln per package)."""
+    return {
+        "results": [
+            {
+                "packages": [
+                    {
+                        "package": {
+                            "name": f"pkg-{i}",
+                            "version": "1.0.0",
+                            "ecosystem": "pip",
+                        },
+                        "vulnerabilities": [
+                            {
+                                "id": f"GHSA-xxxx-yyyy-{i:04d}",
+                                "summary": f"Vulnerability {i}",
+                                "severity": [{"score": "5.0"}],
+                                "database_specific": {"severity": "MEDIUM"},
+                                "aliases": [],
+                            }
+                        ],
+                    }
+                    for i in range(n)
+                ]
+            }
+        ]
+    }
+
+
+class TestOsvScannerFindingsCap:
+    """_extract_findings must cap the result at MAX_FINDINGS to prevent OOM."""
+
+    def test_findings_capped_at_1000(self):
+        plugin = OsvScannerPlugin()
+        findings = plugin._extract_findings(_make_osv_data(1500))
+        assert len(findings) == 1000, f"Expected 1000 findings (MAX_FINDINGS), got {len(findings)}"
+
+    def test_findings_below_cap_not_truncated(self):
+        plugin = OsvScannerPlugin()
+        findings = plugin._extract_findings(_make_osv_data(10))
+        assert len(findings) == 10
+
+    def test_findings_exactly_at_cap_not_truncated(self):
+        plugin = OsvScannerPlugin()
+        findings = plugin._extract_findings(_make_osv_data(1000))
+        assert len(findings) == 1000

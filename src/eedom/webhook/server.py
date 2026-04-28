@@ -5,7 +5,8 @@ Receives GitHub webhook POST requests, validates the HMAC-SHA256 signature,
 and triggers eedom review on pull_request events (opened, synchronize, reopened).
 
 Fail-open contract: every processing error is logged and HTTP 200 is returned.
-The only non-200 responses are authentication failures (401 on bad/missing sig).
+The only non-200 responses are authentication failures (401 on bad/missing sig)
+and input-validation failures (400 wrong Content-Type, 413 payload too large).
 
 Run in production:
     uvicorn eedom.webhook.server:app --host 0.0.0.0 --port 12800
@@ -13,9 +14,12 @@ Run in production:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
+import re
 import subprocess  # noqa: F401 — kept so patch("eedom.webhook.server.subprocess") resolves
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,6 +36,7 @@ except ImportError as _exc:
         "starlette is required for the webhook server. Install with: pip install eedom[copilot]"
     ) from _exc
 
+from eedom.core.ignore import load_ignore_patterns, should_ignore
 from eedom.core.use_cases import ReviewOptions, review_repository
 from eedom.webhook.config import WebhookSettings
 
@@ -46,6 +51,9 @@ _PR_ACTIONS: frozenset[str] = frozenset({"opened", "synchronize", "reopened"})
 # Review timeout (seconds) — matches pipeline_timeout in GATEKEEPER config
 _REVIEW_TIMEOUT_S: int = 300
 
+# Maximum accepted payload size — 1 MB DoS guard (patch-27)
+_MAX_PAYLOAD_SIZE_BYTES: int = 1 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -59,11 +67,22 @@ def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def _scrub_token_from_error(text: str, token: str) -> str:
+    """Replace a raw token value with [REDACTED] to prevent accidental log exposure."""
+    if token and token in text:
+        return text.replace(token, "[REDACTED]")
+    return text
+
+
 async def _post_pr_comment(token: str, full_repo: str, pr_number: int, body: str) -> None:
     """Post *body* as a comment on the given GitHub PR.
 
     Raises httpx.HTTPStatusError on 4xx/5xx from GitHub API.
+    Raises ValueError if full_repo does not match the expected owner/repo pattern.
     """
+    _repo_re = re.compile(r"[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+")
+    if not _repo_re.fullmatch(full_repo):
+        raise ValueError(f"Invalid repo name: {full_repo!r}")
     url = f"https://api.github.com/repos/{full_repo}/issues/{pr_number}/comments"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -100,6 +119,14 @@ def build_app(
     async def webhook(request: Request) -> Response:
         body = await request.body()
 
+        # --- DoS guard: reject oversized payloads before HMAC work (patch-27) ---
+        if len(body) > _MAX_PAYLOAD_SIZE_BYTES:
+            logger.warning("webhook_payload_too_large", size_bytes=len(body))
+            return JSONResponse(
+                {"error": f"Payload exceeds {_MAX_PAYLOAD_SIZE_BYTES} bytes"},
+                status_code=413,
+            )
+
         # --- Auth: validate HMAC-SHA256 signature --------------------------
         signature = request.headers.get("X-Hub-Signature-256", "")
         if not signature:
@@ -109,6 +136,15 @@ def build_app(
         if not _verify_signature(body, signature, settings.secret):
             logger.warning("webhook_invalid_signature")
             return JSONResponse({"error": "Signature mismatch"}, status_code=401)
+
+        # --- Content-Type validation: only accept JSON (patch-28) ----------
+        content_type = request.headers.get("Content-Type", "")
+        if not content_type.startswith("application/json"):
+            logger.warning("webhook_invalid_content_type", content_type=content_type)
+            return JSONResponse(
+                {"error": "Content-Type must be application/json"},
+                status_code=400,
+            )
 
         # --- Routing: only handle pull_request events ----------------------
         event_type = request.headers.get("X-GitHub-Event", "")
@@ -141,14 +177,29 @@ def build_app(
 
         logger.info("webhook_pr_received", pr_url=pr_url, action=action)
 
-        # --- Run eedom review via use-case (fail-open) ----------------------
+        # --- Build file list from repo (same pattern as CLI review) -----------
+        _repo_path = Path(".")
+        _ignore_patterns = load_ignore_patterns(_repo_path)
+        _files: list[str] = []
+        for _ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
+            _files.extend(
+                str(p)
+                for p in _repo_path.rglob(_ext)
+                if not should_ignore(str(p.relative_to(_repo_path)), _ignore_patterns)
+            )
+
+        # --- Run eedom review via use-case with timeout (fail-open) (patch-19) ---
         review_output: str
         try:
-            result = review_repository(
-                context,
-                [],
-                Path("."),
-                ReviewOptions(),
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    review_repository,
+                    context,
+                    _files,
+                    _repo_path,
+                    ReviewOptions(),
+                ),
+                timeout=_REVIEW_TIMEOUT_S,
             )
             review_output = (
                 f"verdict: {result.verdict}, "
@@ -156,6 +207,9 @@ def build_app(
                 f"quality: {result.quality_score:.1f}"
             )
             logger.info("webhook_review_complete", verdict=result.verdict, pr_url=pr_url)
+        except TimeoutError:
+            logger.error("webhook_review_timeout", timeout_s=_REVIEW_TIMEOUT_S, pr_url=pr_url)
+            review_output = f"eedom review timed out after {_REVIEW_TIMEOUT_S}s"
         except Exception as exc:
             logger.error("webhook_review_failed", error=str(exc), pr_url=pr_url)
             review_output = f"eedom review could not run: {exc}"
@@ -171,7 +225,8 @@ def build_app(
             )
             logger.info("webhook_comment_posted", pr_url=pr_url)
         except Exception as exc:
-            logger.error("webhook_comment_failed", error=str(exc), pr_url=pr_url)
+            safe_error = _scrub_token_from_error(str(exc), settings.github_token.get_secret_value())
+            logger.error("webhook_comment_failed", error=safe_error, pr_url=pr_url)
 
         return JSONResponse({"status": "ok"}, status_code=200)
 
@@ -195,7 +250,16 @@ def _load_app() -> Starlette:
 
 # Module-level app for: uvicorn eedom.webhook.server:app
 # Deferred so import doesn't require env vars during tests.
+# Thread-safe cache — patch-18 (race condition fix).
+_app_instance: Starlette | None = None
+_app_lock: threading.RLock = threading.RLock()
+
+
 def __getattr__(name: str) -> object:
+    global _app_instance
     if name == "app":
-        return _load_app()
+        with _app_lock:
+            if _app_instance is None:
+                _app_instance = _load_app()
+        return _app_instance
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

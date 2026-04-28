@@ -475,3 +475,97 @@ class TestActionabilityInComment:
         result = PluginResult(plugin_name="trivy", findings=[])
         md = render_comment([result], repo="org/repo", pr_num=1, title="test")
         assert "Actionability" not in md
+
+
+# ---------------------------------------------------------------------------
+# Renderer validation — non-callable render, render that raises
+# ---------------------------------------------------------------------------
+
+
+class TestRendererInputValidation:
+    """_build_sections must be defensive against bad renderer objects."""
+
+    def _result(self) -> PluginResult:
+        return PluginResult(
+            plugin_name="test_plugin",
+            category="code",
+            findings=[{"severity": "low", "message": "test finding"}],
+            summary={},
+        )
+
+    def test_non_callable_render_attribute_falls_back_to_default(self):
+        """If renderer.render is not callable, _build_sections must fall back to default."""
+
+        class AttribRenderer:
+            render = "not a function"
+
+        _, _, sections = _build_sections([self._result()], {"test_plugin": AttribRenderer()})
+        assert len(sections) == 1
+        assert "test_plugin" in sections[0]
+
+    def test_renderer_that_raises_falls_back_to_default(self):
+        """If renderer.render() raises, _build_sections must fall back to default."""
+
+        class BrokenRenderer:
+            def render(self, r):
+                raise RuntimeError("renderer exploded")
+
+        _, _, sections = _build_sections([self._result()], {"test_plugin": BrokenRenderer()})
+        assert len(sections) == 1
+        assert "test_plugin" in sections[0]
+
+
+class TestRenderCommentTruncation:
+    """Tests for render_comment truncation at block boundaries."""
+
+    def _big_result(self, count: int = 3000) -> PluginResult:
+        """PluginResult with enough findings to trigger truncation."""
+        return PluginResult(
+            plugin_name="osv-scanner",
+            category="dependency",
+            findings=[
+                {
+                    "id": f"CVE-2024-{i:04d}",
+                    "severity": "high",
+                    "package": f"pkg{i}",
+                    "version": "1.0.0",
+                    "url": f"https://example.com/{i}",
+                    "summary": f"Vulnerability number {i} with a long description to pad output",
+                }
+                for i in range(count)
+            ],
+            summary={"total": count, "critical_high": count},
+        )
+
+    def test_truncated_output_within_max_length(self) -> None:
+        """render_comment output must never exceed _MAX_COMMENT_LENGTH."""
+        from eedom.core.renderer import _MAX_COMMENT_LENGTH
+
+        output = render_comment([self._big_result()], repo="org/repo", pr_num=1)
+
+        assert len(output) <= _MAX_COMMENT_LENGTH + len(
+            "\n\n*[comment truncated — full report in artifacts]*"
+        )
+
+    def test_truncated_output_ends_at_line_boundary(self) -> None:
+        """Truncated output must not split a line mid-way.
+
+        Before fix: raw character slice could cut in the middle of a Markdown
+        table row or code block.
+        After fix: truncation stops at the last newline before the limit.
+        """
+        output = render_comment([self._big_result()], repo="org/repo", pr_num=1)
+
+        if "*[comment truncated — full report in artifacts]*" in output:
+            before_marker = output.split("*[comment truncated — full report in artifacts]*")[0]
+            # Must end at a line boundary (newline), not mid-word
+            assert before_marker.endswith("\n") or before_marker.endswith(
+                "\n\n"
+            ), f"Expected line boundary before truncation marker, got: {repr(before_marker[-30:])}"
+
+    def test_truncation_marker_at_end(self) -> None:
+        """The truncation notice must be the final text in the output."""
+        output = render_comment([self._big_result()], repo="org/repo", pr_num=1)
+
+        if "*[comment truncated — full report in artifacts]*" in output:
+            assert output.rstrip().endswith("*[comment truncated — full report in artifacts]*")

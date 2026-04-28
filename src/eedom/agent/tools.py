@@ -36,6 +36,35 @@ from eedom.plugins import get_default_registry
 logger = structlog.get_logger(__name__)
 
 
+def _validate_repo_path(repo_path: str) -> str:
+    """Reject repo paths that contain path traversal sequences.
+
+    Checks raw path parts for '..' before any OS resolution so that a caller
+    cannot read files outside the intended repository root.
+
+    Returns the original path string on success; raises ValueError otherwise.
+    """
+    path = Path(repo_path)
+    if any(part == ".." for part in path.parts):
+        raise ValueError(f"repo_path contains path traversal sequences: {repo_path!r}")
+    return repo_path
+
+
+def _sanitize_sbom_name(name: str) -> str:
+    """Sanitize a component name from SBOM data.
+
+    Strips leading slashes and removes '..' components so that names from
+    untrusted SBOM content cannot carry filesystem path injection into output.
+    """
+    if not name:
+        return ""
+    # Strip absolute-path indicator
+    sanitized = name.lstrip("/")
+    # Remove traversal components
+    parts = [p for p in sanitized.split("/") if p != ".."]
+    return "/".join(parts)
+
+
 def _serialize_decision(decision: ReviewDecision) -> dict:
     """Serialize an ReviewDecision to a dict for the agent."""
     findings_summary: dict[str, int] = {}
@@ -141,6 +170,13 @@ def _build_dep_summary(raw_sbom: dict, repo_path: str) -> dict:
 
     import json
 
+    # Validate repo_path before any filesystem access.
+    try:
+        repo_path = _validate_repo_path(repo_path)
+    except ValueError as exc:
+        logger.warning("build_dep_summary.invalid_repo_path", error=str(exc))
+        return {}
+
     components = raw_sbom.get("components", [])
     dependencies = raw_sbom.get("dependencies", [])
 
@@ -148,8 +184,8 @@ def _build_dep_summary(raw_sbom: dict, repo_path: str) -> dict:
     purl_to_ver: dict[str, str] = {}
     for comp in components:
         purl = comp.get("purl", "")
-        name = comp.get("name", "")
-        ver = comp.get("version", "")
+        name = _sanitize_sbom_name(comp.get("name", ""))
+        ver = _sanitize_sbom_name(comp.get("version", ""))
         if purl:
             base_purl = purl.split("?")[0]
             purl_to_name[base_purl] = name

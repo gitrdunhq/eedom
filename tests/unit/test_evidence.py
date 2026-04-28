@@ -249,3 +249,63 @@ class TestEvidenceStore:
         result = store.store(rid, "scan-report.json", b'{"ok": true}')
         assert result != ""
         assert Path(result).exists()
+
+
+class TestEvidenceSymlinkTraversal:
+    """F-022: Symlink-based path traversal via the key directory.
+
+    The check in store()/store_file() currently validates:
+        resolved.is_relative_to(dest_dir.resolve())
+
+    When the key directory is a symlink pointing outside the evidence root,
+    dest_dir.resolve() follows the symlink to the external directory.  The
+    resolved artifact path IS then relative to that external directory, so the
+    guard silently passes and the write lands outside the evidence root.
+
+    The fix: check against self._root.resolve() — the evidence root — not the
+    (potentially symlinked) dest_dir.
+    """
+
+    def test_symlink_key_dir_does_not_write_outside_root(self, tmp_path: Path) -> None:
+        """store(): a symlink key-dir pointing outside root must be blocked."""
+        from eedom.data.evidence import EvidenceStore
+
+        evidence_root = tmp_path / "evidence"
+        evidence_root.mkdir()
+        external_dir = tmp_path / "external"
+        external_dir.mkdir()
+
+        # Attacker-controlled symlink inside the evidence root → escapes to external_dir
+        (evidence_root / "attacker_key").symlink_to(external_dir)
+
+        store = EvidenceStore(root_path=str(evidence_root))
+
+        result = store.store("attacker_key", "evil.txt", b"owned")
+
+        assert result == "", "Symlink key escaping evidence root must be blocked"
+        assert not (
+            external_dir / "evil.txt"
+        ).exists(), "File must not be written outside evidence root"
+
+    def test_store_file_symlink_key_dir_does_not_write_outside_root(self, tmp_path: Path) -> None:
+        """store_file(): a symlink key-dir pointing outside root must be blocked."""
+        from eedom.data.evidence import EvidenceStore
+
+        evidence_root = tmp_path / "evidence"
+        evidence_root.mkdir()
+        external_dir = tmp_path / "external"
+        external_dir.mkdir()
+
+        source = tmp_path / "source.txt"
+        source.write_text("sensitive data")
+
+        (evidence_root / "attacker_key").symlink_to(external_dir)
+
+        store = EvidenceStore(root_path=str(evidence_root))
+
+        result = store.store_file("attacker_key", "evil.txt", source)
+
+        assert result == "", "Symlink key escaping evidence root must be blocked"
+        assert not (
+            external_dir / "evil.txt"
+        ).exists(), "File must not be copied outside evidence root"

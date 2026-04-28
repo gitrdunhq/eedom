@@ -28,6 +28,12 @@ class GitHubPublisher:
         env["GH_TOKEN"] = self.token
         return env
 
+    def _scrub_token(self, text: str) -> str:
+        """Replace the raw token value with [REDACTED] to prevent accidental exposure."""
+        if self.token and self.token in text:
+            return text.replace(self.token, "[REDACTED]")
+        return text
+
     def _run(self, cmd: list[str]) -> bool:
         """Run a gh CLI command. Returns True on exit 0, False otherwise."""
         try:
@@ -36,7 +42,10 @@ class GitHubPublisher:
                 capture_output=True,
                 text=True,
                 env=self._env(),
+                timeout=30,
             )
+            if result.stderr:
+                result.stderr = self._scrub_token(result.stderr)
             return result.returncode == 0
         except Exception:
             return False

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from eedom.core.models import (
     DecisionVerdict,
@@ -251,3 +255,63 @@ class TestBuildOpaInput:
         assert result["config"]["forbidden_licenses"] == ["GPL-3.0", "AGPL-3.0"]
         assert result["config"]["max_transitive_deps"] == 100
         assert result["config"]["rules_enabled"]["critical_vuln"] is False
+
+
+# ---------------------------------------------------------------------------
+# Security: path traversal in policy_path
+# ---------------------------------------------------------------------------
+
+
+class TestOpaEvaluatorPathTraversal:
+    def test_traversal_via_dotdot_rejected(self) -> None:
+        """policy_path that escapes the policy_base_dir via ../ must raise ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            policy_dir = Path(tmpdir) / "policies"
+            policy_dir.mkdir()
+            (policy_dir / "safe.rego").write_text("package policy\nallow = true")
+
+            outside = Path(tmpdir) / "malicious.rego"
+            outside.write_text("package policy\nallow = false")
+
+            traversal = str(policy_dir / ".." / "malicious.rego")
+
+            with pytest.raises(ValueError, match="outside policy directory"):
+                OpaEvaluator(
+                    policy_path=traversal,
+                    timeout=10,
+                    policy_base_dir=str(policy_dir),
+                )
+
+    def test_absolute_path_outside_base_rejected(self) -> None:
+        """An absolute policy_path outside policy_base_dir must raise ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            policy_dir = Path(tmpdir) / "policies"
+            policy_dir.mkdir()
+
+            with pytest.raises(ValueError, match="outside policy directory"):
+                OpaEvaluator(
+                    policy_path="/etc/passwd",
+                    timeout=10,
+                    policy_base_dir=str(policy_dir),
+                )
+
+    def test_valid_path_within_base_accepted(self) -> None:
+        """A policy_path inside policy_base_dir must not raise."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            policy_dir = Path(tmpdir) / "policies"
+            policy_dir.mkdir()
+            policy_file = policy_dir / "valid.rego"
+            policy_file.write_text("package policy")
+
+            # Must not raise
+            evaluator = OpaEvaluator(
+                policy_path=str(policy_file),
+                timeout=10,
+                policy_base_dir=str(policy_dir),
+            )
+            assert evaluator is not None
+
+    def test_no_policy_base_dir_preserves_existing_behaviour(self) -> None:
+        """Without policy_base_dir, OpaEvaluator accepts any path (backward compat)."""
+        evaluator = OpaEvaluator(policy_path="/fake/policies")
+        assert evaluator is not None

@@ -194,3 +194,31 @@ class TestOrchestratorNeverRaises:
         assert len(results) == 1
         assert results[0].status == ScanResultStatus.failed
         assert "unexpected boom" in (results[0].message or "")
+
+
+class TestOrchestratorFutureCancellation:
+    """Tests that remaining futures are cancelled after combined timeout."""
+
+    def test_skipped_result_message_mentions_combined_timeout(self) -> None:
+        """Scanners not completing within combined timeout are skipped with clear reason."""
+        scanners = [
+            _make_scanner("fast", _success_result("fast"), delay=0.0),
+            _make_scanner("slow", _success_result("slow"), delay=5.0),
+        ]
+        orch = ScanOrchestrator(scanners=scanners, combined_timeout=1)
+
+        results = orch.run(Path("/project"))
+
+        slow_result = results[1]
+        assert slow_result.status == ScanResultStatus.skipped
+        assert "combined timeout" in (slow_result.message or "").lower()
+
+    def test_all_scanners_get_result_after_combined_timeout(self) -> None:
+        """Every scanner in the input list produces exactly one result, even on timeout."""
+        n = 5
+        scanners = [_make_scanner(f"s{i}", _success_result(f"s{i}"), delay=5.0) for i in range(n)]
+        orch = ScanOrchestrator(scanners=scanners, combined_timeout=1)
+
+        results = orch.run(Path("/project"))
+
+        assert len(results) == n  # Exactly one result per scanner — no extras, no gaps

@@ -129,8 +129,18 @@ def verify_seal(evidence_dir: Path) -> dict:
 
     errors: list[str] = []
 
+    evidence_dir_resolved = evidence_dir.resolve()
+
     for artifact in seal.get("artifacts", []):
-        fpath = evidence_dir / artifact["path"]
+        fpath = (evidence_dir / artifact["path"]).resolve()
+
+        # Reject any path that resolves outside evidence_dir (path traversal guard).
+        try:
+            fpath.relative_to(evidence_dir_resolved)
+        except ValueError:
+            errors.append(f"path traversal attempt: {artifact['path']}")
+            continue
+
         if not fpath.exists():
             errors.append(f"missing: {artifact['path']}")
             continue

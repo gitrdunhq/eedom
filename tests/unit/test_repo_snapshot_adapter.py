@@ -186,3 +186,15 @@ class TestCleanup:
                 snap.cleanup()
         kwargs = mock_run.call_args[1]
         assert kwargs.get("cwd") == Path("/my/repo")
+
+    def test_cleanup_subprocess_has_timeout(self):
+        """cleanup() must pass timeout=30 to subprocess.run (DPS-5)."""
+        snap = GitWorktreeSnapshot(repo_path=Path("/repo"))
+        snap._worktree_path = Path("/tmp/wt_timeout")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("shutil.rmtree"):
+                snap.cleanup()
+        kwargs = mock_run.call_args[1]
+        assert "timeout" in kwargs, "subprocess.run() in cleanup() must include a timeout"
+        assert kwargs["timeout"] == 30, "cleanup() timeout must be 30 seconds"

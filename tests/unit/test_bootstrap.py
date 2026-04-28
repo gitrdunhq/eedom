@@ -278,3 +278,91 @@ class TestBootstrapFunction:
         assert (
             annotation is ApplicationContext or annotation == "ApplicationContext"
         ), "bootstrap() must be annotated to return ApplicationContext"
+
+
+# ---------------------------------------------------------------------------
+# _make_decision_store() — wiring logic
+# ---------------------------------------------------------------------------
+
+
+class TestMakeDecisionStore:
+    """Verify _make_decision_store wires the correct store based on settings.db_dsn."""
+
+    def test_no_dsn_returns_null_decision_store(self) -> None:
+        """When db_dsn is empty/None, _make_decision_store must return NullDecisionStore."""
+        from unittest.mock import MagicMock
+
+        from eedom.adapters.persistence import NullDecisionStore
+        from eedom.core.bootstrap import _make_decision_store
+
+        settings = MagicMock()
+        settings.db_dsn = None
+        result = _make_decision_store(settings)
+        assert isinstance(result, NullDecisionStore)
+
+    def test_with_dsn_does_not_return_null_decision_store(self) -> None:
+        """When db_dsn is set and connection succeeds, must NOT return NullDecisionStore."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.adapters.persistence import NullDecisionStore
+        from eedom.core.bootstrap import _make_decision_store
+
+        settings = MagicMock()
+        settings.db_dsn = "postgresql://user:pass@localhost:5432/eedom"
+
+        with patch("eedom.data.db.DecisionRepository.connect", return_value=True):
+            result = _make_decision_store(settings)
+
+        assert not isinstance(result, NullDecisionStore), (
+            "When db_dsn is set and connection succeeds, _make_decision_store must "
+            "return a real store, not NullDecisionStore"
+        )
+
+    def test_with_dsn_returns_decision_repository(self) -> None:
+        """When db_dsn is set and connection succeeds, must return a DecisionRepository."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.core.bootstrap import _make_decision_store
+        from eedom.data.db import DecisionRepository
+
+        settings = MagicMock()
+        settings.db_dsn = "postgresql://user:pass@localhost:5432/eedom"
+
+        with patch("eedom.data.db.DecisionRepository.connect", return_value=True):
+            result = _make_decision_store(settings)
+
+        assert isinstance(result, DecisionRepository)
+
+    def test_with_dsn_and_failed_connection_falls_back_to_null(self) -> None:
+        """When db_dsn is set but connection fails, must fall back to NullDecisionStore."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.adapters.persistence import NullDecisionStore
+        from eedom.core.bootstrap import _make_decision_store
+
+        settings = MagicMock()
+        settings.db_dsn = "postgresql://user:pass@badhost:5432/eedom"
+
+        with patch("eedom.data.db.DecisionRepository.connect", return_value=False):
+            result = _make_decision_store(settings)
+
+        assert isinstance(
+            result, NullDecisionStore
+        ), "When db_dsn is set but connection fails, must fall back to NullDecisionStore"
+
+    def test_with_dsn_and_exception_falls_back_to_null(self) -> None:
+        """When DecisionRepository raises during construction, must fall back to NullDecisionStore."""
+        from unittest.mock import MagicMock, patch
+
+        from eedom.adapters.persistence import NullDecisionStore
+        from eedom.core.bootstrap import _make_decision_store
+
+        settings = MagicMock()
+        settings.db_dsn = "postgresql://user:pass@localhost:5432/eedom"
+
+        with patch("eedom.data.db.DecisionRepository.connect", side_effect=RuntimeError("boom")):
+            result = _make_decision_store(settings)
+
+        assert isinstance(
+            result, NullDecisionStore
+        ), "When DecisionRepository.connect raises, must fall back to NullDecisionStore"

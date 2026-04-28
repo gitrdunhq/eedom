@@ -28,10 +28,21 @@ def parse_sbom_packages(sbom: dict) -> dict[str, PackageInfo]:
     """Extract packages from a CycloneDX JSON SBOM.
 
     Returns a dict keyed by "{ecosystem}:{name}" for easy diffing.
+
+    Raises
+    ------
+    TypeError
+        If *sbom* is not a dict (e.g. None, str, list).  This turns a silent
+        AttributeError from untrusted input into a clear boundary rejection.
     """
+    if not isinstance(sbom, dict):
+        raise TypeError(f"SBOM must be a dict, got {type(sbom).__name__}")
+
     packages: dict[str, PackageInfo] = {}
 
     for component in sbom.get("components", []):
+        if not isinstance(component, dict):
+            continue
         name = component.get("name", "")
         version = component.get("version", "")
         purl = component.get("purl", "")
@@ -49,6 +60,35 @@ def parse_sbom_packages(sbom: dict) -> dict[str, PackageInfo]:
         )
 
     return packages
+
+
+def _make_change(
+    action: str,
+    old: PackageInfo | None,
+    new: PackageInfo | None,
+) -> dict:
+    """Build a standardised change dict from old/new PackageInfo.
+
+    Centralises the field layout so all three action branches (added, removed,
+    upgraded/downgraded) are guaranteed to produce identical key sets.  Using
+    one inline dict per branch made it easy to forget a field or mistype it in
+    one branch but not the others.
+
+    Args:
+        action: One of ``"added"``, ``"removed"``, ``"upgraded"``, ``"downgraded"``.
+        old:    The before-state PackageInfo, or None for additions.
+        new:    The after-state PackageInfo, or None for removals.
+    """
+    canonical = new if new is not None else old
+    assert canonical is not None, "at least one of old/new must be non-None"
+    return {
+        "action": action,
+        "package": canonical.name,
+        "ecosystem": canonical.ecosystem,
+        "old_version": old.version if old is not None else None,
+        "new_version": new.version if new is not None else None,
+        "purl": canonical.purl,
+    }
 
 
 def diff_sboms(before: dict, after: dict) -> list[dict]:
@@ -73,39 +113,12 @@ def diff_sboms(before: dict, after: dict) -> list[dict]:
         new = after_pkgs.get(key)
 
         if new and not old:
-            changes.append(
-                {
-                    "action": "added",
-                    "package": new.name,
-                    "ecosystem": new.ecosystem,
-                    "old_version": None,
-                    "new_version": new.version,
-                    "purl": new.purl,
-                }
-            )
+            changes.append(_make_change("added", None, new))
         elif old and not new:
-            changes.append(
-                {
-                    "action": "removed",
-                    "package": old.name,
-                    "ecosystem": old.ecosystem,
-                    "old_version": old.version,
-                    "new_version": None,
-                    "purl": old.purl,
-                }
-            )
+            changes.append(_make_change("removed", old, None))
         elif old and new and old.version != new.version:
             action = _classify_version_change(old.version, new.version)
-            changes.append(
-                {
-                    "action": action,
-                    "package": new.name,
-                    "ecosystem": new.ecosystem,
-                    "old_version": old.version,
-                    "new_version": new.version,
-                    "purl": new.purl,
-                }
-            )
+            changes.append(_make_change(action, old, new))
 
     logger.info(
         "sbom_diff_complete",
@@ -125,11 +138,11 @@ def _classify_version_change(old_ver: str, new_ver: str) -> str:
         return "upgraded" if Version(old_ver) < Version(new_ver) else "downgraded"
     except InvalidVersion:
         logger.warning(
-            "version_parse_failed",
+            "version_string_comparison_fallback",
             old_version=old_ver,
             new_version=new_ver,
         )
-        return "upgraded"
+        return "upgraded" if old_ver < new_ver else "downgraded"
 
 
 _PURL_ECOSYSTEM_MAP: dict[str, str] = {

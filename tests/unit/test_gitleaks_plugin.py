@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from eedom.core.plugin import PluginCategory
+from eedom.core.subprocess_runner import SubprocessToolRunner
+from eedom.core.tool_runner import ToolResult
 from eedom.plugins.gitleaks import GitleaksPlugin
 
 LEAK_OUTPUT = json.dumps(
@@ -156,3 +158,90 @@ class TestGitleaksPlugin:
 
         cmd = mock_run.call_args[0][0]
         assert "--config" not in cmd
+
+
+class TestGitleaksFileHandleLeak:
+    """File handle must be cleaned up even when exceptions occur mid-run."""
+
+    def test_unlink_called_when_read_text_raises_oserror(self, tmp_path):
+        """unlink(missing_ok=True) is called even when read_text raises OSError."""
+        mock_runner = MagicMock(spec=SubprocessToolRunner)
+        mock_runner.run.return_value = MagicMock(not_installed=False, timed_out=False)
+        plugin = GitleaksPlugin(tool_runner=mock_runner)
+
+        with patch("tempfile.mktemp", return_value="/fake/gitleaks-leak-test.json"):
+            with patch.object(Path, "exists", return_value=True):
+                with patch.object(Path, "read_text", side_effect=OSError("disk error")):
+                    with patch.object(Path, "unlink") as mock_unlink:
+                        try:
+                            plugin.run([], tmp_path)
+                        except OSError:
+                            pass  # exception may propagate — that's fine
+
+        assert mock_unlink.called, "unlink must be called even when read_text raises OSError"
+        assert any(
+            c[1].get("missing_ok") is True for c in mock_unlink.call_args_list
+        ), "unlink must be called with missing_ok=True"
+
+    def test_unlink_always_called_on_successful_run(self, tmp_path):
+        """Temp file is cleaned up on a normal successful run."""
+        mock_runner = MagicMock(spec=SubprocessToolRunner)
+        mock_runner.run.return_value = MagicMock(not_installed=False, timed_out=False)
+        plugin = GitleaksPlugin(tool_runner=mock_runner)
+
+        report_json = json.dumps([])
+
+        with patch("tempfile.mktemp", return_value="/fake/gitleaks-ok-test.json"):
+            with patch.object(Path, "exists", return_value=True):
+                with patch.object(Path, "read_text", return_value=report_json):
+                    with patch.object(Path, "unlink") as mock_unlink:
+                        plugin.run([], tmp_path)
+
+        assert mock_unlink.called, "unlink must be called on a clean (no-leak) run"
+        assert any(
+            c[1].get("missing_ok") is True for c in mock_unlink.call_args_list
+        ), "unlink must be called with missing_ok=True"
+
+
+class TestGitleaksPluginExitCode:
+    """GitleaksPlugin must distinguish expected exit codes from actual crashes."""
+
+    def test_unexpected_exit_code_no_report_returns_error(self, tmp_path) -> None:
+        """exit_code=2 with no report written → BINARY_CRASHED (total failure)."""
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=2, stdout="", stderr="fatal crash")
+        plugin = GitleaksPlugin(tool_runner=runner)
+
+        nonexistent = str(tmp_path / "no-report.json")
+        with patch("tempfile.mktemp", return_value=nonexistent):
+            result = plugin.run([], tmp_path)
+
+        assert "BINARY_CRASHED" in result.error
+
+    def test_exit_code_one_with_report_proceeds_normally(self, tmp_path) -> None:
+        """exit_code=1 is normal gitleaks behaviour (leaks found) — must not return error."""
+        report = tmp_path / "gl.json"
+        report.write_text(LEAK_OUTPUT)
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=1, stdout="", stderr="")
+        plugin = GitleaksPlugin(tool_runner=runner)
+
+        with patch("tempfile.mktemp", return_value=str(report)):
+            result = plugin.run([], tmp_path)
+
+        assert result.error == ""
+        assert len(result.findings) == 2
+
+    def test_unexpected_exit_code_with_report_proceeds_with_warning(self, tmp_path) -> None:
+        """exit_code=2 but gitleaks still wrote a report — warn and surface findings."""
+        report = tmp_path / "gl.json"
+        report.write_text(LEAK_OUTPUT)
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=2, stdout="", stderr="")
+        plugin = GitleaksPlugin(tool_runner=runner)
+
+        with patch("tempfile.mktemp", return_value=str(report)):
+            result = plugin.run([], tmp_path)
+
+        assert result.error == ""
+        assert len(result.findings) == 2

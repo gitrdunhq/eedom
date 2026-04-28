@@ -39,26 +39,34 @@ class OpaRegoAdapter:
         """
         opa_input = self._build_opa_input(input)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=True) as tmp:
-            json.dump(opa_input, tmp)
-            tmp.flush()
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=True) as tmp:
+                json.dump(opa_input, tmp)
+                tmp.flush()
 
-            invocation = ToolInvocation(
-                cmd=[
-                    "opa",
-                    "eval",
-                    "-d",
-                    self._policy_path,
-                    "-i",
-                    tmp.name,
-                    "--format",
-                    "json",
-                    "data.policy",
-                ],
-                cwd=".",
-                timeout=_OPA_TIMEOUT,
+                invocation = ToolInvocation(
+                    cmd=[
+                        "opa",
+                        "eval",
+                        "-d",
+                        self._policy_path,
+                        "-i",
+                        tmp.name,
+                        "--format",
+                        "json",
+                        "data.policy",
+                    ],
+                    cwd=".",
+                    timeout=_OPA_TIMEOUT,
+                )
+                result = self._tool_runner.run(invocation)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "opa_adapter_exception",
+                error=str(exc),
+                error_type=type(exc).__name__,
             )
-            result = self._tool_runner.run(invocation)
+            return PolicyDecision(verdict="needs_review")
 
         if result.timed_out or result.not_installed:
             log.warning(

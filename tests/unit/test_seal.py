@@ -322,6 +322,73 @@ def test_any_single_byte_change_breaks_seal(
         assert not result["valid"]
 
 
+# ---------------------------------------------------------------------------
+# Security: path traversal in artifact["path"]
+# ---------------------------------------------------------------------------
+
+
+class TestPathTraversalRejected:
+    def test_relative_traversal_rejected(self, tmp_path: Path) -> None:
+        """'../secret.txt' in artifact path must be caught as path traversal, not followed."""
+        evidence_dir = tmp_path / "evidence"
+        evidence_dir.mkdir()
+
+        # Place a real file outside evidence_dir that the traversal would reach
+        external = tmp_path / "secret.txt"
+        external.write_text("top secret")
+
+        seal = {
+            "version": "1.0",
+            "run_id": "test/run",
+            "commit_sha": "abc123",
+            "timestamp": "2026-04-23T14:30:00Z",
+            "previous_seal_hash": "",
+            "artifacts": [{"path": "../secret.txt", "sha256": "abc"}],
+            "manifest_hash": "sha256:abc",
+            "seal_hash": "sha256:def",
+        }
+        (evidence_dir / SEAL_FILENAME).write_text(json.dumps(seal))
+
+        result = verify_seal(evidence_dir)
+
+        assert result["valid"] is False
+        assert any("path traversal" in e.lower() for e in result["errors"])
+
+    def test_absolute_path_in_artifact_rejected(self, tmp_path: Path) -> None:
+        """An absolute artifact path like '/etc/passwd' must be rejected as path traversal."""
+        evidence_dir = tmp_path / "evidence"
+        evidence_dir.mkdir()
+
+        seal = {
+            "version": "1.0",
+            "run_id": "test/run",
+            "commit_sha": "abc123",
+            "timestamp": "2026-04-23T14:30:00Z",
+            "previous_seal_hash": "",
+            "artifacts": [{"path": "/etc/passwd", "sha256": "abc"}],
+            "manifest_hash": "sha256:abc",
+            "seal_hash": "sha256:def",
+        }
+        (evidence_dir / SEAL_FILENAME).write_text(json.dumps(seal))
+
+        result = verify_seal(evidence_dir)
+
+        assert result["valid"] is False
+        assert any("path traversal" in e.lower() for e in result["errors"])
+
+    def test_legitimate_subdir_artifact_still_works(self, tmp_path: Path) -> None:
+        """A normal relative artifact path within evidence_dir continues to work."""
+        evidence_dir = tmp_path / "evidence"
+        evidence_dir.mkdir()
+        (evidence_dir / "sub").mkdir()
+        (evidence_dir / "sub" / "report.json").write_text('{"ok": true}')
+
+        create_seal(evidence_dir, "run/001", "abc123", "")
+
+        result = verify_seal(evidence_dir)
+        assert result["valid"] is True
+
+
 @given(
     content=st.binary(min_size=1, max_size=100),
     hash1=st.text(alphabet="abcdef0123456789", min_size=4, max_size=64),

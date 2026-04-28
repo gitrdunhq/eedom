@@ -58,6 +58,17 @@ _MANIFEST_FILES: dict[str, str] = {
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_.@\-/]+$")
 
+# Characters that are dangerous in shell contexts and must never appear in
+# file paths extracted from untrusted diff input.
+_SHELL_DANGEROUS_CHARS: frozenset[str] = frozenset(
+    {";", "&", "|", "`", "$", "(", ")", "\n", "\r", "\0"}
+)
+
+
+def _is_safe_path(path: str) -> bool:
+    """Return False if *path* contains shell metacharacters or control chars."""
+    return not any(c in path for c in _SHELL_DANGEROUS_CHARS)
+
 
 def run_pipeline_with_context(
     context: object,
@@ -77,7 +88,11 @@ def run_pipeline_with_context(
 
 
 def extract_changed_files(diff_text: str) -> list[str]:
-    """Extract file paths from a unified diff, skipping deleted files."""
+    """Extract file paths from a unified diff, skipping deleted files.
+
+    Paths containing shell metacharacters are silently dropped to prevent
+    command-injection if callers ever interpolate paths into subprocess calls.
+    """
     files: list[str] = []
     lines = diff_text.split("\n")
     i = 0
@@ -85,11 +100,23 @@ def extract_changed_files(diff_text: str) -> list[str]:
         match = re.match(r"^diff --git a/.+ b/(.+)$", lines[i])
         if match:
             path = match.group(1)
+            if not _is_safe_path(path):
+                logger.warning("extract_changed_files.unsafe_path_blocked", path=path)
+                i += 1
+                continue
             is_deleted = False
             for j in range(i + 1, len(lines)):
                 if lines[j].startswith("diff --git"):
                     break
                 if lines[j] == "+++ /dev/null":
+                    is_deleted = True
+                    break
+                # Binary file deletion uses a different marker — no +++ /dev/null line
+                if (
+                    lines[j].startswith("Binary files")
+                    and "/dev/null" in lines[j]
+                    and "differ" in lines[j]
+                ):
                     is_deleted = True
                     break
             if not is_deleted:
@@ -99,10 +126,17 @@ def extract_changed_files(diff_text: str) -> list[str]:
 
 
 def validate_paths(changed_files: list[str], repo_path: str) -> list[str]:
-    """Filter paths to only those safely inside the repo root."""
+    """Filter paths to only those safely inside the repo root.
+
+    Rejects paths with shell metacharacters before the traversal check so
+    that characters like ';', '|', '$' never reach subprocess interpolation.
+    """
     root = Path(repo_path).resolve()
     safe: list[str] = []
     for f in changed_files:
+        if not _is_safe_path(f):
+            logger.warning("validate_paths.unsafe_path_blocked", path=f)
+            continue
         try:
             resolved = (root / f).resolve()
             if resolved.is_relative_to(root):
@@ -167,7 +201,17 @@ def make_pipeline_config() -> object:
 
 
 def run_syft(repo_path: str, timeout: int = 120) -> dict:
-    """Run Syft to generate a CycloneDX SBOM. Returns parsed JSON."""
+    """Run Syft to generate a CycloneDX SBOM. Returns parsed JSON.
+
+    Raises:
+        ValueError: If repo_path does not exist or is not a directory.
+    """
+    repo_path_obj = Path(repo_path).resolve()
+    if not repo_path_obj.exists():
+        raise ValueError(f"repo_path does not exist: {repo_path}")
+    if not repo_path_obj.is_dir():
+        raise ValueError(f"repo_path is not a directory: {repo_path}")
+
     result = subprocess.run(
         ["syft", f"dir:{repo_path}", "-o", "cyclonedx-json"],
         capture_output=True,
@@ -195,24 +239,30 @@ def _generate_base_sbom(repo_path: str) -> dict:
             logger.info("sbom.no_merge_base", msg="Using empty baseline")
             return {"components": []}
 
-        current_sha = subprocess.run(
-            ["git", "-C", repo_path, "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        ).stdout.strip()
-
+        # Use git worktree to create an isolated checkout so the shared working
+        # tree is never modified — avoids the race condition that occurred when
+        # concurrent calls both ran 'git checkout' on the same directory.
+        worktree_path = str(Path(repo_path) / ".temp" / f"sbom-base-{base_sha[:8]}")
         subprocess.run(
-            ["git", "-C", repo_path, "checkout", base_sha, "--quiet"],
+            ["git", "-C", repo_path, "worktree", "add", worktree_path, base_sha],
+            capture_output=True,
             timeout=10,
             check=False,
         )
         try:
-            base_sbom = run_syft(repo_path)
+            base_sbom = run_syft(worktree_path)
         finally:
             subprocess.run(
-                ["git", "-C", repo_path, "checkout", current_sha, "--quiet"],
+                [
+                    "git",
+                    "-C",
+                    repo_path,
+                    "worktree",
+                    "remove",
+                    worktree_path,
+                    "--force",
+                ],
+                capture_output=True,
                 timeout=10,
                 check=False,
             )

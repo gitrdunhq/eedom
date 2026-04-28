@@ -86,7 +86,11 @@ class CodeGraph:
         self._register_builtin_checks()
 
     def _register_builtin_checks(self) -> None:
+        required = {"name", "query", "severity", "description"}
         for check in _load_builtin_checks():
+            if not required.issubset(check):
+                logger.warning("graph.malformed_check", missing=sorted(required - set(check)))
+                continue
             self.conn.execute(
                 "INSERT OR IGNORE INTO checks (name, query, severity, description)"
                 " VALUES (?, ?, ?, ?)",
@@ -141,14 +145,14 @@ class CodeGraph:
     def run_checks(self, changed_files: list[str]) -> list[dict]:
         if not changed_files:
             return []
-        placeholders = ",".join(f"'{f}'" for f in changed_files)
+        placeholders = ",".join("?" for _ in changed_files)
         checks = self.conn.execute("SELECT * FROM checks").fetchall()
         findings: list[dict] = []
         for check in checks:
             query = check["query"].replace("{changed_files}", placeholders)
             query = query.replace("{fan_out_limit}", str(self._fan_out_limit))
             try:
-                rows = self.conn.execute(query).fetchall()
+                rows = self.conn.execute(query, changed_files).fetchall()
                 for row in rows:
                     findings.append(
                         {
@@ -348,6 +352,8 @@ class CodeGraph:
         )
 
     def _add_import_edge(self, file_path: str, module_name: str) -> None:
+        if module_name.startswith("/") or ".." in module_name or "\\" in module_name:
+            return
         mod_symbol = module_name.split(".")[-1]
         self._upsert_symbol(file_path, "module", file_path, 0, None)
         self._upsert_symbol(mod_symbol, "module", module_name, 0, None)

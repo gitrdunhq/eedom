@@ -825,6 +825,230 @@ class TestReviewRepoConfigWiring:
         assert "--package" in result.output
 
 
+class TestEvaluateInputValidation:
+    """Input validation on evaluate command (wave2-finding-0)."""
+
+    def test_evaluate_repo_path_not_exists(self, tmp_path: Path) -> None:
+        """evaluate rejects --repo-path that does not exist."""
+        nonexistent = tmp_path / "nonexistent"
+        runner = CliRunner()
+        with patch("eedom.core.config.EedomSettings", side_effect=Exception("no config")):
+            result = runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    "--repo-path",
+                    str(nonexistent),
+                    "--diff",
+                    "-",
+                    "--pr-url",
+                    "https://github.com/org/repo/pull/1",
+                    "--team",
+                    "platform",
+                    "--operating-mode",
+                    "monitor",
+                ],
+                input="",
+            )
+        assert result.exit_code != 0
+        assert "does not exist" in result.output or "Error" in result.output
+
+    def test_evaluate_repo_path_not_directory(self, tmp_path: Path) -> None:
+        """evaluate rejects --repo-path that points to a file, not a directory."""
+        file_path = tmp_path / "notadir.txt"
+        file_path.write_text("test")
+        runner = CliRunner()
+        with patch("eedom.core.config.EedomSettings", side_effect=Exception("no config")):
+            result = runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    "--repo-path",
+                    str(file_path),
+                    "--diff",
+                    "-",
+                    "--pr-url",
+                    "https://github.com/org/repo/pull/1",
+                    "--team",
+                    "platform",
+                    "--operating-mode",
+                    "monitor",
+                ],
+                input="",
+            )
+        assert result.exit_code != 0
+        assert "not a directory" in result.output or "Error" in result.output
+
+    def test_evaluate_pr_url_invalid_format(self, tmp_path: Path) -> None:
+        """evaluate rejects --pr-url that is not a valid GitHub PR URL."""
+        runner = CliRunner()
+        with patch("eedom.core.config.EedomSettings", side_effect=Exception("no config")):
+            result = runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    "--repo-path",
+                    str(tmp_path),
+                    "--diff",
+                    "-",
+                    "--pr-url",
+                    "not-a-valid-url",
+                    "--team",
+                    "platform",
+                    "--operating-mode",
+                    "monitor",
+                ],
+                input="",
+            )
+        assert result.exit_code != 0
+        assert "github.com" in result.output or "Error" in result.output
+
+    def test_evaluate_pr_url_non_github(self, tmp_path: Path) -> None:
+        """evaluate rejects --pr-url pointing to non-GitHub services."""
+        runner = CliRunner()
+        with patch("eedom.core.config.EedomSettings", side_effect=Exception("no config")):
+            result = runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    "--repo-path",
+                    str(tmp_path),
+                    "--diff",
+                    "-",
+                    "--pr-url",
+                    "https://gitlab.com/owner/repo/merge_requests/123",
+                    "--team",
+                    "platform",
+                    "--operating-mode",
+                    "monitor",
+                ],
+                input="",
+            )
+        assert result.exit_code != 0
+        assert "github.com" in result.output or "Error" in result.output
+
+    def test_evaluate_team_invalid(self, tmp_path: Path) -> None:
+        """evaluate rejects --team values not in the allowed list."""
+        runner = CliRunner()
+        with patch("eedom.core.config.EedomSettings", side_effect=Exception("no config")):
+            result = runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    "--repo-path",
+                    str(tmp_path),
+                    "--diff",
+                    "-",
+                    "--pr-url",
+                    "https://github.com/org/repo/pull/1",
+                    "--team",
+                    "invalid_team_xyz",
+                    "--operating-mode",
+                    "monitor",
+                ],
+                input="",
+            )
+        assert result.exit_code != 0
+        assert "team" in result.output.lower() or "Error" in result.output
+
+
+class TestEvaluateExceptionLogging:
+    """Pipeline exceptions must be logged via logger.error (wave2-finding-1)."""
+
+    def test_pipeline_exception_uses_logger_error_not_exception(self, tmp_path: Path) -> None:
+        """Pipeline failures must call logger.error (exc_info=True), not logger.exception."""
+        runner = CliRunner()
+        with (
+            patch("eedom.core.config.EedomSettings") as mock_settings,
+            patch(
+                "eedom.core.bootstrap.bootstrap",
+                side_effect=ValueError("simulated pipeline error"),
+            ),
+            patch("eedom.cli.main.logger") as mock_logger,
+        ):
+            mock_settings.return_value = MagicMock()
+            with runner.isolated_filesystem():
+                result = runner.invoke(
+                    cli,
+                    [
+                        "evaluate",
+                        "--repo-path",
+                        ".",
+                        "--diff",
+                        "-",
+                        "--pr-url",
+                        "https://github.com/org/repo/pull/1",
+                        "--team",
+                        "platform",
+                        "--operating-mode",
+                        "monitor",
+                    ],
+                    input="",
+                )
+
+        assert result.exit_code == 1
+        assert mock_logger.error.called, "logger.error must be called on pipeline failure"
+        assert not mock_logger.exception.called, "logger.exception must not be used"
+
+
+class TestReviewGhRepoValidation:
+    """GitHub repo format validation on review command (wave2-finding-4)."""
+
+    _REG_PATCH = "eedom.cli.main.get_default_registry"
+
+    def _mock_registry(self) -> MagicMock:
+        mock_reg = MagicMock()
+        mock_reg.run_all.return_value = []
+        mock_reg.list.return_value = []
+        return mock_reg
+
+    def test_review_gh_repo_invalid_no_slash(self) -> None:
+        """--repo without slash (no owner/name separator) is rejected."""
+        runner = CliRunner()
+        mock_reg = self._mock_registry()
+        with patch(self._REG_PATCH, return_value=mock_reg), runner.isolated_filesystem():
+            result = runner.invoke(cli, ["review", "--repo-path", ".", "--repo", "invalid"])
+        assert result.exit_code != 0
+        assert "Invalid GitHub repo format" in result.output or "owner/name" in result.output
+
+    def test_review_gh_repo_invalid_trailing_slash(self) -> None:
+        """--repo with trailing slash and no name (owner/) is rejected."""
+        runner = CliRunner()
+        mock_reg = self._mock_registry()
+        with patch(self._REG_PATCH, return_value=mock_reg), runner.isolated_filesystem():
+            result = runner.invoke(cli, ["review", "--repo-path", ".", "--repo", "owner/"])
+        assert result.exit_code != 0
+        assert "Invalid GitHub repo format" in result.output or "owner/name" in result.output
+
+    def test_review_gh_repo_invalid_leading_slash(self) -> None:
+        """--repo with leading slash (missing owner) is rejected."""
+        runner = CliRunner()
+        mock_reg = self._mock_registry()
+        with patch(self._REG_PATCH, return_value=mock_reg), runner.isolated_filesystem():
+            result = runner.invoke(cli, ["review", "--repo-path", ".", "--repo", "/name"])
+        assert result.exit_code != 0
+        assert "Invalid GitHub repo format" in result.output or "owner/name" in result.output
+
+    def test_review_gh_repo_invalid_too_many_parts(self) -> None:
+        """--repo with extra path segments (owner/name/extra) is rejected."""
+        runner = CliRunner()
+        mock_reg = self._mock_registry()
+        with patch(self._REG_PATCH, return_value=mock_reg), runner.isolated_filesystem():
+            result = runner.invoke(
+                cli, ["review", "--repo-path", ".", "--repo", "owner/name/extra"]
+            )
+        assert result.exit_code != 0
+        assert "Invalid GitHub repo format" in result.output or "owner/name" in result.output
+
+    def test_review_gh_repo_valid_format_accepted(self) -> None:
+        """--repo with valid owner/name format does not trigger validation error."""
+        runner = CliRunner()
+        mock_reg = self._mock_registry()
+        with patch(self._REG_PATCH, return_value=mock_reg), runner.isolated_filesystem():
+            result = runner.invoke(cli, ["review", "--repo-path", ".", "--repo", "my-org/my-repo"])
+        assert "Invalid GitHub repo format" not in result.output
+
+
 class TestWatchExtensionsIncludesJson:
     """Watch mode must detect .json file changes (issue #81)."""
 

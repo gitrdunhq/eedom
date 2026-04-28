@@ -302,6 +302,101 @@ class TestPurgeDeletedFiles:
         assert "alpha" in names
 
 
+class TestImportEdgePathTraversal:
+    """_add_import_edge must reject paths that could escape the indexed directory."""
+
+    def test_rejects_absolute_path(self):
+        """Absolute path as module_name must not be stored in the database."""
+        graph = CodeGraph(":memory:")
+        graph._add_import_edge("legitimate.py", "/etc/passwd")
+        result = graph.conn.execute(
+            "SELECT * FROM symbols WHERE file = ?", ("/etc/passwd",)
+        ).fetchall()
+        assert len(result) == 0, "Absolute path must not be stored in symbols table"
+
+    def test_rejects_parent_traversal(self):
+        """Parent-traversal module names must not be stored in the database."""
+        graph = CodeGraph(":memory:")
+        graph._add_import_edge("src/mycode.py", "../../sensitive/module")
+        result = graph.conn.execute(
+            "SELECT * FROM symbols WHERE file = ?", ("../../sensitive/module",)
+        ).fetchall()
+        assert len(result) == 0, "Parent-traversal path must not be stored in symbols table"
+
+    def test_rejects_backslash_traversal(self):
+        """Windows-style path traversal must be rejected."""
+        graph = CodeGraph(":memory:")
+        graph._add_import_edge("src/mycode.py", "..\\..\\sensitive")
+        result = graph.conn.execute(
+            "SELECT * FROM symbols WHERE file = ?", ("..\\..\\sensitive",)
+        ).fetchall()
+        assert len(result) == 0, "Backslash traversal must not be stored"
+
+    def test_accepts_valid_dotted_module(self):
+        """Standard dotted module names like 'utils.helpers' must be indexed."""
+        graph = CodeGraph(":memory:")
+        graph._add_import_edge("src/mycode.py", "utils.helpers")
+        result = graph.conn.execute("SELECT * FROM symbols WHERE name = 'helpers'").fetchall()
+        assert len(result) > 0, "Valid dotted module name must be indexed"
+
+    def test_accepts_stdlib_module(self):
+        """Standard library names like 'os.path' must be indexed."""
+        graph = CodeGraph(":memory:")
+        graph._add_import_edge("app.py", "os.path")
+        result = graph.conn.execute("SELECT * FROM symbols WHERE name = 'path'").fetchall()
+        assert len(result) > 0, "stdlib module name must be indexed"
+
+
+class TestMalformedChecksYaml:
+    """_register_builtin_checks must skip malformed entries without crashing."""
+
+    def test_malformed_check_missing_query_is_skipped(self, tmp_path):
+        """A check entry missing 'query' is skipped; valid checks are still registered."""
+        from unittest.mock import patch
+
+        yaml_content = textwrap.dedent("""\
+            checks:
+              - name: valid_check
+                query: "SELECT COUNT(*) as c FROM symbols"
+                severity: info
+                description: "A valid check"
+              - name: missing_query_check
+                severity: warning
+                description: "This entry is missing the query field"
+            """)
+        yaml_path = tmp_path / "checks.yaml"
+        yaml_path.write_text(yaml_content)
+
+        with patch("eedom.plugins._runners.graph_builder._CHECKS_YAML", yaml_path):
+            graph = CodeGraph()  # must not raise
+
+        count = graph.conn.execute("SELECT COUNT(*) as c FROM checks").fetchone()["c"]
+        assert count == 1, f"Expected 1 valid check registered, got {count}"
+
+    def test_malformed_check_missing_name_is_skipped(self, tmp_path):
+        """A check entry missing 'name' is skipped without crashing."""
+        from unittest.mock import patch
+
+        yaml_content = textwrap.dedent("""\
+            checks:
+              - name: good_check
+                query: "SELECT COUNT(*) as c FROM symbols"
+                severity: info
+                description: "Valid"
+              - query: "SELECT COUNT(*) as c FROM symbols"
+                severity: info
+                description: "Missing name field"
+            """)
+        yaml_path = tmp_path / "checks.yaml"
+        yaml_path.write_text(yaml_content)
+
+        with patch("eedom.plugins._runners.graph_builder._CHECKS_YAML", yaml_path):
+            graph = CodeGraph()
+
+        count = graph.conn.execute("SELECT COUNT(*) as c FROM checks").fetchone()["c"]
+        assert count == 1, f"Expected 1 valid check, got {count}"
+
+
 class TestBlastRadiusPersistence:
     def test_blast_radius_plugin_uses_persistent_db(self, tmp_path, monkeypatch):
         """BlastRadiusPlugin reads db_path from config and passes it to CodeGraph."""
@@ -315,3 +410,56 @@ class TestBlastRadiusPersistence:
         result = plugin.run([str(src)], repo_path=tmp_path)
         assert result.error == ""
         assert result.summary.get("symbols_indexed", 0) > 0
+
+
+class TestSqlInjectionPrevention:
+    """Wave 1 Task 1.1: file paths must not be interpolated into SQL."""
+
+    def test_injection_does_not_match_unrelated_files(self, tmp_path):
+        """SQL injection via file path must not return rows from other files.
+
+        Uses a real SQLite db + a custom check with {changed_files}.
+        With vulnerable code (f-string interpolation), `' OR 1=1 --` expands to
+        IN ('' OR 1=1 --') which matches ALL rows. With parameterized queries,
+        the literal string "' OR 1=1 --" is bound and matches nothing.
+        """
+        graph = CodeGraph(str(tmp_path / "test.db"))
+        graph.index_file("legit.py", SAMPLE_A)
+
+        graph.register_check(
+            name="injection-test",
+            query="SELECT name, file FROM symbols WHERE file IN ({changed_files})",
+            severity="high",
+            description="test check",
+        )
+
+        findings = graph.run_checks(["') OR file IS NOT NULL --"])
+
+        # With parameterized binding: zero findings (literal string matches nothing)
+        # With interpolation: IN ('') OR file IS NOT NULL --') matches ALL rows
+        legit_hits = [f for f in findings if f.get("file") == "legit.py"]
+        assert len(legit_hits) == 0, (
+            f"SQL injection: matched {len(legit_hits)} rows from legit.py "
+            f"via injected file path"
+        )
+
+    def test_file_path_with_quotes_safe(self, tmp_path):
+        """Paths with single/double quotes must be handled safely."""
+        graph = CodeGraph(str(tmp_path / "test.db"))
+        graph.index_file("safe.py", SAMPLE_A)
+
+        graph.register_check(
+            name="quotes-test",
+            query="SELECT name, file FROM symbols WHERE file IN ({changed_files})",
+            severity="info",
+            description="test check",
+        )
+
+        tricky_paths = [
+            "file'with'quotes.py",
+            'file"with"doublequotes.py',
+            "file\\with\\backslashes.py",
+        ]
+        findings = graph.run_checks(tricky_paths)
+        count = graph.conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
+        assert count > 0

@@ -45,9 +45,17 @@ class ComplexityPlugin(ScannerPlugin):
             summary=data.get("summary", {}),
         )
 
+    @staticmethod
+    def _ccn_int(f: dict) -> int:
+        """Coerce cyclomatic_complexity to int; return 0 if unparseable."""
+        try:
+            return int(f.get("cyclomatic_complexity", 0))
+        except (TypeError, ValueError):
+            return 0
+
     def _template_context(self, result: PluginResult) -> dict:
         ctx = super()._template_context(result)
-        ctx["high_ccn"] = [f for f in result.findings if f.get("cyclomatic_complexity", 0) > 10]
+        ctx["high_ccn"] = [f for f in result.findings if self._ccn_int(f) > 10]
         return ctx
 
     def _render_inline(
@@ -66,7 +74,7 @@ class ComplexityPlugin(ScannerPlugin):
         lines.append(
             f"<summary>📊 <b>Complexity (avg CCN: {avg}, max: {mx}, {nloc} NLOC)</b></summary>\n"
         )
-        high = [f for f in result.findings if f.get("cyclomatic_complexity", 0) > 10]
+        high = [f for f in result.findings if self._ccn_int(f) > 10]
         if high:
             lines.append("**⚠️ High complexity (CCN > 10):**\n")
             lines.append("| Function | File | CCN | MI | NLOC |")

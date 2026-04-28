@@ -603,3 +603,46 @@ class TestRegressionOutputUnchanged:
         assert "💥" in out
         assert "Blast Radius" in out
         assert "</details>" in out
+
+
+# ── Templates package utility tests ──────────────────────────────────────────
+
+
+class TestTemplatesPackageUtils:
+    """Tests for the templates package utility functions.
+
+    Written RED-first: these fail until get_templates_dir() and list_templates()
+    are added to src/eedom/templates/__init__.py.
+    """
+
+    def test_get_templates_dir_returns_existing_path(self):
+        from eedom.templates import get_templates_dir
+
+        d = get_templates_dir()
+        assert d.exists(), "templates dir must exist on disk"
+        assert d.is_dir(), "templates dir must be a directory"
+
+    def test_get_templates_dir_points_to_correct_location(self):
+        from eedom.templates import get_templates_dir
+
+        d = get_templates_dir()
+        assert (d / "comment.md.j2").exists(), "comment.md.j2 must be inside templates dir"
+
+    def test_list_templates_returns_list(self):
+        from eedom.templates import list_templates
+
+        templates = list_templates()
+        assert isinstance(templates, list), "list_templates() must return a list"
+
+    def test_list_templates_finds_jinja2_files(self):
+        from eedom.templates import list_templates
+
+        templates = list_templates()
+        assert len(templates) > 0, "templates dir must contain at least one .j2 file"
+        assert "comment.md.j2" in templates, "comment.md.j2 must be discoverable"
+
+    def test_list_templates_is_sorted(self):
+        from eedom.templates import list_templates
+
+        templates = list_templates()
+        assert templates == sorted(templates), "list_templates() output must be sorted"

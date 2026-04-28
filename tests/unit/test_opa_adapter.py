@@ -238,3 +238,31 @@ class TestReturnTypeContract:
         findings = [_make_finding(id="CVE-2024-9999", severity="critical")]
         decision = adapter.evaluate(_make_input(findings=findings))
         assert decision.verdict == "reject"
+
+
+# ---------------------------------------------------------------------------
+# 6. Unexpected exception handling — never raises contract
+# ---------------------------------------------------------------------------
+
+
+class _ExplodingRunner:
+    """Simulates a tool runner that raises an unexpected exception."""
+
+    def run(self, invocation: ToolInvocation) -> ToolResult:
+        raise RuntimeError("Unexpected tool runner explosion")
+
+
+class TestUnexpectedExceptionHandling:
+    def test_evaluate_handles_unexpected_tool_runner_exception(self):
+        """evaluate() must degrade to needs_review when tool_runner raises unexpectedly."""
+        adapter = OpaRegoAdapter(policy_path="/fake/policies", tool_runner=_ExplodingRunner())
+        result = adapter.evaluate(_make_input())
+        assert result.verdict == "needs_review"
+        assert result.deny_reasons == []
+        assert result.warn_reasons == []
+
+    def test_evaluate_returns_policy_decision_on_unexpected_exception(self):
+        """evaluate() must return a PolicyDecision instance even on unexpected exceptions."""
+        adapter = OpaRegoAdapter(policy_path="/fake/policies", tool_runner=_ExplodingRunner())
+        result = adapter.evaluate(_make_input())
+        assert isinstance(result, PolicyDecision)
