@@ -26,6 +26,16 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      - name: Auto-merge release PR
+        if: steps.release.outputs.pr
+        run: |
+          PR_NUM=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number')
+          if [ "$PR_NUM" != "null" ] && [ -n "$PR_NUM" ]; then
+            gh pr merge "$PR_NUM" --auto --rebase || true
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   verify-key:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
