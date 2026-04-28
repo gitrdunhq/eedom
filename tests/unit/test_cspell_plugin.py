@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,14 +37,15 @@ class TestCspellDictionaryConstant:
 
 class TestCspellPluginCommand:
     @patch("eedom.plugins.cspell.subprocess.run")
-    def test_command_includes_dictionaries_flag(self, mock_run):
+    def test_command_includes_dictionary_flags(self, mock_run):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = ""
         mock_run.return_value.stderr = ""
         p = CspellPlugin()
         p.run(["app.py"], Path("."))
         cmd = mock_run.call_args[0][0]
-        assert "--dictionaries" in cmd
+        assert "--dictionary" in cmd
+        assert "--dictionaries" not in cmd
 
     @patch("eedom.plugins.cspell.subprocess.run")
     def test_command_includes_all_expected_dictionaries(self, mock_run):
@@ -53,10 +55,9 @@ class TestCspellPluginCommand:
         p = CspellPlugin()
         p.run(["app.py"], Path("."))
         cmd = mock_run.call_args[0][0]
-        dict_idx = cmd.index("--dictionaries")
-        # The dictionaries value is the next argument (comma-separated)
-        dict_value = cmd[dict_idx + 1]
-        actual_dicts = dict_value.split(",")
+        actual_dicts = [
+            cmd[i + 1] for i, value in enumerate(cmd) if value == "--dictionary"
+        ]
         for expected in CSPELL_DICTIONARIES:
             assert expected in actual_dicts, f"{expected!r} missing from --dictionaries arg"
 
@@ -80,10 +81,11 @@ class TestCspellPluginCommand:
         p = CspellPlugin()
         p.run(["app.py"], Path("."))
         cmd = mock_run.call_args[0][0]
-        dict_idx = cmd.index("--dictionaries")
-        dict_value = cmd[dict_idx + 1]
+        actual_dicts = [
+            cmd[i + 1] for i, value in enumerate(cmd) if value == "--dictionary"
+        ]
         for d in ("python", "typescript", "golang", "docker", "k8s"):
-            assert d in dict_value, f"{d!r} missing from dictionaries value"
+            assert d in actual_dicts, f"{d!r} missing from dictionaries value"
 
 
 class TestCspellPluginBasics:
@@ -141,3 +143,31 @@ class TestCspellPluginBasics:
         result = PluginResult(plugin_name="cspell", error="not installed")
         md = p.render(result)
         assert "not installed" in md
+
+
+class TestCspellFallbacks:
+    @patch("eedom.plugins.cspell.subprocess.run")
+    def test_retries_without_dictionaries_on_dictionary_error(self, mock_run):
+        first = subprocess.CompletedProcess(
+            args=["cspell"],
+            returncode=1,
+            stdout="",
+            stderr="Unknown dictionary: softwareTerms",
+        )
+        second = subprocess.CompletedProcess(
+            args=["cspell"],
+            returncode=1,
+            stdout=(
+                "src/app.py:10:5 - Unknown word (coontainer) "
+                "Suggestions: [container]"
+            ),
+            stderr="",
+        )
+        mock_run.side_effect = [first, second]
+
+        p = CspellPlugin()
+        result = p.run(["src/app.py"], Path("."))
+
+        assert len(result.findings) == 1
+        assert result.findings[0]["word"] == "coontainer"
+        assert mock_run.call_count == 2

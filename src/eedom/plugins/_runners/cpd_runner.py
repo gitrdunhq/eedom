@@ -1,4 +1,6 @@
-"""PMD CPD subprocess runner."""
+"""PMD CPD subprocess runner.
+# tested-by: tests/unit/test_cpd_runner.py
+"""
 
 from __future__ import annotations
 
@@ -35,9 +37,9 @@ def _parse_cpd_xml(xml_text: str, lang: str) -> list[dict]:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
         return dupes
-    for dup_el in root.findall("duplication"):
+    for dup_el in root.findall("{*}duplication"):
         locs = []
-        for file_el in dup_el.findall("file"):
+        for file_el in dup_el.findall("{*}file"):
             locs.append(
                 {
                     "file": file_el.get("path", ""),
@@ -46,7 +48,7 @@ def _parse_cpd_xml(xml_text: str, lang: str) -> list[dict]:
                 }
             )
         if len(locs) >= 2:
-            fragment_el = dup_el.find("codefragment")
+            fragment_el = dup_el.find("{*}codefragment")
             dupes.append(
                 {
                     "tokens": int(dup_el.get("tokens", "0")),
@@ -57,6 +59,22 @@ def _parse_cpd_xml(xml_text: str, lang: str) -> list[dict]:
                 }
             )
     return dupes
+
+
+def _extract_xml_payload(raw_output: str) -> str:
+    """Extract the XML document from mixed command output.
+
+    PMD may prepend log lines before the XML payload. Keep parsing robust by
+    slicing from the first XML marker through the end of output.
+    """
+    if not raw_output:
+        return ""
+    idx = raw_output.find("<?xml")
+    if idx == -1:
+        idx = raw_output.find("<pmd-cpd")
+    if idx == -1:
+        return ""
+    return raw_output[idx:]
 
 
 def run_cpd(
@@ -102,8 +120,11 @@ def run_cpd(
                 timeout=timeout,
                 check=False,
             )
-            if result.stdout:
-                all_dupes.extend(_parse_cpd_xml(result.stdout, lang))
+            xml_text = _extract_xml_payload(result.stdout or "")
+            if not xml_text:
+                xml_text = _extract_xml_payload(result.stderr or "")
+            if xml_text:
+                all_dupes.extend(_parse_cpd_xml(xml_text, lang))
             total_scanned += len(files)
         except FileNotFoundError:
             from eedom.core.errors import ErrorCode, error_msg

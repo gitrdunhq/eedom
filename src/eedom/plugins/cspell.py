@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import subprocess
 from pathlib import Path
 
@@ -47,26 +48,41 @@ class CspellPlugin(ScannerPlugin):
         return bool(files)
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
+        base_cmd = [
+            "cspell",
+            "lint",
+            "--no-progress",
+            "--no-summary",
+            "--show-suggestions",
+            "--locale",
+            "en-CA",
+        ]
+
         try:
+            dictionary_args = [
+                arg for name in CSPELL_DICTIONARIES for arg in ("--dictionary", name)
+            ]
             r = subprocess.run(
-                [
-                    "cspell",
-                    "lint",
-                    "--no-progress",
-                    "--no-summary",
-                    "--show-suggestions",
-                    "--locale",
-                    "en-CA",
-                    "--dictionaries",
-                    ",".join(CSPELL_DICTIONARIES),
-                    "--dot",
-                    *files,
-                ],
+                [*base_cmd, *dictionary_args, "--dot", *files],
                 capture_output=True,
                 text=True,
                 timeout=60,
                 check=False,
             )
+            if (
+                r.returncode != 0
+                and not (r.stdout or "").strip()
+                and "dictionary" in (r.stderr or "").lower()
+            ):
+                # Some environments do not ship optional technical dictionaries.
+                # Retry with locale-only mode to preserve typo detection.
+                r = subprocess.run(
+                    [*base_cmd, "--dot", *files],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
         except FileNotFoundError:
             return PluginResult(
                 plugin_name=self.name,
@@ -81,28 +97,25 @@ class CspellPlugin(ScannerPlugin):
         output = r.stdout or ""
         if not output.strip() and r.stderr:
             output = r.stderr
+        pattern = re.compile(
+            r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?\s*-?\s*Unknown word\s*"
+            r"\((?P<word>[^)]+)\)(?:\s+Suggestions:\s+\[(?P<suggestions>[^\]]*)\])?"
+        )
         for line in output.strip().split("\n"):
-            if not line or " - Unknown word " not in line:
+            if not line:
                 continue
-            parts = line.split(" - Unknown word ")
-            if len(parts) != 2:
+            match = pattern.match(line.strip())
+            if not match:
                 continue
-            loc = parts[0].strip()
-            rest = parts[1].strip()
-            word = rest.strip("()")
-            suggestions = ""
-            if " Suggestions: " in rest:
-                wp, sp = rest.split(" Suggestions: ", 1)
-                word = wp.strip("()")
-                suggestions = sp.strip("[]")
-            file_line = loc.rsplit(":", 2)
-            if len(file_line) < 2:
-                continue
+            file_path = match.group("file")
+            line_no = match.group("line")
+            word = match.group("word")
+            suggestions = match.group("suggestions") or ""
             with contextlib.suppress(ValueError):
                 findings.append(
                     {
-                        "file": file_line[0],
-                        "line": int(file_line[1]),
+                        "file": file_path,
+                        "line": int(line_no),
                         "word": word,
                         "suggestions": suggestions,
                     }
