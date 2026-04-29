@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import textwrap
 from dataclasses import dataclass, field
 
 import structlog
@@ -52,21 +53,158 @@ class PRReview:
     outside_diff: list[dict] = field(default_factory=list)
 
 
-def _build_smart_comment(rule_id: str, level: str, msg: str, result: dict) -> str:
-    """Build a SMART inline comment: Specific, Measurable, Actionable, Relevant, Targeted."""
-    icon = {"error": "🔴", "warning": "🟡", "note": "🔵"}.get(level, "⚪")
-    parts = [f"{icon} **{rule_id}** (`{level}`)"]
-    parts.append("")
-    parts.append(msg)
+def _location_from_result(result: dict) -> tuple[str, int]:
+    locations = result.get("locations", [])
+    if not locations:
+        return "", 1
+    phys = locations[0].get("physicalLocation", {})
+    file_path = phys.get("artifactLocation", {}).get("uri", "")
+    line_num = phys.get("region", {}).get("startLine", 1)
+    return file_path, line_num
 
+
+def _target_text(file_path: str, line_num: int) -> str:
+    return f"`{file_path}:{line_num}`" if file_path else "`repository`"
+
+
+def _wrap_lines(text: str, width: int = 96) -> list[str]:
+    return textwrap.wrap(
+        str(text),
+        width=width,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
+
+
+def _labeled_lines(label: str, text: str) -> list[str]:
+    return [f"{label}:"] + [f"  {line}" for line in _wrap_lines(text)]
+
+
+def _bullet_lines(label: str, text: str) -> list[str]:
+    return [f"- {label}:"] + [f"  {line}" for line in _wrap_lines(text)]
+
+
+def _finding_noun(count: int) -> str:
+    return "finding" if count == 1 else "findings"
+
+
+def _count_phrase(count: int, noun: str) -> str:
+    suffix = "" if count == 1 else "s"
+    return f"{count} {noun}{suffix}"
+
+
+def _review_label(level: str) -> str:
+    if level == "error":
+        return "Required"
+    if level == "warning":
+        return "Consider"
+    return "FYI"
+
+
+def _why_text(rule_id: str, level: str, msg: str) -> str:
+    rule_lower = rule_id.lower()
+    msg_lower = msg.lower()
+    if "secret" in rule_lower or "secret" in msg_lower or "key" in rule_lower:
+        return "Exposed credentials can be reused outside this PR until removed and rotated."
+    if "sql" in rule_lower or "sql" in msg_lower:
+        return "Concatenated input can let request data change the SQL query structure."
+    if "dependency" in rule_lower or "cve" in rule_lower:
+        return "A vulnerable dependency can ship exploitable code with the application."
+    if level == "error":
+        return "Dom marks this required because eedom reported an error-level finding in this PR."
+    if level == "warning":
+        return "This is non-blocking guidance; addressing it now can reduce follow-up review churn."
+    return "This is informational context for future cleanup."
+
+
+def _fix_text(rule_id: str, msg: str, result: dict) -> str:
     fixes = result.get("fixes", [])
     if fixes:
         fix_text = fixes[0].get("description", {}).get("text", "")
         if fix_text:
-            parts.append("")
-            parts.append(f"**Fix:** {fix_text}")
+            return fix_text
+
+    rule_lower = rule_id.lower()
+    msg_lower = msg.lower()
+    if "secret" in rule_lower or "secret" in msg_lower or "key" in rule_lower:
+        return (
+            "Remove the secret from the diff, rotate the exposed credential, "
+            "and load it from secrets management."
+        )
+    if "sql" in rule_lower or "sql" in msg_lower:
+        return "Parameterize the query or use a safe query builder; do not concatenate input."
+    if "dependency" in rule_lower or "cve" in rule_lower:
+        return "Upgrade, replace, or pin the affected dependency to a safe release."
+    return (
+        "Simplify the flagged code/config where possible, or make the intent explicit, "
+        "then change it so the rule no longer matches."
+    )
+
+
+def _build_smart_comment(rule_id: str, level: str, msg: str, result: dict) -> str:
+    """Build an inline comment with concrete fix, pass condition, and verification."""
+    icon = {"error": "🔴", "warning": "🟡", "note": "🔵"}.get(level, "⚪")
+    file_path, line_num = _location_from_result(result)
+    target = _target_text(file_path, line_num)
+    fix_text = _fix_text(rule_id, msg, result)
+    label = _review_label(level)
+    parts = [f"{icon} **{label}:** `{rule_id}` (`{level}`)"]
+    parts.append("")
+    parts.extend(_labeled_lines("What failed", msg))
+    why_label = "Why it blocks" if label == "Required" else "Why it matters"
+    parts.extend(_labeled_lines(why_label, _why_text(rule_id, level, msg)))
+    parts.extend(_labeled_lines("Fix", fix_text))
+    parts.extend(_labeled_lines("Done when", f"`{rule_id}` is absent on the next eedom run."))
+    parts.extend(_labeled_lines("Where", target))
+    parts.extend(_labeled_lines("Verify", "`uv run eedom review --repo-path . --all`"))
 
     return "\n".join(parts)
+
+
+def _build_body_smart_plan(blockers: list[dict]) -> list[str]:
+    if not blockers:
+        return []
+
+    lines = [
+        "",
+        "### Blocking Fix Plan",
+        "",
+        f"> Why blocked: {len(blockers)} error-level {_finding_noun(len(blockers))} "
+        "must be fixed before merge.",
+        "",
+    ]
+    for blocker in blockers[:5]:
+        target = _target_text(blocker["file"], blocker["line"])
+        lines.append(f"**Required:** `{blocker['rule']}` — {target}")
+        lines.extend(_bullet_lines("What failed", blocker["message"]))
+        lines.extend(
+            _bullet_lines(
+                "Why it blocks",
+                _why_text(blocker["rule"], blocker["level"], blocker["message"]),
+            )
+        )
+        lines.extend(
+            _bullet_lines(
+                "Fix",
+                _fix_text(blocker["rule"], blocker["message"], blocker["raw"]),
+            )
+        )
+        lines.extend(
+            _bullet_lines(
+                "Done when",
+                f"This `{blocker['level']}` finding is absent from the next run.",
+            )
+        )
+        lines.extend(
+            _bullet_lines(
+                "Verify",
+                "Fix this location and verify with `uv run eedom review --repo-path . --all`.",
+            )
+        )
+        lines.append("")
+    if len(blockers) > 5:
+        lines.append(f"*...{len(blockers) - 5} more blocker(s) omitted from this summary.*")
+    return lines
 
 
 def sarif_to_review(
@@ -82,6 +220,7 @@ def sarif_to_review(
     """
     comments: list[ReviewComment] = []
     outside: list[dict] = []
+    blockers: list[dict] = []
     error_count = 0
     warning_count = 0
     total = 0
@@ -98,16 +237,21 @@ def sarif_to_review(
 
             msg = result.get("message", {}).get("text", "")
             rule_id = result.get("ruleId", tool_name)
-            locations = result.get("locations", [])
-
-            file_path = ""
-            line_num = 1
-            if locations:
-                phys = locations[0].get("physicalLocation", {})
-                file_path = phys.get("artifactLocation", {}).get("uri", "")
-                line_num = phys.get("region", {}).get("startLine", 1)
+            file_path, line_num = _location_from_result(result)
 
             comment_body = _build_smart_comment(rule_id, level, msg, result)
+
+            if level == "error":
+                blockers.append(
+                    {
+                        "file": file_path,
+                        "line": line_num,
+                        "rule": rule_id,
+                        "level": level,
+                        "message": msg,
+                        "raw": result,
+                    }
+                )
 
             in_diff = file_path and file_path in diff_files
             in_hunk = True
@@ -135,10 +279,10 @@ def sarif_to_review(
 
     if error_count > 0:
         event = "REQUEST_CHANGES"
-        verdict = f"🚫 **{error_count} blocking finding(s)** found"
+        verdict = f"🚫 **{error_count} blocking {_finding_noun(error_count)}** found"
     elif warning_count > 0:
         event = "COMMENT"
-        verdict = f"⚠️ **{warning_count} warning(s)** found, no blockers"
+        verdict = f"⚠️ **{_count_phrase(warning_count, 'warning')}** found, no blockers"
     else:
         event = "COMMENT"
         verdict = "✅ No findings"
@@ -146,15 +290,20 @@ def sarif_to_review(
     body_lines = [
         f"## Eagle Eyed Dom — {verdict}",
         "",
-        f"**{total}** findings: {error_count} error, "
-        f"{warning_count} warning, {total - error_count - warning_count} note",
+        f"**{total}** {_finding_noun(total)}: {_count_phrase(error_count, 'error')}, "
+        f"{_count_phrase(warning_count, 'warning')}, "
+        f"{_count_phrase(total - error_count - warning_count, 'note')}",
         f"**{len(comments)}** inline, **{len(outside)}** outside diff",
     ]
+
+    body_lines.extend(_build_body_smart_plan(blockers))
 
     if outside:
         body_lines.append("")
         body_lines.append("<details>")
-        body_lines.append(f"<summary>{len(outside)} finding(s) outside the PR diff</summary>")
+        body_lines.append(
+            f"<summary>{len(outside)} {_finding_noun(len(outside))} outside the PR diff</summary>"
+        )
         body_lines.append("")
         body_lines.append("| File | Line | Rule | Level | Message |")
         body_lines.append("|------|------|------|-------|---------|")

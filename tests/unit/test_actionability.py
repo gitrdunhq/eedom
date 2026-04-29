@@ -181,6 +181,23 @@ class TestClassifyFindingsNoFix:
         assert "upstream dependencies" not in summary.summary_text
         assert "code/config" in summary.summary_text
 
+    def test_policy_finding_requires_owner_action_not_upstream(self) -> None:
+        finding = {
+            "decision": "needs_review",
+            "triggered_rules": ["policy.manifest_review"],
+            "constraints": [],
+            "policy_version": "test",
+        }
+        result = _make_result("opa", [finding], category="dependency")
+
+        summary = classify_findings([result])
+
+        assert summary.owner_action_count == 1
+        assert summary.blocked_count == 0
+        assert "opa" in summary.owner_action_by_source
+        assert "upstream dependencies" not in summary.summary_text
+        assert "code/config" in summary.summary_text
+
 
 # ---------------------------------------------------------------------------
 # classify_findings — mixed results, multiple plugins

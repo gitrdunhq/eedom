@@ -123,17 +123,69 @@ class TestRenderComment:
 
         md = render_comment([result], repo="org/repo", pr_num=1, title="test")
 
-        assert "S.M.A.R.T. Fix Plan" in md
+        assert "Actionability: Fix Plan" in md
         assert "Why blocked" in md
-        assert "Specific:" in md
-        assert "Measurable:" in md
-        assert "Actionable:" in md
-        assert "Relevant:" in md
-        assert "Targeted:" in md
+        assert "**Required:** gitleaks" in md
+        assert "What failed:" in md
+        assert "Why it blocks:" in md
+        assert "Fix:" in md
+        assert "Done when:" in md
+        assert "Verify:" in md
+        assert "Exposed credentials remain reusable" in md
+        assert "Specific:" not in md
+        assert "Measurable:" not in md
+        assert "Actionable:" not in md
+        assert "Relevant:" not in md
+        assert "Targeted:" not in md
         assert "`src/settings.py:12`" in md
         assert "Remove or rotate the secret" in md
         assert "uv run eedom review --repo-path . --all" in md
+        assert "1 findings" not in md
         assert "upstream dependencies" not in md
+
+    def test_smart_fix_plan_wraps_long_lines_for_github_width(self):
+        result = PluginResult(
+            plugin_name="gitleaks",
+            category="supply_chain",
+            findings=[
+                {
+                    "severity": "critical",
+                    "file": "src/settings.py",
+                    "line": 12,
+                    "rule": "generic-api-key",
+                    "description": (
+                        "Hardcoded API key detected in a configuration module with a very long "
+                        "description that would otherwise make the pull request comment scroll "
+                        "sideways"
+                    ),
+                }
+            ],
+        )
+
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+        smart_section = md.split("### Actionability: Fix Plan", 1)[1]
+        smart_section = smart_section.split("**1 finding requires code/config changes**", 1)[0]
+
+        assert max(len(line) for line in smart_section.splitlines()) <= 110
+
+    def test_owner_action_without_severity_omits_empty_parentheses(self):
+        result = PluginResult(
+            plugin_name="opa",
+            category="dependency",
+            findings=[
+                {
+                    "decision": "needs_review",
+                    "triggered_rules": ["policy.manifest_review"],
+                    "constraints": [],
+                    "policy_version": "test",
+                }
+            ],
+        )
+
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+
+        assert "- **opa**: 1 finding" in md
+        assert "- **opa**: 1 finding (" not in md
 
     def test_verdict_warnings_on_non_critical(self):
         result = PluginResult(

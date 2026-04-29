@@ -209,16 +209,22 @@ class TestSarifToReviewWithHunks:
         review = sarif_to_review(sarif, diff_files={"src/app.py"}, diff_hunks=diff_hunks)
 
         body = review.comments[0].body
+        assert "**Required:**" in body
         assert "sql-injection" in body
         assert "error" in body
         assert "User input concatenated" in body
-        assert "Specific:" in body
-        assert "Measurable:" in body
-        assert "Actionable:" in body
-        assert "Relevant:" in body
-        assert "Targeted:" in body
+        assert "What failed:" in body
+        assert "Why it blocks:" in body
+        assert "Concatenated input can let request data change the SQL query structure." in body
         assert "Fix:" in body
+        assert "Done when:" in body
+        assert "Where:" in body
         assert "Verify:" in body
+        assert "Specific:" not in body
+        assert "Measurable:" not in body
+        assert "Actionable:" not in body
+        assert "Relevant:" not in body
+        assert "Targeted:" not in body
 
     def test_smart_comment_includes_fix_hint_when_available(self):
         sarif_data = _sarif(
@@ -265,11 +271,54 @@ class TestSarifToReviewWithHunks:
         review = sarif_to_review(sarif, diff_files={"src/settings.py"})
 
         assert review.event == "REQUEST_CHANGES"
-        assert "S.M.A.R.T. Fix Plan" in review.body
+        assert "Blocking Fix Plan" in review.body
         assert "Why blocked" in review.body
+        assert "**Required:** `hardcoded-secret`" in review.body
         assert "`src/settings.py:12`" in review.body
         assert "hardcoded-secret" in review.body
+        assert "Exposed credentials can be reused" in review.body
         assert "Verify:" in review.body
+        assert "finding(s)" not in review.body
+
+    def test_warning_comment_is_labeled_consider_not_required(self):
+        sarif = _sarif(
+            [
+                _finding(
+                    file="src/app.py",
+                    line=7,
+                    level="warning",
+                    rule="complex-branch",
+                    msg="Branch is difficult to follow",
+                )
+            ]
+        )
+        review = sarif_to_review(sarif, diff_files={"src/app.py"})
+
+        body = review.comments[0].body
+        assert "**Consider:**" in body
+        assert "Why it matters:" in body
+        assert "Why it blocks:" not in body
+        assert "Simplify the flagged code/config where possible" in body
+
+    def test_inline_smart_comment_wraps_long_lines_for_github_width(self):
+        sarif = _sarif(
+            [
+                _finding(
+                    file="src/settings.py",
+                    line=12,
+                    level="error",
+                    rule="hardcoded-secret",
+                    msg=(
+                        "Hardcoded API key detected in a configuration module with a very long "
+                        "description that would otherwise make the pull request comment scroll "
+                        "sideways"
+                    ),
+                )
+            ]
+        )
+        review = sarif_to_review(sarif, diff_files={"src/settings.py"})
+
+        assert max(len(line) for line in review.comments[0].body.splitlines()) <= 110
 
 
 # ---------------------------------------------------------------------------

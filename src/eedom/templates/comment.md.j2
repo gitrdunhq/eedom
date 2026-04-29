@@ -3,6 +3,9 @@
 
 {% if verdict == "blocked" %}
 > 🔴 **BLOCKED**
+{% if block_reason %}
+> {{ block_reason }}
+{% endif %}
 {% elif verdict == "incomplete" %}
 > 🟡 **INCOMPLETE** — one or more scanners failed
 {% elif verdict == "warnings" %}
@@ -28,10 +31,23 @@
 | Maintainability | {{ mi_icon }} {{ mi_grade }} ({{ mi_score }}/100) |
 {%- endif %}
 
-{% if actionability and (actionability.actionable_count > 0 or actionability.blocked_count > 0) %}
-### Actionability
+{% if actionability and (actionability.actionable_count > 0 or actionability.blocked_count > 0 or actionability.owner_action_count > 0) %}
+### Actionability: Fix Plan
 
 > {{ actionability.summary_text }}
+
+{% if smart_plan %}
+{% for item in smart_plan[:5] %}
+**{{ item.label }}:** {{ item.source }} — {{ item.count }} blocking finding{% if item.count != 1 %}s{% endif %}
+{% for field in item.fields %}
+- {{ field.label }}:
+{% for line in field.lines %}
+  {{ line }}
+{% endfor %}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
 
 {% if actionability.actionable_count > 0 %}
 **{{ actionability.actionable_count }} fixable** — upgrade available:
@@ -43,10 +59,19 @@
 {% endif %}
 {% endif %}
 
+{% if actionability.owner_action_count > 0 %}
+**{{ actionability.owner_action_count }} finding{% if actionability.owner_action_count != 1 %}s{% endif %} require{% if actionability.owner_action_count == 1 %}s{% endif %} code/config changes** — fix in this PR:
+{% for source, findings in actionability.owner_action_by_source.items() %}
+{% set severities = findings | selectattr('severity', 'defined') | map(attribute='severity') | reject('equalto', '') | unique | join(', ') %}
+- **{{ source }}**: {{ findings | length }} finding{% if findings | length != 1 %}s{% endif %}{% if severities %} ({{ severities }}){% endif %}
+{%- endfor %}
+{% endif %}
+
 {% if actionability.blocked_count > 0 %}
 **{{ actionability.blocked_count }} blocked** — no fix available:
 {% for source, findings in actionability.blocked_by_source.items() %}
-- **{{ source }}**: {{ findings | length }} findings ({{ findings | map(attribute='severity') | unique | join(', ') }})
+{% set severities = findings | selectattr('severity', 'defined') | map(attribute='severity') | reject('equalto', '') | unique | join(', ') %}
+- **{{ source }}**: {{ findings | length }} finding{% if findings | length != 1 %}s{% endif %}{% if severities %} ({{ severities }}){% endif %}
 {%- endfor %}
 {% endif %}
 {% endif %}
