@@ -12,11 +12,29 @@ logger = structlog.get_logger(__name__)
 
 _PINNED_RULES_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / "semgrep-rules"
 
-_EXT_TO_RULESETS: dict[str, list[str]] = {}
+_EXT_TO_RULESETS: dict[str, list[str]] = {
+    ".py": ["p/python"],
+    ".ts": ["r/typescript.lang"],
+    ".tsx": ["r/typescript.lang"],
+    ".js": ["r/javascript.lang"],
+    ".jsx": ["r/javascript.lang"],
+    ".tf": ["p/terraform"],
+    ".yaml": ["p/kubernetes", "p/docker"],
+    ".yml": ["p/kubernetes", "p/docker"],
+    ".go": ["p/golang"],
+    ".rb": ["p/ruby"],
+    ".java": ["p/java"],
+    ".sh": ["r/bash.lang"],
+}
 
-_NAME_TO_RULESETS: dict[str, list[str]] = {}
+_NAME_TO_RULESETS: dict[str, list[str]] = {
+    "Dockerfile": ["p/docker"],
+    "Jenkinsfile": ["p/ci"],
+    "docker-compose.yml": ["p/docker"],
+    "docker-compose.yaml": ["p/docker"],
+}
 
-_ALWAYS_RULESETS: list[str] = []
+_ALWAYS_RULESETS = ["p/default", "p/ci"]
 
 
 def detect_rulesets(changed_files: list[str]) -> list[str]:
