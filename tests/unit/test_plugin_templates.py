@@ -185,6 +185,10 @@ class TestTemplateFilesExist:
     def test_templates_dir_has_init(self):
         assert (_TEMPLATES_DIR / "__init__.py").exists()
 
+    def test_no_stale_top_level_templates_dir(self):
+        stale_dir = Path(__file__).parent.parent.parent / "src" / "templates"
+        assert not stale_dir.exists()
+
 
 # ── Base render() template-loading contract ──────────────────────────────────
 
