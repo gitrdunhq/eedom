@@ -212,6 +212,22 @@ class TestRenderComment:
         assert "| cspell | skipped |" in md
         assert "| Files scanned | 5 |" in md
 
+    def test_summary_table_shows_diff_scope_repo_context(self):
+        md = render_comment(
+            [_empty_result()],
+            repo="org/repo",
+            pr_num=1,
+            title="test",
+            file_count=3,
+            scan_scope="diff",
+            repo_file_count=42,
+        )
+
+        assert "| Scan scope | diff |" in md
+        assert "| Changed files | 3 |" in md
+        assert "| Repo-wide files | 42 total |" in md
+        assert "| Files scanned | 3 |" not in md
+
     def test_error_plugin_shows_error(self):
         md = render_comment(
             [_error_result()],

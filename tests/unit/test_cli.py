@@ -1226,3 +1226,45 @@ class TestScopeFlag:
         runner = CliRunner()
         result = runner.invoke(cli, ["review", "--scope", "folder", "--repo-path", "."])
         assert result.exit_code != 0
+
+    def test_scope_diff_comment_shows_changed_and_repo_wide_counts(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "app.py").write_text("print('hello')\n")
+        (src / "other.py").write_text("pass\n")
+        diff_path = tmp_path / "change.diff"
+        diff_path.write_text(
+            "diff --git a/src/app.py b/src/app.py\n"
+            "index 000..111 100644\n"
+            "--- a/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "@@ -1 +1,2 @@\n"
+            "+print('hello')\n"
+        )
+
+        mock_registry = MagicMock()
+        mock_registry.run_all.return_value = []
+        mock_registry.list.return_value = []
+
+        with patch("eedom.cli.main.get_default_registry", return_value=mock_registry):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "review",
+                    "--all",
+                    "--repo-path",
+                    str(tmp_path),
+                    "--scope",
+                    "diff",
+                    "--diff",
+                    str(diff_path),
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "| Scan scope | diff |" in result.output
+        assert "| Changed files | 1 |" in result.output
+        assert "| Repo-wide files | 2 total |" in result.output
