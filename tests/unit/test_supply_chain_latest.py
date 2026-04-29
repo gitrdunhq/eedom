@@ -181,7 +181,7 @@ class TestLockfileShaPath:
     """Verify _check_lockfiles uses per-directory paths, not repo root."""
 
     def test_lockfile_sha_uses_lockfile_directory(self, tmp_path):
-        """When package-lock.json is at apps/web/, SHA should hash apps/web/package-lock.json not repo/package-lock.json."""
+        """SHA should hash apps/web/package-lock.json, not repo/package-lock.json."""
         import hashlib
 
         web_dir = tmp_path / "apps" / "web"
@@ -200,9 +200,10 @@ class TestLockfileShaPath:
             lockfile_findings
         ), "Expected a lockfile finding for package-lock.json without manifest"
         expected_sha = hashlib.sha256(lockfile_content).hexdigest()
-        assert (
-            lockfile_findings[0]["sha256"] == expected_sha
-        ), f"SHA should come from apps/web/package-lock.json, got {lockfile_findings[0]['sha256']!r}"
+        assert lockfile_findings[0]["sha256"] == expected_sha, (
+            "SHA should come from apps/web/package-lock.json, got "
+            f"{lockfile_findings[0]['sha256']!r}"
+        )
 
     def test_lockfile_sha_uses_package_dir_not_repo_root(self, tmp_path):
         """_check_lockfiles: SHA is from the actual lock file in its subdirectory."""
@@ -323,9 +324,10 @@ class TestUnpinnedSeverity:
         uv_findings = [
             f for f in findings if f.get("type") == "lockfile" and f.get("lockfile") == "uv.lock"
         ]
-        assert (
-            len(uv_findings) == 1
-        ), f"Expected 1 uv.lock medium finding (manifest changed, lock not updated), got {uv_findings}"
+        assert len(uv_findings) == 1, (
+            "Expected 1 uv.lock medium finding "
+            f"(manifest changed, lock not updated), got {uv_findings}"
+        )
         expected_sha = hashlib.sha256(lock_content.encode()).hexdigest()
         assert uv_findings[0]["sha256"] == expected_sha, (
             f"SHA computed from wrong path. "

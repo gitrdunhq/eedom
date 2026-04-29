@@ -152,7 +152,7 @@ def _supply_chain_result_with_findings() -> PluginResult:
                 "lockfile": "package-lock.json",
                 "severity": "high",
                 "sha256": "abc123def456" + "0" * 52,
-                "message": "`package-lock.json` changed but package.json did NOT",
+                "message": "`package-lock.json` changed, but package.json was not changed",
             },
             {
                 "type": "docker_latest",

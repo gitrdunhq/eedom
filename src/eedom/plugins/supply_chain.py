@@ -307,7 +307,7 @@ class SupplyChainPlugin(ScannerPlugin):
                         "lockfile": lock,
                         "severity": "high",
                         "sha256": _sha256(Path(lock_dir) / lock),
-                        "message": (f"`{lock}` changed but {'/'.join(manifests)} did NOT"),
+                        "message": (f"`{lock}` changed, but {'/'.join(manifests)} was not changed"),
                     }
                 )
 
@@ -333,7 +333,7 @@ class SupplyChainPlugin(ScannerPlugin):
                                 "lockfile": lf,
                                 "severity": "medium",
                                 "sha256": _sha256(Path(manifest_dir) / lf),
-                                "message": (f"`{manifest}` changed but `{lf}` was NOT updated"),
+                                "message": (f"`{manifest}` changed, but `{lf}` was not updated"),
                             }
                         )
 
