@@ -99,7 +99,7 @@ jobs:
       - name: Run eedom review (container)
         if: steps.docs.outputs.docs_only != 'true' && steps.runtime.outputs.container == 'true'
         run: |
-          $ENGINE run --rm --entrypoint "" \
+          $ENGINE run --rm --user root --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
