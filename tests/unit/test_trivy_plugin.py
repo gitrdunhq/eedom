@@ -120,32 +120,32 @@ class TestTrivyPluginFixedVersion:
 class TestTrivySkipDirs:
     """Trivy must pass --skip-dirs for .eedomignore patterns."""
 
-    @patch("eedom.core.subprocess_runner.subprocess.run")
     @patch("eedom.plugins.trivy.load_ignore_patterns")
-    def test_eedomignore_dirs_become_skip_dirs(self, mock_ignore, mock_run):
+    def test_eedomignore_dirs_become_skip_dirs(self, mock_ignore):
         mock_ignore.return_value = [
             ".git/",
             "tests/e2e/fixtures/",
             "node_modules/",
         ]
-        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
-        plugin = TrivyPlugin()
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=0, stdout="{}", stderr="")
+        plugin = TrivyPlugin(tool_runner=runner)
         plugin.run([], Path("/workspace"))
-        cmd = mock_run.call_args[0][0]
+        cmd = runner.run.call_args[0][0].cmd
         assert "--skip-dirs" in cmd
         skip_idx = [i for i, v in enumerate(cmd) if v == "--skip-dirs"]
         skip_vals = [cmd[i + 1] for i in skip_idx]
         assert "tests/e2e/fixtures" in skip_vals
         assert ".git" in skip_vals
 
-    @patch("eedom.core.subprocess_runner.subprocess.run")
     @patch("eedom.plugins.trivy.load_ignore_patterns")
-    def test_glob_patterns_excluded_from_skip_dirs(self, mock_ignore, mock_run):
+    def test_glob_patterns_excluded_from_skip_dirs(self, mock_ignore):
         mock_ignore.return_value = ["*.egg-info/", "tests/e2e/fixtures/"]
-        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
-        plugin = TrivyPlugin()
+        runner = MagicMock()
+        runner.run.return_value = ToolResult(exit_code=0, stdout="{}", stderr="")
+        plugin = TrivyPlugin(tool_runner=runner)
         plugin.run([], Path("/workspace"))
-        cmd = mock_run.call_args[0][0]
+        cmd = runner.run.call_args[0][0].cmd
         skip_idx = [i for i, v in enumerate(cmd) if v == "--skip-dirs"]
         skip_vals = [cmd[i + 1] for i in skip_idx]
         assert "*.egg-info" not in skip_vals
