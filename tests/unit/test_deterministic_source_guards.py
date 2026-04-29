@@ -234,9 +234,9 @@ def test_file_evidence_store_lacks_atomic_write():
         # Look for write_artifact and check if it uses atomic pattern
         # Atomic pattern requires: temp file creation + rename
         has_atomic_pattern = (
-            "mkstemp" in source_text or
-            "NamedTemporaryFile" in source_text or
-            "os.rename" in source_text
+            "mkstemp" in source_text
+            or "NamedTemporaryFile" in source_text
+            or "os.rename" in source_text
         )
 
         if not has_atomic_pattern:
