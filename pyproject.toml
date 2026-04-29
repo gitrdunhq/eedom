@@ -67,7 +67,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/eedom"]
-artifacts = ["*.j2"]
+artifacts = ["**/*.j2"]
+only-include = ["src/eedom"]
 
 [tool.uv]
 package = true
