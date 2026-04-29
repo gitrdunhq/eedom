@@ -50,7 +50,7 @@ verify_image() {
         fail "eedom CLI"; failed=1
     fi
 
-    local tools="semgrep scancode lizard mypy"
+    local tools="opengrep scancode lizard mypy"
     for tool in $tools; do
         if "$engine" run --rm --entrypoint="" "$tag" "$tool" --version >/dev/null 2>&1; then
             pass "$tool"
@@ -97,7 +97,7 @@ build_amd64() {
         pass "amd64 build succeeded"
         info "Verifying on remote host"
         ssh "$AMD64_HOST" "cd $remote_dir && docker run --rm $TAG --version" 2>&1
-        local tools="semgrep scancode lizard mypy"
+        local tools="opengrep scancode lizard mypy"
         for tool in $tools; do
             if ssh "$AMD64_HOST" "docker run --rm --entrypoint='' $TAG $tool --version" >/dev/null 2>&1; then
                 pass "$tool (amd64)"

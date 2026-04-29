@@ -12,7 +12,7 @@ ARG OPA_VERSION=1.15.2
 ARG GITLEAKS_VERSION=8.30.1
 ARG JQ_VERSION=1.7.1
 ARG KUBE_LINTER_VERSION=0.8.3
-ARG SEMGREP_VERSION=1.67.0
+ARG OPENGREP_VERSION=1.20.0
 ARG SCANCODE_VERSION=32.3.0
 ARG LIZARD_VERSION=1.17.13
 ARG MYPY_VERSION=1.15.0
@@ -66,7 +66,7 @@ FROM docker.io/library/python@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84
 
 ARG SYFT_VERSION TRIVY_VERSION OSV_VERSION OPA_VERSION GITLEAKS_VERSION JQ_VERSION KUBE_LINTER_VERSION PMD_VERSION LS_LINT_VERSION
 ARG SYFT_COMMIT TRIVY_COMMIT OSV_COMMIT OPA_COMMIT GITLEAKS_COMMIT KUBE_LINTER_COMMIT JQ_COMMIT LS_LINT_COMMIT UV_COMMIT
-ARG SEMGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION
+ARG OPENGREP_VERSION SCANCODE_VERSION LIZARD_VERSION MYPY_VERSION
 ARG SYFT_SHA256_ARM64 TRIVY_SHA256_ARM64 OSV_SHA256_ARM64 OPA_SHA256_ARM64 GITLEAKS_SHA256_ARM64 JQ_SHA256_ARM64 KUBE_LINTER_SHA256_ARM64 LS_LINT_SHA256_ARM64 PMD_SHA256
 ARG SYFT_SHA256_AMD64 TRIVY_SHA256_AMD64 OSV_SHA256_AMD64 OPA_SHA256_AMD64 GITLEAKS_SHA256_AMD64 JQ_SHA256_AMD64 KUBE_LINTER_SHA256_AMD64 LS_LINT_SHA256_AMD64
 ARG TARGETARCH
@@ -171,10 +171,20 @@ RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
 # lacks arm64 wheels, breaking cross-platform uv sync.
 RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
     uv pip install \
-      "semgrep==${SEMGREP_VERSION}" \
       "scancode-toolkit==${SCANCODE_VERSION}" \
       "lizard==${LIZARD_VERSION}" \
       "mypy==${MYPY_VERSION}"
+
+# opengrep — self-contained binary, no Python dependency
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        "amd64") OG_ARCH="x86" ;; \
+        "arm64") OG_ARCH="aarch64" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -sSfL -o /usr/local/bin/opengrep \
+      "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_${OG_ARCH}"; \
+    chmod +x /usr/local/bin/opengrep
 
 # scancode's plugin loader crashes on arm64 (extractcode-libarchive has no arm64 wheel).
 # Replace the console_script with a wrapper that defers the import.
@@ -233,6 +243,7 @@ COPY --from=builder /staging/gobin/opa         /usr/local/bin/opa
 COPY --from=builder /staging/gobin/gitleaks    /usr/local/bin/gitleaks
 COPY --from=builder /staging/gobin/kube-linter /usr/local/bin/kube-linter
 COPY --from=builder /staging/gobin/ls-lint    /usr/local/bin/ls-lint
+COPY --from=builder /usr/local/bin/opengrep   /usr/local/bin/opengrep
 COPY --from=builder /staging/pmd/              /opt/pmd/
 COPY --from=builder /staging/jq/jq             /usr/bin/jq
 
@@ -258,7 +269,7 @@ ENV PATH="/opt/eedom/.venv/bin:$PATH" \
     VIRTUAL_ENV="/opt/eedom/.venv" \
     TRIVY_CACHE_DIR=/home/eedom/.cache/trivy \
     MYPY_CACHE_DIR=/home/eedom/.cache/mypy \
-    SEMGREP_USER_DATA_FOLDER=/home/eedom/.cache/semgrep \
+    OPENGREP_USER_DATA_FOLDER=/home/eedom/.cache/opengrep \
     XDG_CACHE_HOME=/home/eedom/.cache \
     EEDOM_OPERATING_MODE=monitor \
     EEDOM_OPA_POLICY_PATH=/opt/eedom/policies \

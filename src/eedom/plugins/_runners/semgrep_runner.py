@@ -1,4 +1,4 @@
-"""Semgrep subprocess runner."""
+"""Opengrep subprocess runner (semgrep-compatible, local rules only)."""
 
 from __future__ import annotations
 
@@ -12,29 +12,11 @@ logger = structlog.get_logger(__name__)
 
 _PINNED_RULES_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / "semgrep-rules"
 
-_EXT_TO_RULESETS: dict[str, list[str]] = {
-    ".py": ["p/python"],
-    ".ts": ["r/typescript.lang"],
-    ".tsx": ["r/typescript.lang"],
-    ".js": ["r/javascript.lang"],
-    ".jsx": ["r/javascript.lang"],
-    ".tf": ["p/terraform"],
-    ".yaml": ["p/kubernetes", "p/docker"],
-    ".yml": ["p/kubernetes", "p/docker"],
-    ".go": ["p/golang"],
-    ".rb": ["p/ruby"],
-    ".java": ["p/java"],
-    ".sh": ["r/bash.lang"],
-}
+_EXT_TO_RULESETS: dict[str, list[str]] = {}
 
-_NAME_TO_RULESETS: dict[str, list[str]] = {
-    "Dockerfile": ["p/docker"],
-    "Jenkinsfile": ["p/ci"],
-    "docker-compose.yml": ["p/docker"],
-    "docker-compose.yaml": ["p/docker"],
-}
+_NAME_TO_RULESETS: dict[str, list[str]] = {}
 
-_ALWAYS_RULESETS = ["p/default", "p/ci"]
+_ALWAYS_RULESETS: list[str] = []
 
 
 def detect_rulesets(changed_files: list[str]) -> list[str]:
@@ -80,7 +62,7 @@ def run_semgrep(
     if org_rules.is_dir():
         config_args.extend(["--config", str(org_rules)])
 
-    cmd = ["semgrep", *config_args, "--json", *changed_files]
+    cmd = ["opengrep", *config_args, "--json", *changed_files]
     try:
         result = subprocess.run(
             cmd,
@@ -100,24 +82,24 @@ def run_semgrep(
     except FileNotFoundError:
         from eedom.core.errors import ErrorCode, error_msg
 
-        msg = error_msg(ErrorCode.NOT_INSTALLED, "semgrep")
+        msg = error_msg(ErrorCode.NOT_INSTALLED, "opengrep")
         logger.warning("semgrep.not_installed", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except subprocess.TimeoutExpired:
         from eedom.core.errors import ErrorCode, error_msg
 
-        msg = error_msg(ErrorCode.TIMEOUT, "semgrep", timeout=timeout)
+        msg = error_msg(ErrorCode.TIMEOUT, "opengrep", timeout=timeout)
         logger.warning("semgrep.timeout", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except json.JSONDecodeError:
         from eedom.core.errors import ErrorCode, error_msg
 
-        msg = error_msg(ErrorCode.PARSE_ERROR, "semgrep")
+        msg = error_msg(ErrorCode.PARSE_ERROR, "opengrep")
         logger.warning("semgrep.parse_error", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except Exception:
         from eedom.core.errors import ErrorCode, error_msg
 
-        msg = error_msg(ErrorCode.BINARY_CRASHED, "semgrep", exit_code=-1)
+        msg = error_msg(ErrorCode.BINARY_CRASHED, "opengrep", exit_code=-1)
         logger.exception("semgrep.failed")
         return {"results": [], "errors": [{"message": msg}], "status": "error"}

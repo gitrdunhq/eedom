@@ -34,7 +34,7 @@ class SemgrepPlugin(ScannerPlugin):
 
     @property
     def description(self) -> str:
-        return "Code pattern analysis — AST matching with dynamic rulesets"
+        return "Code pattern analysis — AST matching via opengrep (local rules only)"
 
     @property
     def category(self) -> PluginCategory:
