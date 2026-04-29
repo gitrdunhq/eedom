@@ -1,10 +1,11 @@
 name: Auto-done on close/merge
 
 on:
-  issues:
-    types: [closed]
-  pull_request_target:
-    types: [closed]
+  workflow_dispatch: # disabled until GITRDUNHQ_PROJECT_BOT PAT gets project scope
+  # issues:
+  #   types: [closed]
+  # pull_request_target:
+  #   types: [closed]
 
 permissions: {}
 
