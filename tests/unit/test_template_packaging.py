@@ -26,9 +26,7 @@ def test_templates_accessible_via_importlib_resources():
     for template_name in template_names:
         # Try to access template using importlib.resources
         try:
-            with importlib.resources.files("eedom.templates").joinpath(
-                template_name
-            ).open() as f:
+            with importlib.resources.files("eedom.templates").joinpath(template_name).open() as f:
                 content = f.read()
                 assert len(content) > 0, f"Template {template_name} is empty"
         except (ImportError, ModuleNotFoundError, FileNotFoundError) as e:
@@ -66,23 +64,16 @@ def test_wheel_contains_template_files():
 
         # Check for template files in wheel
         with zipfile.ZipFile(wheel_path, "r") as whl:
-            template_files = [
-                name for name in whl.namelist() if name.endswith(".j2")
-            ]
+            template_files = [name for name in whl.namelist() if name.endswith(".j2")]
 
             assert len(template_files) > 0, (
-                f"No .j2 template files found in wheel. "
-                f"Wheel contents: {whl.namelist()}"
+                f"No .j2 template files found in wheel. " f"Wheel contents: {whl.namelist()}"
             )
 
             # Verify key templates exist
             template_basenames = [Path(p).name for p in template_files]
-            assert "comment.md.j2" in template_basenames, (
-                "comment.md.j2 not found in wheel"
-            )
-            assert "semgrep.md.j2" in template_basenames, (
-                "semgrep.md.j2 not found in wheel"
-            )
+            assert "comment.md.j2" in template_basenames, "comment.md.j2 not found in wheel"
+            assert "semgrep.md.j2" in template_basenames, "semgrep.md.j2 not found in wheel"
 
 
 def test_renderer_can_load_templates_in_installed_context():
