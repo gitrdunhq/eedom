@@ -7,6 +7,64 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.9](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.8...eedom-v0.2.9) (2026-04-29)
+
+
+### Features
+
+* add --scope flag for diff-scoped and folder-scoped scanning ([f25b351](https://github.com/gitrdunhq/eedom/commit/f25b351a9523d297bef4d60c0e90e159017a41f5))
+* Alley-Oop — holistic trust audit, 4-wave remediation, OpenRouter free models ([cb8d9a7](https://github.com/gitrdunhq/eedom/commit/cb8d9a7f60df7a78902f441376b5af3002f74fcc))
+* migrate renderers behind ReportRendererPort (MarkdownRenderer, SarifRenderer, JsonRenderer) ([3dccc4d](https://github.com/gitrdunhq/eedom/commit/3dccc4d67aaabae15016ed92f04e3d896f86a842))
+* replace semgrep with opengrep — local rules only, no registry dependency ([d46c762](https://github.com/gitrdunhq/eedom/commit/d46c7622785b4ed00b34c93b3b3b8c1d9602627d))
+
+
+### Bug Fixes
+
+* add concurrency group to release-please to prevent branch race ([2f4a050](https://github.com/gitrdunhq/eedom/commit/2f4a0506dc521d7520b1823ea6fc86a45c83bd6c))
+* add e2e tests to GATEKEEPER CI gate (container-only) ([2518a70](https://github.com/gitrdunhq/eedom/commit/2518a70c02a5df4c9b45bd714bff4451d6d08351))
+* address 12 Copilot/Torvalds review findings ([95e4b7c](https://github.com/gitrdunhq/eedom/commit/95e4b7c4f789acb5d3d036044a165334da116309))
+* address PR review — sha256 verify opengrep, rename log events, remove dead code ([9d9d4f3](https://github.com/gitrdunhq/eedom/commit/9d9d4f38eee3ba1c9e4611a6d9078f5dfab7a8d4))
+* cpd XML parser + cspell output capture + CI pytest install ([d7cbc04](https://github.com/gitrdunhq/eedom/commit/d7cbc04280a99cbbfa18a541d96a80d65f0239c1))
+* cspell drop dictionary args that cause silent failure with JSON reporter ([a3adac5](https://github.com/gitrdunhq/eedom/commit/a3adac57e122e29f8b6ed64b41b02261b71264f2))
+* cspell JSON reporter + migrate CI to x86 runner ([fb5d1cf](https://github.com/gitrdunhq/eedom/commit/fb5d1cfe18229a719c68d97c67954d66da2897cc))
+* cspell minimal flags — only --reporter for JSON stdout capture ([a91a925](https://github.com/gitrdunhq/eedom/commit/a91a925a357e14e560dfe58b4a1b6d0139625fc4))
+* cspell runs from repo_path with relative file paths ([735e46b](https://github.com/gitrdunhq/eedom/commit/735e46bd0ad77393a12bfb7c7f723c7f5fdf0790))
+* cspell use JSON reporter for reliable subprocess capture ([b862809](https://github.com/gitrdunhq/eedom/commit/b862809e4f449170c1eaf9b382393b11c1259a15))
+* cspell use temp config file with JSON reporter outFile ([f1efc32](https://github.com/gitrdunhq/eedom/commit/f1efc32cc3e30f8cdfc9388b3a9a338fcc803904))
+* cspell write JSON to file — bypass Node.js TTY buffering ([a75f139](https://github.com/gitrdunhq/eedom/commit/a75f139d5f5842d8d3d6353a1c432d9106c4c31d))
+* disable auto-done workflow until project bot PAT gets project scope ([951c960](https://github.com/gitrdunhq/eedom/commit/951c960b62945cc3a625d45b04cf7a30e3023ef9))
+* disable clamav from default scanners — not useful for source code review ([479622a](https://github.com/gitrdunhq/eedom/commit/479622a26ff2670922f6219dbe1fe07f274897ef))
+* disable clamav in repo config, re-enable cspell ([59e2b3a](https://github.com/gitrdunhq/eedom/commit/59e2b3a3488281db2733654b808fae2ba70f4250))
+* disable cspell plugin + xfail e2e test — Node.js TTY buffering issue tracked ([74045ab](https://github.com/gitrdunhq/eedom/commit/74045aba1723ad077bce5554270ea578c6edb8b5))
+* exclude test fixtures from self-review — planted vulns were triggering GATEKEEPER gate ([1a964c5](https://github.com/gitrdunhq/eedom/commit/1a964c5402bd9fc30ea164e6b426572f94e18320))
+* gitleaks renderer KeyError + cpd/cspell skip when not installed ([0103ded](https://github.com/gitrdunhq/eedom/commit/0103ded155b3830f0688dff804299a9eaba38099))
+* make all 1492 tests pass in container — zero failures ([fa6ec0b](https://github.com/gitrdunhq/eedom/commit/fa6ec0b082e6ce556594290704764a78154162e3))
+* mark deterministic bug detectors as xfail — zero confusing failures ([b993f8b](https://github.com/gitrdunhq/eedom/commit/b993f8b4e6cd73441171b741d8a3b6564d07add8))
+* OPA policy path points to policy.rego, not ./policies/ dir (D1) ([57ef054](https://github.com/gitrdunhq/eedom/commit/57ef054c48b59a3bf16322d4cefec066f0417b9c))
+* parallelize CI, switch to GH-hosted runners, eliminate push-to-main duplication ([49e7af0](https://github.com/gitrdunhq/eedom/commit/49e7af0c02c9737b0ec7608acc3a4b6694eac4e5))
+* pin release-please to x86 runner, deregister Mac runner ([2aff4cf](https://github.com/gitrdunhq/eedom/commit/2aff4cf5995bc25270687214c9c8940015a168ed))
+* PYTHONPATH=/workspace/src in CI so e2e tests use PR source, not stale container code ([f475c4c](https://github.com/gitrdunhq/eedom/commit/f475c4cfa53ce90be98a31cc25755f1449376671))
+* repair gitleaks, CPD, and cspell output capture on arm64 ([ebeb33b](https://github.com/gitrdunhq/eedom/commit/ebeb33bd01324f800ca18d9e0a4b0cd1ed23ac2a))
+* repair gitleaks, CPD, cspell output capture + tighten e2e assertions ([b52b623](https://github.com/gitrdunhq/eedom/commit/b52b623bfbc77ae468747c78855c893178e86948))
+* restore registry rulesets for max coverage while building local replacements ([d0e3187](https://github.com/gitrdunhq/eedom/commit/d0e31874b9b45c428a2fd09f256d404aba8ba94c))
+* revert scanner skip — fail loud when cpd/cspell missing from container ([33e2e8f](https://github.com/gitrdunhq/eedom/commit/33e2e8f5aedb5138118ab466aa861caa9f06bf5a))
+* run eedom review as root in Docker — UID mismatch on .temp mount ([e7b2f3b](https://github.com/gitrdunhq/eedom/commit/e7b2f3b41e62712d523dd748574d7bdca2e9ac82))
+* trivy respects .eedomignore via --skip-dirs, drop .trivyignore ([c2faaa1](https://github.com/gitrdunhq/eedom/commit/c2faaa18a7641cd899e16a228eaf29355bfe6c3b))
+* trivy skip-dirs tests use ToolRunnerPort mock instead of subprocess ([0eb8be5](https://github.com/gitrdunhq/eedom/commit/0eb8be573ac57ed77eae57af8542700f5f367d4d))
+* trivyignore for test fixtures + chown clamav dirs for root user ([e42d3c7](https://github.com/gitrdunhq/eedom/commit/e42d3c751a473df80433f698cd43b71e84a691d9))
+* update gitleaks unit tests for temp-file report + add codebase-stats.py ([4365d05](https://github.com/gitrdunhq/eedom/commit/4365d05efd65fdb1685b79c18aa3fe962726e982))
+* update gitleaks unit tests for temp-file report + add codebase-stats.py ([a72c2a8](https://github.com/gitrdunhq/eedom/commit/a72c2a83ee512374c7b1c220357e45c0fbe3e98d))
+* xfail semgrep e2e — container has 1.67.0, registry requires &gt;=1.76.0 ([46c2ee4](https://github.com/gitrdunhq/eedom/commit/46c2ee44443a5e8dd757f660f7615e2024f7c9ba))
+
+
+### Documentation
+
+* add AGENTS.md — codified agent execution model, split TDD, self-review ([3f1fa15](https://github.com/gitrdunhq/eedom/commit/3f1fa154f98af75d13d0e1e78329618c73843798))
+* add dogfood findings log — 3 bugs found in self-scan ([4c8b778](https://github.com/gitrdunhq/eedom/commit/4c8b778f9cb45674e50cfdd46cef08cfde64eef5))
+* add split-TDD rule + container-only testing to CLAUDE.md ([789463b](https://github.com/gitrdunhq/eedom/commit/789463bbdfb9929467f81e90a8f4facebd34a620))
+* dogfood run 2 — D1 fixed, no new bugs from P2/P4 ([acb6ad6](https://github.com/gitrdunhq/eedom/commit/acb6ad6e88d1bef169c076176bf5f8c7886e8967))
+* quality over speed — no RED+GREEN shortcuts, no exceptions ([39c0633](https://github.com/gitrdunhq/eedom/commit/39c0633548e81630061a279e4e321ba80ebe80e8))
+
 ## [0.2.8](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.7...eedom-v0.2.8) (2026-04-28)
 
 
