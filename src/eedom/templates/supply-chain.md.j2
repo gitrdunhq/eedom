@@ -4,24 +4,23 @@
 {% if unpinned %}
 <details open><summary>📌 <b>Unpinned Dependencies ({{ unpinned | length }})</b></summary>
 
-| Package | Version | Ecosystem | Risk |
-|---------|---------|-----------|------|
-{% for u in unpinned %}
-| `{{ u.package }}` | `{{ u.version }}` | {{ u.ecosystem }} | {{ u.reason }} |
+{% for entry in unpinned_entries %}
+{% for line in entry.lines %}
+{{ line }}
 {% endfor %}
 
+{% endfor %}
 </details>
 
 {% endif %}
 {% if locks %}
 <details open><summary>🔒 <b>Lockfile Integrity</b></summary>
 
-{% for lf in locks %}
-{% if lf.severity == "high" %}🔴{% else %}🟡{% endif %} {{ lf.message }}
-{% if lf.get("sha256") %}
-> SHA256: `{{ lf.sha256[:16] }}...`
+{% for entry in lock_entries %}
+{% for line in entry.lines %}
+{{ line }}
+{% endfor %}
 
-{% endif %}
 {% endfor %}
 </details>
 
@@ -29,12 +28,12 @@
 {% if docker %}
 <details open><summary>🐳 <b>Docker Floating Image Tags ({{ docker | length }})</b></summary>
 
-| File | Description |
-|------|-------------|
-{% for d in docker %}
-| `{{ d.file.split("/")[-1] }}` | {{ d.description }} |
+{% for entry in docker_entries %}
+{% for line in entry.lines %}
+{{ line }}
 {% endfor %}
 
+{% endfor %}
 </details>
 
 {% endif %}

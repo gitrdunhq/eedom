@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import textwrap
 from pathlib import Path
 
 import structlog
@@ -17,6 +18,8 @@ import yaml
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
 
 logger = structlog.get_logger(__name__)
+
+_REVIEW_WIDTH = 88
 
 _LOCKFILE_TO_MANIFEST: dict[str, list[str]] = {
     "package-lock.json": ["package.json"],
@@ -44,6 +47,18 @@ def _sha256(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return ""
+
+
+def _wrap_review_text(text: str, width: int = _REVIEW_WIDTH) -> list[str]:
+    normalized = " ".join(str(text).split())
+    if not normalized:
+        return []
+    return textwrap.wrap(
+        normalized,
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [normalized]
 
 
 def _is_dockerfile(name: str) -> bool:
@@ -376,9 +391,15 @@ class SupplyChainPlugin(ScannerPlugin):
 
     def _template_context(self, result: PluginResult) -> dict:
         ctx = super()._template_context(result)
-        ctx["unpinned"] = [f for f in result.findings if f.get("type") == "unpinned"]
-        ctx["locks"] = [f for f in result.findings if f.get("type") == "lockfile"]
-        ctx["docker"] = [f for f in result.findings if f.get("type") == "docker_latest"]
+        unpinned = [f for f in result.findings if f.get("type") == "unpinned"]
+        locks = [f for f in result.findings if f.get("type") == "lockfile"]
+        docker = [f for f in result.findings if f.get("type") == "docker_latest"]
+        ctx["unpinned"] = unpinned
+        ctx["locks"] = locks
+        ctx["docker"] = docker
+        ctx["unpinned_entries"] = [self._guidance_entry(f) for f in unpinned]
+        ctx["lock_entries"] = [self._guidance_entry(f) for f in locks]
+        ctx["docker_entries"] = [self._guidance_entry(f) for f in docker]
         return ctx
 
     def _render_inline(
@@ -395,36 +416,216 @@ class SupplyChainPlugin(ScannerPlugin):
 
         if unpinned:
             lines.append("<details open>")
-            lines.append(f"<summary>📌 <b>Unpinned Dependencies ({len(unpinned)})</b></summary>\n")
-            lines.append("| Package | Version | Ecosystem | Risk |")
-            lines.append("|---------|---------|-----------|------|")
-            for u in unpinned:
-                lines.append(
-                    f"| `{u['package']}` | `{u['version']}` | {u['ecosystem']} | {u['reason']} |"
-                )
-            lines.append("\n</details>\n")
+            lines.append(f"<summary>📌 <b>Unpinned Dependencies ({len(unpinned)})</b></summary>")
+            lines.append("")
+            for entry in (self._guidance_entry(f) for f in unpinned):
+                lines.extend(entry["lines"])
+                lines.append("")
+            lines.append("</details>")
+            lines.append("")
 
         if locks:
             lines.append("<details open>")
-            lines.append("<summary>🔒 <b>Lockfile Integrity</b></summary>\n")
-            for lf in locks:
-                icon = "🔴" if lf["severity"] == "high" else "🟡"
-                lines.append(f"{icon} {lf['message']}")
-                sha = lf.get("sha256", "")
-                if sha:
-                    lines.append(f"> SHA256: `{sha[:16]}...`\n")
-            lines.append("</details>\n")
+            lines.append("<summary>🔒 <b>Lockfile Integrity</b></summary>")
+            lines.append("")
+            for entry in (self._guidance_entry(f) for f in locks):
+                lines.extend(entry["lines"])
+                lines.append("")
+            lines.append("</details>")
+            lines.append("")
 
         if docker:
             lines.append("<details open>")
-            lines.append(
-                f"<summary>🐳 <b>Docker Floating Image Tags ({len(docker)})</b></summary>\n"
-            )
-            lines.append("| File | Description |")
-            lines.append("|------|-------------|")
-            for d in docker:
-                fname = Path(d["file"]).name
-                lines.append(f"| `{fname}` | {d['description']} |")
-            lines.append("\n</details>\n")
+            lines.append(f"<summary>🐳 <b>Docker Floating Image Tags ({len(docker)})</b></summary>")
+            lines.append("")
+            for entry in (self._guidance_entry(f) for f in docker):
+                lines.extend(entry["lines"])
+                lines.append("")
+            lines.append("</details>")
+            lines.append("")
 
-        return "\n".join(lines)
+        return "\n".join(lines).rstrip()
+
+    def _guidance_entry(self, finding: dict) -> dict[str, list[str]]:
+        kind = finding.get("type")
+        if kind == "unpinned":
+            lines = self._unpinned_guidance_lines(finding)
+        elif kind == "lockfile":
+            lines = self._lockfile_guidance_lines(finding)
+        elif kind == "docker_latest":
+            lines = self._docker_guidance_lines(finding)
+        else:
+            lines = self._generic_guidance_lines(finding)
+        return {"lines": lines}
+
+    def _generic_guidance_lines(self, finding: dict) -> list[str]:
+        intent = self._intent_label(finding)
+        message = (
+            finding.get("message") or finding.get("description") or "Supply-chain check failed."
+        )
+        return self._entry_lines(
+            intent=intent,
+            target="Supply-chain finding",
+            what_failed=str(message),
+            why=(
+                "Supply-chain findings change what code or runtime image is installed, "
+                "so they need a deterministic resolution before merge."
+            ),
+            fix="Update the manifest, lockfile, or image reference that produced this finding.",
+            done_when="The changed dependency input and the installed dependency output agree.",
+            verify=self._verify_text(),
+        )
+
+    def _unpinned_guidance_lines(self, finding: dict) -> list[str]:
+        package = str(finding.get("package") or "dependency")
+        manifest = str(finding.get("file") or "manifest")
+        version = str(finding.get("version") or "floating range")
+        ecosystem = str(finding.get("ecosystem") or "dependency manifest")
+        reason = str(finding.get("reason") or "floating version range")
+        severity = self._severity_evidence(finding)
+        what_failed = " ".join(
+            part
+            for part in (
+                severity,
+                f"The {ecosystem} dependency uses `{version}` ({reason}).",
+            )
+            if part
+        )
+        return self._entry_lines(
+            intent=self._intent_label(finding),
+            target=f"`{package}` in `{manifest}`",
+            what_failed=what_failed,
+            why=(
+                "Floating dependency ranges can resolve to different package versions in "
+                "later installs, so the reviewed code and installed code can diverge."
+            ),
+            fix=(
+                f"Pin `{package}` to an exact version and update the matching lockfile in "
+                "the same change."
+            ),
+            done_when=(
+                f"`{manifest}` uses an exact version for `{package}` and the lockfile "
+                "records that exact resolution."
+            ),
+            verify=self._verify_text(),
+        )
+
+    def _lockfile_guidance_lines(self, finding: dict) -> list[str]:
+        lockfile = str(finding.get("lockfile") or "lockfile")
+        message = self._review_sentence(
+            finding.get("message") or f"`{lockfile}` changed without its manifest."
+        )
+        evidence = self._sha_evidence(finding)
+        severity = self._severity_evidence(finding)
+        what_failed = " ".join(part for part in (severity, message, evidence) if part)
+        return self._entry_lines(
+            intent=self._intent_label(finding),
+            target=f"`{lockfile}`",
+            what_failed=what_failed,
+            why=(
+                "Manifest and lockfile drift means reviewers cannot tell which dependency "
+                "set is intended to be installed."
+            ),
+            fix=(
+                "Commit the matching manifest change, regenerate the lockfile from the "
+                "intended manifest, or revert lockfile churn that does not belong here."
+            ),
+            done_when=(
+                "The manifest and lockfile move together and describe the same dependency set."
+            ),
+            verify=self._verify_text(),
+        )
+
+    def _docker_guidance_lines(self, finding: dict) -> list[str]:
+        file_name = Path(str(finding.get("file") or "Dockerfile")).name
+        description = self._review_sentence(
+            finding.get("description")
+            or "Container image reference uses a floating tag or implicit latest."
+        )
+        severity = self._severity_evidence(finding)
+        what_failed = " ".join(part for part in (severity, description) if part)
+        return self._entry_lines(
+            intent=self._intent_label(finding),
+            target=f"`{file_name}`",
+            what_failed=what_failed,
+            why=(
+                "Floating image tags can pull a different base image after review, changing "
+                "OS packages and runtime behavior without a code diff."
+            ),
+            fix="Pin the image to a versioned tag or digest that the team intends to ship.",
+            done_when="Each changed image reference uses a non-floating tag or digest.",
+            verify=self._verify_text(),
+        )
+
+    @staticmethod
+    def _intent_label(finding: dict) -> str:
+        severity = str(finding.get("severity") or "").lower()
+        if severity in {"critical", "high"}:
+            return "Required"
+        if severity in {"medium", "low"}:
+            return "Consider"
+        return "Consider"
+
+    @staticmethod
+    def _verify_text() -> str:
+        return (
+            "Rerun `uv run eedom review --repo-path . --all` and confirm this "
+            "supply-chain item no longer appears."
+        )
+
+    @staticmethod
+    def _sha_evidence(finding: dict) -> str:
+        sha = str(finding.get("sha256") or "")
+        if not sha:
+            return ""
+        return f"SHA256 starts with `{sha[:16]}`."
+
+    @staticmethod
+    def _severity_evidence(finding: dict) -> str:
+        severity = str(finding.get("severity") or "").lower()
+        if not severity:
+            return ""
+        return f"Severity: {severity}."
+
+    @staticmethod
+    def _review_sentence(text: object) -> str:
+        sentence = " ".join(str(text).split())
+        sentence = sentence.replace("DID NOT", "was not")
+        if sentence and sentence[-1] not in ".!?":
+            return f"{sentence}."
+        return sentence
+
+    def _entry_lines(
+        self,
+        *,
+        intent: str,
+        target: str,
+        what_failed: str,
+        why: str,
+        fix: str,
+        done_when: str,
+        verify: str,
+    ) -> list[str]:
+        lines = [f"- **{intent}:**"]
+        lines.extend(self._inline_field("Target", target))
+        lines.extend(self._block_field("What failed", what_failed))
+        lines.extend(self._block_field("Why it matters", why))
+        lines.extend(self._block_field("Fix", fix))
+        lines.extend(self._block_field("Done when", done_when))
+        lines.extend(self._block_field("Verify", verify))
+        return lines
+
+    @staticmethod
+    def _inline_field(label: str, text: str) -> list[str]:
+        prefix = f"  {label}: "
+        continuation = " " * len(prefix)
+        width = max(40, 110 - len(prefix))
+        wrapped = _wrap_review_text(text, width=width)
+        if not wrapped:
+            return []
+        return [f"{prefix}{wrapped[0]}", *[f"{continuation}{line}" for line in wrapped[1:]]]
+
+    @staticmethod
+    def _block_field(label: str, text: str) -> list[str]:
+        wrapped = _wrap_review_text(text)
+        return [f"  {label}:", *[f"    {line}" for line in wrapped]]

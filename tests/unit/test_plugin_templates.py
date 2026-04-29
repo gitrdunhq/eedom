@@ -16,7 +16,6 @@ from eedom.plugins.complexity import ComplexityPlugin
 from eedom.plugins.kube_linter import KubeLinterPlugin
 from eedom.plugins.semgrep import SemgrepPlugin
 from eedom.plugins.supply_chain import SupplyChainPlugin
-
 from tests.unit.prose_assertions import assert_review_prose_contract
 
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "src" / "eedom" / "templates"
