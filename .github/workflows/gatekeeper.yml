@@ -223,7 +223,19 @@ jobs:
         if: steps.docs.outputs.docs_only != 'true' && github.event_name == 'pull_request' && steps.verdict.outputs.verdict == 'incomplete'
         continue-on-error: true
         run: |
-          TITLE="[eedom-crash] ${CRASHED} plugin(s) crashed reviewing PR #${PR_NUM}"
+          format_count() {
+            local count="$1"
+            local singular="$2"
+            local plural="$3"
+            if [ "$count" = "1" ]; then
+              printf "%s %s" "$count" "$singular"
+            else
+              printf "%s %s" "$count" "$plural"
+            fi
+          }
+
+          CRASHED_TEXT="$(format_count "${CRASHED:-0}" "plugin crashed" "plugins crashed")"
+          TITLE="[eedom-crash] ${CRASHED_TEXT} reviewing PR #${PR_NUM}"
           EXISTING=$(gh issue list --search "\"$TITLE\" in:title" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING" ]; then
             echo "Issue #$EXISTING already open — skipping"
@@ -270,13 +282,28 @@ jobs:
           if [ "$VERDICT" = "warnings" ]; then ICON="⚠️"; fi
           if [ "$VERDICT" = "incomplete" ]; then ICON="🟣"; fi
 
+          format_count() {
+            local count="$1"
+            local singular="$2"
+            local plural="$3"
+            if [ "$count" = "1" ]; then
+              printf "%s %s" "$count" "$singular"
+            else
+              printf "%s %s" "$count" "$plural"
+            fi
+          }
+
+          ERROR_TEXT="$(format_count "${ERRORS:-0}" "error" "errors")"
+          WARNING_TEXT="$(format_count "${WARNINGS:-0}" "warning" "warnings")"
+
           MARKER="<!-- eedom-review -->"
           CRASHED_NOTE=""
           if [ "${CRASHED:-0}" -ge 1 ]; then
-            CRASHED_NOTE=" | ${CRASHED} plugin(s) crashed"
+            CRASHED_TEXT="$(format_count "${CRASHED:-0}" "plugin crashed" "plugins crashed")"
+            CRASHED_NOTE=" | ${CRASHED_TEXT}"
           fi
           BODY="${MARKER}
-          ${ICON} **dom: ${VERDICT}** — ${ERRORS} error(s), ${WARNINGS} warning(s)${CRASHED_NOTE}
+          ${ICON} **dom: ${VERDICT}** - ${ERROR_TEXT}, ${WARNING_TEXT}${CRASHED_NOTE}
 
           <details>
           <summary>Full review</summary>
