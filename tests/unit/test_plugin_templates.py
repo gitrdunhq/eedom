@@ -157,7 +157,10 @@ def _supply_chain_result_with_findings() -> PluginResult:
                 "type": "docker_latest",
                 "file": "/repo/Dockerfile",
                 "severity": "medium",
-                "description": "Dockerfile FROM uses floating image `node` — pin to a specific digest or version tag",
+                "description": (
+                    "Dockerfile FROM uses floating image `node` — pin to a specific digest "
+                    "or version tag"
+                ),
             },
         ],
         summary={"unpinned": 1, "lockfile_issues": 1, "docker_latest": 1},
@@ -620,8 +623,9 @@ class TestRegressionOutputUnchanged:
         assert "<details" in out
         assert "📊" in out
         assert "CCN" in out
-        # Table headers
-        assert "Function" in out
+        assert "Top complex functions" in out
+        assert "Why it matters:" in out
+        assert "Consider:" in out
         assert "MI" in out or "Maintainability" in out
 
     def test_blast_radius_structure_preserved(self):
