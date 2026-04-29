@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-
 # =============================================================================
 # Issue #268: Normalizer Collapse Rule
 # =============================================================================
@@ -52,7 +51,7 @@ def test_normalizer_dedup_key_missing_source_tool():
         if isinstance(node, ast.FunctionDef) and node.name == "normalize_findings":
             # Look for the dedup key construction
             for stmt in ast.walk(node):
-                if isinstance(stmt, ast.Tuple) or isinstance(stmt, ast.List):
+                if isinstance(stmt, (ast.Tuple, ast.List)):
                     # Check tuple elements
                     elements = ast.dump(stmt)
                     # The dedup key should include source_tool
@@ -69,10 +68,10 @@ def test_normalizer_dedup_key_missing_source_tool():
     source = source_path.read_text()
     if "key = (f.advisory_id, f.category, f.package_name, f.version)" in source:
         pytest.fail(
-            f"BUG DETECTED: normalizer.py uses weak dedup key without source_tool.\n"
-            f"Line: key = (f.advisory_id, f.category, f.package_name, f.version)\n"
-            f"Bug #234: Findings with None advisory_id from different tools collapse.\n"
-            f"Fix: Add f.source_tool to the tuple."
+            "BUG DETECTED: normalizer.py uses weak dedup key without source_tool.\n"
+            "Line: key = (f.advisory_id, f.category, f.package_name, f.version)\n"
+            "Bug #234: Findings with None advisory_id from different tools collapse.\n"
+            "Fix: Add f.source_tool to the tuple."
         )
 
 
@@ -134,8 +133,8 @@ def test_composite_action_fixed_memo_eof_delimiter():
 
     if not found_delimiter_usage:
         pytest.fail(
-            f"Could not find MEMO_EOF delimiter usage in action.yml. "
-            f"The test may need updating if the action structure changed."
+            "Could not find MEMO_EOF delimiter usage in action.yml. "
+            "The test may need updating if the action structure changed."
         )
 
 
