@@ -102,3 +102,27 @@ class TestCspellStderrSuppression:
         assert "--reporter" in cmd
         idx = cmd.index("--reporter")
         assert cmd[idx + 1] == "@cspell/cspell-json-reporter"
+
+    @patch("eedom.plugins.cspell.subprocess.run")
+    def test_runs_from_repo_path_cwd(self, mock_run):
+        """cspell must run from repo_path so relative file paths resolve."""
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        p = CspellPlugin()
+        p.run(["/workspace/app.py"], Path("/workspace"))
+        kwargs = mock_run.call_args[1]
+        assert kwargs.get("cwd") == Path("/workspace")
+
+    @patch("eedom.plugins.cspell.subprocess.run")
+    def test_file_paths_made_relative_to_repo(self, mock_run):
+        """Absolute file paths must be converted to relative for cspell."""
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        p = CspellPlugin()
+        p.run(["/workspace/src/app.py", "/workspace/lib/util.py"], Path("/workspace"))
+        cmd = mock_run.call_args[0][0]
+        assert "src/app.py" in cmd
+        assert "lib/util.py" in cmd
+        assert "/workspace/src/app.py" not in cmd
