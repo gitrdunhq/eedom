@@ -5,6 +5,9 @@ API-style module for automated issue resolution. Reads GitHub issue context,
 builds scoped prompts, sends to OpenRouter-compatible endpoints with rate-limit
 aware sequential processing and model fallback ladder.
 
+All boundary contracts use Pydantic models. LLM output is untrusted input
+and is validated + sanitized before use.
+
 Public interface:
   - SolverConfig     — model ladder, rate limits, endpoint
   - SolverTask       — structured task from a GitHub issue
@@ -15,15 +18,24 @@ Public interface:
 
 from __future__ import annotations
 
+import re
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
 import httpx
 import structlog
+from pydantic import BaseModel, Field, field_validator
 
 logger = structlog.get_logger()
+
+_MAX_CODE_LENGTH = 50_000
+_MAX_FILE_SIZE = 50_000
+_MAX_PROMPT_LENGTH = 200_000
+_DANGEROUS_PATTERNS = re.compile(
+    r"os\.system\(|subprocess\.call\(.*shell=True" r"|__import__\(|exec\(|eval\("
+)
 
 
 class ModelTier(StrEnum):
@@ -32,30 +44,40 @@ class ModelTier(StrEnum):
     MOE_LARGE = "moe_large"
 
 
-@dataclass
-class ModelSpec:
-    id: str
+class ModelSpec(BaseModel):
+    id: str = Field(min_length=1)
     tier: ModelTier
-    context_window: int = 32_000
-    max_output: int = 8_000
+    context_window: int = Field(default=32_000, gt=0)
+    max_output: int = Field(default=8_000, gt=0)
 
 
 DEFAULT_MODEL_LADDER: list[ModelSpec] = [
-    ModelSpec(id="google/gemma-3-27b-it:free", tier=ModelTier.DENSE, context_window=96_000),
-    ModelSpec(id="qwen/qwen3-235b-a22b:free", tier=ModelTier.MOE, context_window=40_000),
-    ModelSpec(id="mistralai/devstral-small:free", tier=ModelTier.MOE_LARGE, context_window=128_000),
+    ModelSpec(
+        id="google/gemma-3-27b-it:free",
+        tier=ModelTier.DENSE,
+        context_window=96_000,
+    ),
+    ModelSpec(
+        id="qwen/qwen3-235b-a22b:free",
+        tier=ModelTier.MOE,
+        context_window=40_000,
+    ),
+    ModelSpec(
+        id="mistralai/devstral-small:free",
+        tier=ModelTier.MOE_LARGE,
+        context_window=128_000,
+    ),
 ]
 
 
-@dataclass
-class SolverConfig:
-    endpoint: str = "https://openrouter.ai/api"
+class SolverConfig(BaseModel):
+    endpoint: str = Field(default="https://openrouter.ai/api", pattern=r"^https://")
     api_key: str = ""
-    model_ladder: list[ModelSpec] = field(default_factory=lambda: list(DEFAULT_MODEL_LADDER))
+    model_ladder: list[ModelSpec] = Field(default_factory=lambda: list(DEFAULT_MODEL_LADDER))
     output_dir: str = ".temp/solver-results"
-    request_delay: float = 2.0
-    max_retries: int = 3
-    timeout: int = 120
+    request_delay: float = Field(default=2.0, ge=0.0)
+    max_retries: int = Field(default=3, ge=1, le=10)
+    timeout: int = Field(default=120, ge=5, le=600)
 
 
 class TaskStatus(StrEnum):
@@ -65,25 +87,48 @@ class TaskStatus(StrEnum):
     RATE_LIMITED = "rate_limited"
 
 
-@dataclass
-class SolverTask:
-    issue_number: int
-    title: str
-    body: str
+class SolverTask(BaseModel):
+    issue_number: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=500)
+    body: str = Field(max_length=200_000)
     group: str = ""
-    source_files: dict[str, str] = field(default_factory=dict)
-    test_files: dict[str, str] = field(default_factory=dict)
+    source_files: dict[str, str] = Field(default_factory=dict)
+    test_files: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("source_files", "test_files")
+    @classmethod
+    def truncate_large_files(cls, v: dict[str, str]) -> dict[str, str]:
+        return {k: content[:_MAX_FILE_SIZE] for k, content in v.items()}
 
 
-@dataclass
-class SolverResult:
-    issue_number: int
+class SolverResult(BaseModel):
+    issue_number: int = Field(gt=0)
     status: TaskStatus
     model_used: str = ""
-    code: str = ""
+    code: str = Field(default="", max_length=_MAX_CODE_LENGTH)
     error: str = ""
-    attempts: int = 0
-    duration_s: float = 0.0
+    attempts: int = Field(default=0, ge=0)
+    duration_s: float = Field(default=0.0, ge=0.0)
+    flagged_patterns: list[str] = Field(default_factory=list)
+
+
+class OpenRouterRequest(BaseModel):
+    model: str = Field(min_length=1)
+    max_tokens: int = Field(gt=0)
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    messages: list[dict[str, str]]
+
+
+class OpenRouterChoice(BaseModel):
+    message: dict[str, str]
+    finish_reason: str | None = None
+
+
+class OpenRouterResponse(BaseModel):
+    id: str = ""
+    choices: list[OpenRouterChoice] = Field(min_length=1)
+    model: str = ""
+    usage: dict[str, int] | None = None
 
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -123,26 +168,52 @@ def build_prompt(task: SolverTask) -> str:
 
     sections.append(
         "# Task\n\n"
-        f"Write a pytest test module that detects the bug in issue #{task.issue_number}.\n\n"
+        f"Write a pytest test module that detects the bug in issue "
+        f"#{task.issue_number}.\n\n"
         "Requirements:\n"
-        "1. The test MUST fail on the current codebase (this is the RED phase)\n"
+        "1. The test MUST fail on the current codebase (RED phase)\n"
         "2. The test verifies the specific behavior described in the bug\n"
         "3. Use mock/patch to isolate from external dependencies\n"
         "4. Match the test conventions shown in existing tests above\n"
-        "5. Include the tested-by comment: # tested-by: tests/unit/test_detector_{issue}.py\n\n"
+        "5. Include: # tested-by: tests/unit/test_detector_{issue}.py\n\n"
         "Output ONLY the Python code. No markdown, no explanation."
     )
 
-    return "\n\n".join(sections)
+    prompt = "\n\n".join(sections)
+    if len(prompt) > _MAX_PROMPT_LENGTH:
+        prompt = prompt[:_MAX_PROMPT_LENGTH]
+        logger.warning(
+            "solver.prompt_truncated",
+            issue=task.issue_number,
+            length=_MAX_PROMPT_LENGTH,
+        )
+    return prompt
 
 
 def _extract_rate_limit(headers: httpx.Headers) -> float | None:
     remaining = headers.get("x-ratelimit-remaining")
     reset = headers.get("x-ratelimit-reset")
-    if remaining is not None and int(remaining) < 2 and reset is not None:
-        wait = max(0, int(reset) - int(time.time()))
-        return float(wait + 1)
+    if remaining is None or reset is None:
+        return None
+    try:
+        if int(remaining) < 2:
+            wait = max(0, int(reset) - int(time.time()))
+            return float(wait + 1)
+    except ValueError:
+        return None
     return None
+
+
+def _sanitize_code(raw: str) -> tuple[str, list[str]]:
+    code = _clean_code(raw)
+    if len(code) > _MAX_CODE_LENGTH:
+        code = code[:_MAX_CODE_LENGTH]
+
+    flags: list[str] = []
+    for match in _DANGEROUS_PATTERNS.finditer(code):
+        flags.append(f"dangerous pattern at char {match.start()}: {match.group()}")
+
+    return code, flags
 
 
 def _post(
@@ -161,21 +232,31 @@ def _post(
         "HTTP-Referer": "https://github.com/gitrdunhq/eedom",
         "X-Title": "eedom-solver",
     }
-    payload = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": 0.2,
-        "messages": [
+    request = OpenRouterRequest(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-    }
-    resp = client.post(url, json=payload, headers=headers, timeout=timeout)
+    )
+    resp = client.post(
+        url,
+        json=request.model_dump(),
+        headers=headers,
+        timeout=timeout,
+    )
     return resp.text, {
         "status": resp.status_code,
         "headers": dict(resp.headers),
-        "rate_limit_remaining": resp.headers.get("x-ratelimit-remaining"),
     }
+
+
+def _parse_response(raw: str) -> OpenRouterResponse:
+    import orjson
+
+    data = orjson.loads(raw)
+    return OpenRouterResponse.model_validate(data)
 
 
 def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
@@ -246,11 +327,9 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
                     break
 
                 try:
-                    import orjson
-
-                    data = orjson.loads(raw)
-                    code = data["choices"][0]["message"]["content"]
-                except (KeyError, IndexError, TypeError) as exc:
+                    response = _parse_response(raw)
+                    raw_code = response.choices[0].message.get("content", "")
+                except Exception as exc:
                     logger.warning(
                         "solver.parse_error",
                         issue=task.issue_number,
@@ -259,7 +338,7 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
                     )
                     break
 
-                code = _clean_code(code)
+                code, flags = _sanitize_code(raw_code)
                 if not _looks_like_python(code):
                     logger.warning(
                         "solver.invalid_output",
@@ -269,6 +348,14 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
                     )
                     break
 
+                if flags:
+                    logger.warning(
+                        "solver.dangerous_patterns",
+                        issue=task.issue_number,
+                        model=model_spec.id,
+                        flags=flags,
+                    )
+
                 duration = time.monotonic() - start
                 logger.info(
                     "solver.success",
@@ -276,6 +363,7 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
                     model=model_spec.id,
                     code_lines=code.count("\n") + 1,
                     duration_s=round(duration, 1),
+                    flagged=len(flags),
                 )
                 return SolverResult(
                     issue_number=task.issue_number,
@@ -284,6 +372,7 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
                     code=code,
                     attempts=attempts,
                     duration_s=round(duration, 1),
+                    flagged_patterns=flags,
                 )
 
     duration = time.monotonic() - start
@@ -299,11 +388,11 @@ def solve(task: SolverTask, config: SolverConfig) -> SolverResult:
 def solve_batch(
     tasks: list[SolverTask],
     config: SolverConfig,
-    on_result: callable | None = None,
+    on_result: Callable[[SolverResult], None] | None = None,
 ) -> list[SolverResult]:
     """Process tasks sequentially with rate-limit pacing.
 
-    Calls on_result(result) after each task if provided (webhook hook point).
+    Calls on_result(result) after each task if provided (webhook hook).
     """
     results: list[SolverResult] = []
     out_dir = Path(config.output_dir)
@@ -333,7 +422,12 @@ def solve_batch(
 
     succeeded = sum(1 for r in results if r.status == TaskStatus.SUCCESS)
     failed = sum(1 for r in results if r.status == TaskStatus.FAILED)
-    logger.info("solver.batch_complete", succeeded=succeeded, failed=failed, total=len(tasks))
+    logger.info(
+        "solver.batch_complete",
+        succeeded=succeeded,
+        failed=failed,
+        total=len(tasks),
+    )
 
     return results
 

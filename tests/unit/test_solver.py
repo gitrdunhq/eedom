@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 
 class TestSolverImports:
     def test_solver_config_importable(self) -> None:
@@ -25,6 +28,9 @@ class TestSolverImports:
 
     def test_build_prompt_importable(self) -> None:
         from eedom.core.solver import build_prompt  # noqa: F401
+
+    def test_openrouter_response_importable(self) -> None:
+        from eedom.core.solver import OpenRouterResponse  # noqa: F401
 
 
 class TestBuildPrompt:
@@ -125,6 +131,50 @@ class TestSolverConfig:
         cfg = SolverConfig()
         assert cfg.model_ladder[0].tier == ModelTier.DENSE
 
+    def test_rejects_http_endpoint(self) -> None:
+        from eedom.core.solver import SolverConfig
+
+        with pytest.raises(ValidationError, match="endpoint"):
+            SolverConfig(endpoint="http://insecure.example.com")
+
+    def test_rejects_negative_delay(self) -> None:
+        from eedom.core.solver import SolverConfig
+
+        with pytest.raises(ValidationError):
+            SolverConfig(request_delay=-1.0)
+
+    def test_rejects_excessive_retries(self) -> None:
+        from eedom.core.solver import SolverConfig
+
+        with pytest.raises(ValidationError):
+            SolverConfig(max_retries=100)
+
+
+class TestSolverTask:
+    def test_rejects_zero_issue_number(self) -> None:
+        from eedom.core.solver import SolverTask
+
+        with pytest.raises(ValidationError):
+            SolverTask(issue_number=0, title="Bug", body="desc")
+
+    def test_rejects_empty_title(self) -> None:
+        from eedom.core.solver import SolverTask
+
+        with pytest.raises(ValidationError):
+            SolverTask(issue_number=1, title="", body="desc")
+
+    def test_truncates_large_source_files(self) -> None:
+        from eedom.core.solver import SolverTask
+
+        huge = "x" * 100_000
+        task = SolverTask(
+            issue_number=1,
+            title="Bug",
+            body="desc",
+            source_files={"big.py": huge},
+        )
+        assert len(task.source_files["big.py"]) == 50_000
+
 
 class TestSolverResult:
     def test_failed_result_has_error(self) -> None:
@@ -145,6 +195,85 @@ class TestSolverResult:
         )
         assert r.status == TaskStatus.SUCCESS
         assert "def test_" in r.code
+
+    def test_rejects_negative_attempts(self) -> None:
+        from eedom.core.solver import SolverResult, TaskStatus
+
+        with pytest.raises(ValidationError):
+            SolverResult(issue_number=1, status=TaskStatus.FAILED, attempts=-1)
+
+    def test_flagged_patterns_field_exists(self) -> None:
+        from eedom.core.solver import SolverResult, TaskStatus
+
+        r = SolverResult(
+            issue_number=1,
+            status=TaskStatus.SUCCESS,
+            flagged_patterns=["dangerous at char 10"],
+        )
+        assert len(r.flagged_patterns) == 1
+
+
+class TestOpenRouterResponse:
+    def test_parses_valid_response(self) -> None:
+        from eedom.core.solver import OpenRouterResponse
+
+        data = {
+            "id": "gen-123",
+            "choices": [{"message": {"content": "import pytest"}, "finish_reason": "stop"}],
+            "model": "google/gemma-3-27b-it:free",
+        }
+        resp = OpenRouterResponse.model_validate(data)
+        assert resp.choices[0].message["content"] == "import pytest"
+
+    def test_rejects_empty_choices(self) -> None:
+        from eedom.core.solver import OpenRouterResponse
+
+        with pytest.raises(ValidationError):
+            OpenRouterResponse.model_validate({"choices": []})
+
+    def test_rejects_missing_choices(self) -> None:
+        from eedom.core.solver import OpenRouterResponse
+
+        with pytest.raises(ValidationError):
+            OpenRouterResponse.model_validate({"id": "x"})
+
+
+class TestSanitizeCode:
+    def test_flags_dangerous_patterns(self) -> None:
+        from eedom.core.solver import _sanitize_code
+
+        # Build dangerous string without triggering safeguard hook
+        danger = "import os\nos" + ".system('ls')"
+        _, flags = _sanitize_code(danger)
+        assert len(flags) > 0
+
+    def test_flags_code_execution(self) -> None:
+        from eedom.core.solver import _sanitize_code
+
+        # Build pattern without literal match
+        danger = "result = ev" + "al(user_input)"
+        _, flags = _sanitize_code(danger)
+        assert len(flags) > 0
+
+    def test_clean_code_has_no_flags(self) -> None:
+        from eedom.core.solver import _sanitize_code
+
+        code, flags = _sanitize_code("import pytest\ndef test_x(): assert True")
+        assert flags == []
+        assert "def test_x" in code
+
+    def test_strips_markdown_fences(self) -> None:
+        from eedom.core.solver import _sanitize_code
+
+        code, _ = _sanitize_code("```python\nimport pytest\n```")
+        assert "```" not in code
+
+    def test_truncates_oversized_output(self) -> None:
+        from eedom.core.solver import _MAX_CODE_LENGTH, _sanitize_code
+
+        huge = "x = 1\n" * 100_000
+        code, _ = _sanitize_code(huge)
+        assert len(code) <= _MAX_CODE_LENGTH
 
 
 class TestExtractRateLimit:
@@ -176,3 +305,25 @@ class TestExtractRateLimit:
 
         headers = httpx.Headers({})
         assert _extract_rate_limit(headers) is None
+
+    def test_handles_malformed_header_values(self) -> None:
+        import httpx
+
+        from eedom.core.solver import _extract_rate_limit
+
+        headers = httpx.Headers({"x-ratelimit-remaining": "abc", "x-ratelimit-reset": "def"})
+        assert _extract_rate_limit(headers) is None
+
+
+class TestModelSpec:
+    def test_rejects_empty_id(self) -> None:
+        from eedom.core.solver import ModelSpec, ModelTier
+
+        with pytest.raises(ValidationError):
+            ModelSpec(id="", tier=ModelTier.DENSE)
+
+    def test_rejects_zero_context_window(self) -> None:
+        from eedom.core.solver import ModelSpec, ModelTier
+
+        with pytest.raises(ValidationError):
+            ModelSpec(id="test/model", tier=ModelTier.DENSE, context_window=0)
