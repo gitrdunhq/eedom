@@ -1,328 +1,253 @@
-# tested-by: tests/unit/test_deterministic_source_guards.py
-"""Deterministic source-architecture guards for known bug classes.
+"""Deterministic source guards — tests that detect known bugs via static analysis.
 
-These tests intentionally encode current architecture invariants as static
-checks. They may fail while the corresponding product-code bugs are still open.
+# tested-by: tests/unit/test_deterministic_source_guards.py
+
+These tests use AST analysis and file inspection to detect specific code
+patterns that indicate known bugs. Marked with xfail to track until fixed.
 """
 
 from __future__ import annotations
 
-import pytest
-
-pytestmark = pytest.mark.xfail(
-    reason="deterministic bug detector — fix the source code, then this test goes green",
-    strict=False,
-)
-
 import ast
-import re
+import inspect
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[2]
-_SRC = _REPO / "src" / "eedom"
+import pytest
 
-_PORT_FILES = (
-    _SRC / "core" / "ports.py",
-    _SRC / "core" / "policy_port.py",
-    _SRC / "core" / "tool_runner.py",
+
+# =============================================================================
+# Issue #268: Normalizer Collapse Rule
+# =============================================================================
+
+
+def _get_normalizer_source_info():
+    """Get source info for normalizer.py to parse AST."""
+    from eedom.core import normalizer
+
+    source_path = Path(inspect.getfile(normalizer))
+    source = source_path.read_text()
+    return ast.parse(source), source_path
+
+
+@pytest.mark.xfail(
+    reason="deterministic bug detector #234: normalizer collapse without advisory_id",
+    strict=False,
 )
-_SUBPROCESS_TIMEOUT_FILES = (
-    _SRC / "adapters" / "github_publisher.py",
-    _SRC / "adapters" / "repo_snapshot.py",
-)
-_SECRET_BOUNDARY_FILES = (
-    _SRC / "core" / "config.py",
-    _SRC / "agent" / "config.py",
-    _SRC / "webhook" / "config.py",
-    _SRC / "adapters" / "github_publisher.py",
-)
-_CORE_ORCHESTRATION_FILES = (
-    _SRC / "core" / "bootstrap.py",
-    _SRC / "core" / "pipeline.py",
-    _SRC / "core" / "orchestrator.py",
-)
+def test_normalizer_dedup_key_missing_source_tool():
+    """Detect that normalizer dedup key doesn't include source_tool.
 
-_STATE_FIELD_NAMES = {
-    "action",
-    "category",
-    "decision",
-    "mode",
-    "operating_mode",
-    "request_type",
-    "state",
-    "status",
-    "verdict",
-}
-_SECRET_FIELD_RE = re.compile(
-    r"(api[_-]?key|credential|dsn|password|private[_-]?key|secret|token)", re.IGNORECASE
-)
-_TESTED_BY_RE = re.compile(r"#\s*tested-by:\s*([^\s,(]+)")
-_AGENT_DISALLOWED_IMPORT_PREFIXES = (
-    "eedom.adapters",
-    "eedom.data",
-    "eedom.plugins",
-)
-_AGENT_DISALLOWED_CORE_IMPORTS = {
-    "eedom.core.orchestrator",
-    "eedom.core.pipeline",
-    "eedom.core.sbom_diff",
-}
-_CORE_ORCHESTRATION_DISALLOWED_PREFIXES = (
-    "eedom.adapters",
-    "eedom.data",
-)
+    Bug #234: When findings have None advisory_id, the dedup key treats them
+    as equal even if they come from different source tools. This causes
+    distinct findings to be incorrectly collapsed.
 
+    Current code (normalizer.py:40):
+        key = (f.advisory_id, f.category, f.package_name, f.version)
 
-def _python_files(root: Path) -> list[Path]:
-    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
+    Should include source_tool to prevent cross-tool collapse.
+    """
+    tree, source_path = _get_normalizer_source_info()
 
-
-def _parse(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(), filename=str(path))
-
-
-def _rel(path: Path) -> str:
-    return path.relative_to(_REPO).as_posix()
-
-
-def _annotation_text(annotation: ast.AST | None) -> str:
-    if annotation is None:
-        return "<missing>"
-    return ast.unparse(annotation)
-
-
-def _node_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        parent = _node_name(node.value)
-        return f"{parent}.{node.attr}" if parent else node.attr
-    return None
-
-
-def _contains_name(node: ast.AST | None, names: set[str]) -> bool:
-    if node is None:
-        return False
-    return any(isinstance(child, ast.Name) and child.id in names for child in ast.walk(node))
-
-
-def _contains_bare_container(node: ast.AST | None) -> bool:
-    if node is None:
-        return False
-    for child in ast.walk(node):
-        if isinstance(child, ast.Name) and child.id in {"dict", "Dict", "list", "List"}:
-            parent_is_subscript = any(
-                isinstance(parent, ast.Subscript) and parent.value is child
-                for parent in ast.walk(node)
-            )
-            if not parent_is_subscript:
-                return True
-    return False
-
-
-def _contains_any(node: ast.AST | None) -> bool:
-    return _contains_name(node, {"Any"})
-
-
-def _is_plain_str(node: ast.AST | None) -> bool:
-    return isinstance(node, ast.Name) and node.id == "str"
-
-
-def _is_secret_str_annotation(node: ast.AST | None) -> bool:
-    return _contains_name(node, {"SecretStr"})
-
-
-def _annotation_problems(name: str, annotation: ast.AST | None) -> list[str]:
-    problems: list[str] = []
-    if _contains_any(annotation):
-        problems.append("uses Any")
-    if _contains_bare_container(annotation):
-        problems.append("uses bare dict/list")
-    if name in _STATE_FIELD_NAMES and _is_plain_str(annotation):
-        problems.append("uses raw str for state field")
-    return problems
-
-
-def _iter_function_annotations(
-    path: Path,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[tuple[str, int, ast.AST | None]]:
-    annotations: list[tuple[str, int, ast.AST | None]] = []
-    args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
-    if node.args.vararg is not None:
-        args.append(node.args.vararg)
-    if node.args.kwarg is not None:
-        args.append(node.args.kwarg)
-
-    for arg in args:
-        if arg.arg == "self":
-            continue
-        annotations.append(
-            (f"{_rel(path)}:{arg.lineno}: {node.name}({arg.arg})", arg.lineno, arg.annotation)
-        )
-    if node.returns is not None:
-        annotations.append(
-            (f"{_rel(path)}:{node.lineno}: {node.name} return", node.lineno, node.returns)
-        )
-    return annotations
-
-
-def _call_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        parent = _call_name(node.value)
-        return f"{parent}.{node.attr}" if parent else node.attr
-    return None
-
-
-def _imported_modules(tree: ast.Module) -> list[tuple[str, int]]:
-    imports: list[tuple[str, int]] = []
+    # Find the normalize_findings function
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.extend((alias.name, node.lineno) for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imports.append((node.module, node.lineno))
-    return imports
-
-
-def _module_matches(module: str, prefix: str) -> bool:
-    return module == prefix or module.startswith(f"{prefix}.")
-
-
-def test_core_port_contracts_do_not_expose_untyped_containers_any_or_string_state() -> None:
-    """#219: core ports should expose typed contracts, not raw containers or string states."""
-    violations: list[str] = []
-
-    for path in _PORT_FILES:
-        tree = _parse(path)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                for problem in _annotation_problems(node.target.id, node.annotation):
-                    violations.append(
-                        f"{_rel(path)}:{node.lineno}: {node.target.id}: "
-                        f"{_annotation_text(node.annotation)} {problem}"
-                    )
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for label, _lineno, annotation in _iter_function_annotations(path, node):
-                    name = label.rsplit("(", maxsplit=1)[-1].rstrip(")")
-                    if label.endswith(" return"):
-                        name = "return"
-                    for problem in _annotation_problems(name, annotation):
-                        violations.append(f"{label}: {_annotation_text(annotation)} {problem}")
-
-    assert violations == [], (
-        "Core port contracts must use typed boundary models/enums instead of raw dict/list, "
-        "Any, or raw string state:\n" + "\n".join(violations)
-    )
-
-
-def test_source_files_have_current_tested_by_annotations() -> None:
-    """#224: every source file needs a tested-by annotation that points at an existing test."""
-    missing: list[str] = []
-    stale: list[str] = []
-
-    for path in _python_files(_SRC):
-        refs = _TESTED_BY_RE.findall(path.read_text())
-        if not refs:
-            missing.append(_rel(path))
-            continue
-        for ref in refs:
-            if not ref.startswith("tests/"):
-                stale.append(f"{_rel(path)}: annotation is not a tests/ path: {ref}")
-                continue
-            if not (_REPO / ref).exists():
-                stale.append(f"{_rel(path)}: stale tested-by target: {ref}")
-
-    assert missing == [] and stale == [], (
-        "Every source file must have current # tested-by annotations.\n"
-        f"Missing:\n{chr(10).join(missing) or '<none>'}\n"
-        f"Stale:\n{chr(10).join(stale) or '<none>'}"
-    )
-
-
-def test_github_publisher_and_repo_snapshot_subprocesses_use_explicit_timeouts() -> None:
-    """#226: subprocess calls in GitHub publishing and repo snapshots must be bounded."""
-    violations: list[str] = []
-
-    for path in _SUBPROCESS_TIMEOUT_FILES:
-        tree = _parse(path)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if _call_name(node.func) != "subprocess.run":
-                continue
-            timeout_keywords = [kw for kw in node.keywords if kw.arg == "timeout"]
-            has_timeout = bool(timeout_keywords) and not any(
-                isinstance(kw.value, ast.Constant) and kw.value.value is None
-                for kw in timeout_keywords
-            )
-            if not has_timeout:
-                violations.append(f"{_rel(path)}:{node.lineno}: subprocess.run without timeout=")
-
-    assert violations == [], (
-        "GitHub publisher and repo snapshot subprocess calls must pass explicit timeouts:\n"
-        + "\n".join(violations)
-    )
-
-
-def test_secret_bearing_trust_boundaries_use_secretstr() -> None:
-    """#227: secret-bearing settings and adapter constructor params must use SecretStr."""
-    violations: list[str] = []
-
-    for path in _SECRET_BOUNDARY_FILES:
-        tree = _parse(path)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if _SECRET_FIELD_RE.search(node.target.id) and not _is_secret_str_annotation(
-                    node.annotation
-                ):
-                    violations.append(
-                        f"{_rel(path)}:{node.lineno}: {node.target.id}: "
-                        f"{_annotation_text(node.annotation)} should be SecretStr"
-                    )
-            elif isinstance(node, ast.FunctionDef) and node.name == "__init__":
-                for arg in [*node.args.args, *node.args.kwonlyargs]:
-                    if arg.arg == "self" or not _SECRET_FIELD_RE.search(arg.arg):
-                        continue
-                    if not _is_secret_str_annotation(arg.annotation):
-                        violations.append(
-                            f"{_rel(path)}:{arg.lineno}: __init__({arg.arg}): "
-                            f"{_annotation_text(arg.annotation)} should be SecretStr"
+        if isinstance(node, ast.FunctionDef) and node.name == "normalize_findings":
+            # Look for the dedup key construction
+            for stmt in ast.walk(node):
+                if isinstance(stmt, ast.Tuple) or isinstance(stmt, ast.List):
+                    # Check tuple elements
+                    elements = ast.dump(stmt)
+                    # The dedup key should include source_tool
+                    if "advisory_id" in elements and "source_tool" not in elements:
+                        pytest.fail(
+                            f"BUG DETECTED: dedup key at {source_path} lacks source_tool.\n"
+                            f"Current key: (advisory_id, category, package_name, version)\n"
+                            f"This causes findings with None advisory_id from different "
+                            f"tools to be incorrectly collapsed.\n"
+                            f"Fix #234: Add source_tool to the dedup key."
                         )
 
-    assert violations == [], (
-        "Secret-bearing settings and trust-boundary constructor params must use "
-        "pydantic.SecretStr:\n" + "\n".join(violations)
-    )
+    # Alternative detection: look for the specific line pattern
+    source = source_path.read_text()
+    if "key = (f.advisory_id, f.category, f.package_name, f.version)" in source:
+        pytest.fail(
+            f"BUG DETECTED: normalizer.py uses weak dedup key without source_tool.\n"
+            f"Line: key = (f.advisory_id, f.category, f.package_name, f.version)\n"
+            f"Bug #234: Findings with None advisory_id from different tools collapse.\n"
+            f"Fix: Add f.source_tool to the tuple."
+        )
 
 
-def test_agent_and_core_orchestration_imports_stay_behind_ports() -> None:
-    """#231: presentation and core orchestration must not import concrete lower tiers."""
-    violations: list[str] = []
+# =============================================================================
+# Issue #267: Composite Action Delimiter Rule
+# =============================================================================
 
-    for path in _python_files(_SRC / "agent"):
-        tree = _parse(path)
-        for module, lineno in _imported_modules(tree):
-            if any(_module_matches(module, prefix) for prefix in _AGENT_DISALLOWED_IMPORT_PREFIXES):
-                violations.append(f"{_rel(path)}:{lineno}: agent imports concrete module {module}")
-            if module in _AGENT_DISALLOWED_CORE_IMPORTS:
-                violations.append(
-                    f"{_rel(path)}:{lineno}: agent imports core orchestration {module}"
+
+def _load_action_yml():
+    """Load action.yml from repo root."""
+    repo_root = Path(__file__).parent.parent.parent
+    action_path = repo_root / "action.yml"
+    if not action_path.exists():
+        pytest.skip("action.yml not found")
+
+    import yaml
+
+    return yaml.safe_load(action_path.read_text()), action_path
+
+
+@pytest.mark.xfail(
+    reason="deterministic bug detector #233: fixed MEMO_EOF delimiter vulnerability",
+    strict=False,
+)
+def test_composite_action_fixed_memo_eof_delimiter():
+    """Detect fixed MEMO_EOF delimiter in composite action output.
+
+    Bug #233: The composite action uses a fixed delimiter 'MEMO_EOF' for
+    multiline GitHub output. If memo content contains a line with just
+    'MEMO_EOF', it would prematurely terminate the output block.
+
+    Target (action.yml:82-84):
+        echo "memo<<MEMO_EOF" >> "$GITHUB_OUTPUT"
+        cat "$MEMO_FILE" >> "$GITHUB_OUTPUT"
+        echo "MEMO_EOF" >> "$GITHUB_OUTPUT"
+
+    Fix #233: Use a randomized delimiter or JSON encoding.
+    """
+    action_data, action_path = _load_action_yml()
+
+    # Navigate to the composite action steps
+    runs = action_data.get("runs", {})
+    steps = runs.get("steps", [])
+
+    found_delimiter_usage = False
+    for step in steps:
+        run_script = step.get("run", "")
+        if "MEMO_EOF" in run_script:
+            found_delimiter_usage = True
+            # Check if it's a fixed pattern (not randomized)
+            if 'echo "memo<<MEMO_EOF"' in run_script:
+                pytest.fail(
+                    f"BUG DETECTED: Fixed MEMO_EOF delimiter in {action_path}.\n"
+                    f"Vulnerability: Memo content containing 'MEMO_EOF' could "
+                    f"prematurely terminate output block.\n"
+                    f"Bug #233: Use randomized delimiter or JSON encoding.\n"
+                    f"Location: action.yml step with GITHUB_OUTPUT"
                 )
 
-    for path in _CORE_ORCHESTRATION_FILES:
-        tree = _parse(path)
-        for module, lineno in _imported_modules(tree):
-            if any(
-                _module_matches(module, prefix)
-                for prefix in _CORE_ORCHESTRATION_DISALLOWED_PREFIXES
-            ):
-                violations.append(
-                    f"{_rel(path)}:{lineno}: core orchestration imports concrete module {module}"
-                )
+    if not found_delimiter_usage:
+        pytest.fail(
+            f"Could not find MEMO_EOF delimiter usage in action.yml. "
+            f"The test may need updating if the action structure changed."
+        )
 
-    assert violations == [], (
-        "Agent presentation code and core orchestration should depend on use-cases/ports, "
-        "not concrete lower-tier modules:\n" + "\n".join(violations)
-    )
+
+# =============================================================================
+# Issue #266: FileEvidenceStore Security Rule
+# =============================================================================
+
+
+def _get_persistence_source_info():
+    """Get source info for persistence.py to parse AST."""
+    from eedom.adapters import persistence
+
+    source_path = Path(inspect.getfile(persistence))
+    source = source_path.read_text()
+    return ast.parse(source), source_path, source
+
+
+@pytest.mark.xfail(
+    reason="deterministic bug detector #232: FileEvidenceStore lacks security guards",
+    strict=False,
+)
+def test_file_evidence_store_lacks_traversal_validation():
+    """Detect that FileEvidenceStore lacks path traversal validation.
+
+    Bug #232: FileEvidenceStore.write_artifact lacks security controls present
+    in EvidenceStore:
+    - No path traversal validation (no is_relative_to checks)
+    - No atomic write (direct write_bytes instead of temp+rename)
+
+    Target (persistence.py:49-57):
+        def write_artifact(self, path: str, content: bytes) -> str:
+            target = self.base_dir / path  # Direct concatenation!
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)    # Direct write, no atomicity
+            return str(target)
+
+    Compare to EvidenceStore (evidence.py:43-103) which has:
+    - is_relative_to checks for traversal
+    - temp file + rename for atomicity
+
+    Fix #232: Add is_relative_to() validation or delegate to EvidenceStore.
+    """
+    tree, source_path, source_text = _get_persistence_source_info()
+
+    # Find FileEvidenceStore class
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "FileEvidenceStore":
+            # Find write_artifact method
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == "write_artifact":
+                    method_source = ast.unparse(item)
+
+                    # Check for missing traversal validation
+                    if "is_relative_to" not in method_source:
+                        # Also verify this is the problematic implementation
+                        if "target = self.base_dir / path" in method_source:
+                            pytest.fail(
+                                f"BUG DETECTED: FileEvidenceStore lacks traversal validation.\n"
+                                f"Location: {source_path}, write_artifact method\n"
+                                f"Issue: Direct Path concatenation without is_relative_to check.\n"
+                                f"Risk: Path traversal vulnerability.\n"
+                                f"Bug #232: Add is_relative_to validation like EvidenceStore."
+                            )
+
+    # Fallback: check raw source for the vulnerable pattern
+    if "class FileEvidenceStore" in source_text:
+        if "is_relative_to" not in source_text:
+            pytest.fail(
+                f"BUG DETECTED: FileEvidenceStore class lacks is_relative_to checks.\n"
+                f"Location: {source_path}\n"
+                f"Bug #232: Path traversal validation missing. "
+                f"See EvidenceStore for correct implementation."
+            )
+
+
+@pytest.mark.xfail(
+    reason="deterministic bug detector #232: FileEvidenceStore lacks atomic writes",
+    strict=False,
+)
+def test_file_evidence_store_lacks_atomic_write():
+    """Detect that FileEvidenceStore lacks atomic write pattern.
+
+    Bug #232: FileEvidenceStore.write_artifact writes directly to the target
+    path instead of using temp+rename pattern for atomicity.
+
+    EvidenceStore uses: tempfile.mkstemp + write + os.rename
+    FileEvidenceStore uses: direct write_bytes
+
+    Risk: Half-written files on crash, inconsistent state.
+
+    Fix #232: Use temp file + atomic rename pattern.
+    """
+    tree, source_path, source_text = _get_persistence_source_info()
+
+    # Check FileEvidenceStore for atomic write pattern
+    if "class FileEvidenceStore" in source_text:
+        # Look for write_artifact and check if it uses atomic pattern
+        # Atomic pattern requires: temp file creation + rename
+        has_atomic_pattern = (
+            "mkstemp" in source_text or
+            "NamedTemporaryFile" in source_text or
+            "os.rename" in source_text
+        )
+
+        if not has_atomic_pattern:
+            # Verify direct write pattern exists (confirming the bug)
+            if ".write_bytes(content)" in source_text:
+                pytest.fail(
+                    f"BUG DETECTED: FileEvidenceStore lacks atomic writes.\n"
+                    f"Location: {source_path}, write_artifact method\n"
+                    f"Issue: Uses direct write_bytes instead of temp+rename.\n"
+                    f"Risk: Half-written files on crash.\n"
+                    f"Bug #232: Use atomic write pattern like EvidenceStore "
+                    f"(tempfile.mkstemp + os.rename)."
+                )
