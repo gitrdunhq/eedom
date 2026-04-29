@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/Edmonton"
+    # Dependabot cooldown only applies to version updates. Security updates
+    # bypass this delay; dependabot.yml does not expose CVSS-threshold routing.
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    exclude-paths:
+      - "tests/e2e/fixtures/vuln-repo/**"
+    groups:
+      python-runtime:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:30"
+      timezone: "America/Edmonton"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

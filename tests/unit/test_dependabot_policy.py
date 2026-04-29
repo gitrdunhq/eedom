@@ -1,0 +1,68 @@
+# tested-by: tests/unit/test_dependabot_policy.py
+"""Dependabot policy guards for intentionally vulnerable scanner fixtures."""
+
+from __future__ import annotations
+
+import tomllib
+from pathlib import Path
+
+import yaml
+
+_ROOT = Path(__file__).resolve().parents[2]
+_VULN_FIXTURE = "tests/e2e/fixtures/vuln-repo"
+_VULN_FIXTURE_GLOB = f"{_VULN_FIXTURE}/**"
+
+
+def _load_dependabot_config() -> dict[object, object]:
+    path = _ROOT / ".github" / "dependabot.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert isinstance(data, dict), ".github/dependabot.yml must parse to a YAML mapping"
+    return data
+
+
+def _dependabot_updates() -> list[dict[object, object]]:
+    updates = _load_dependabot_config().get("updates")
+    assert isinstance(updates, list), "dependabot.yml must define an updates list"
+    return [update for update in updates if isinstance(update, dict)]
+
+
+def test_dependabot_excludes_intentional_vulnerability_fixture() -> None:
+    pip_updates = [
+        update
+        for update in _dependabot_updates()
+        if update.get("package-ecosystem") == "pip" and update.get("directory") == "/"
+    ]
+    assert pip_updates, "Dependabot must have a root pip update block"
+
+    excluded = {
+        item
+        for update in pip_updates
+        for item in update.get("exclude-paths", [])
+        if isinstance(item, str)
+    }
+    assert _VULN_FIXTURE_GLOB in excluded, (
+        "Dependabot must not update the intentionally vulnerable e2e fixture; "
+        "scanner coverage depends on those pinned vulnerable manifests."
+    )
+
+
+def test_dependabot_version_updates_have_minimum_package_age() -> None:
+    pip_update = next(
+        update
+        for update in _dependabot_updates()
+        if update.get("package-ecosystem") == "pip" and update.get("directory") == "/"
+    )
+    cooldown = pip_update.get("cooldown")
+    assert isinstance(cooldown, dict), "Root pip updates must define a cooldown"
+    assert cooldown.get("default-days") == 14
+
+
+def test_vuln_fixture_keeps_known_vulnerable_dependency_pins() -> None:
+    requirements = (_ROOT / _VULN_FIXTURE / "requirements.txt").read_text(encoding="utf-8")
+    with (_ROOT / _VULN_FIXTURE / "pyproject.toml").open("rb") as file:
+        pyproject = tomllib.load(file)
+
+    dependencies = pyproject["project"]["dependencies"]
+    assert "requests==2.25.1" in requirements
+    assert "requests==2.25.1" in dependencies
+    assert "cryptography==3.4.8" in requirements
