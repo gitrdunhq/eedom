@@ -62,6 +62,7 @@ def _scan_result_strategy(draw: st.DrawFn) -> ScanResult:
         message=draw(st.one_of(st.none(), st.text(max_size=100))),
     )
 
+
 # Non-license categories — findings with these go through the dedup path
 _non_license_categories = [c for c in FindingCategory if c != FindingCategory.license]
 
