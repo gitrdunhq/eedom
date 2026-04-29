@@ -31,6 +31,15 @@ class CspellPlugin(ScannerPlugin):
         return bool(files)
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
+        # cspell 8.x skips files given as absolute paths outside the project root.
+        # Run from repo_path with relative paths so glob resolution works.
+        rel_files = []
+        for f in files:
+            try:
+                rel_files.append(str(Path(f).relative_to(repo_path)))
+            except ValueError:
+                rel_files.append(f)
+
         cmd = [
             "cspell",
             "lint",
@@ -38,7 +47,7 @@ class CspellPlugin(ScannerPlugin):
             "@cspell/cspell-json-reporter",
             "--no-progress",
             "--no-summary",
-            *files,
+            *rel_files,
         ]
 
         try:
@@ -48,6 +57,7 @@ class CspellPlugin(ScannerPlugin):
                 text=True,
                 timeout=60,
                 check=False,
+                cwd=repo_path,
             )
         except FileNotFoundError:
             return PluginResult(
