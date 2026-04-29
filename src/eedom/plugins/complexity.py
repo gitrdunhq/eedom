@@ -133,7 +133,9 @@ class ComplexityPlugin(ScannerPlugin):
         lines.append(
             f"<summary>📊 <b>Complexity: avg CCN {avg}, max {mx}, {nloc} NLOC</b></summary>\n"
         )
-        high_note = f", {ctx['high_count']} with CCN > 10" if ctx["high_count"] else ""
+        high_note = (
+            f", High complexity: {ctx['high_count']} with CCN > 10" if ctx["high_count"] else ""
+        )
         lines.append(
             f"**Top complex functions** — showing {ctx['shown_count']} of "
             f"{len(result.findings)}{high_note}.\n"

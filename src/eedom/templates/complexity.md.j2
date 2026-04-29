@@ -3,7 +3,7 @@
 {% elif findings %}
 <details><summary>📊 <b>Complexity: avg CCN {{ summary.get("avg_cyclomatic_complexity", 0) }}, max {{ summary.get("max_cyclomatic_complexity", 0) }}, {{ summary.get("total_nloc", 0) }} NLOC</b></summary>
 
-**Top complex functions** — showing {{ shown_count }} of {{ findings | length }}{% if high_count %}, {{ high_count }} with CCN > 10{% endif %}.
+**Top complex functions** — showing {{ shown_count }} of {{ findings | length }}{% if high_count %}, High complexity: {{ high_count }} with CCN > 10{% endif %}.
 
 {% for entry in entries %}
 - **`{{ entry.function }}`** — CCN {{ entry.ccn }}, MI {{ entry.mi }}, NLOC {{ entry.nloc }}
