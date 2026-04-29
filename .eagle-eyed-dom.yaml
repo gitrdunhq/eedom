@@ -2,4 +2,4 @@ plugins:
   disabled:
     - mypy
     - blast-radius
-    - cspell
+    - clamav
