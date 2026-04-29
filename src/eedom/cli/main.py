@@ -300,6 +300,7 @@ def review(
         raise click.UsageError("--scope diff requires --diff <path>")
     if resolved_scope == ScanScope.FOLDER and not package:
         raise click.UsageError("--scope folder requires --package <path>")
+    effective_scope = resolved_scope or (ScanScope.DIFF if diff else ScanScope.REPO)
 
     _ctx = bootstrap_review(registry_factory=get_default_registry)
     registry = _ctx.analyzer_registry
@@ -387,7 +388,7 @@ def review(
             categories=cats,
             disabled=disabled_names,
             enabled=enabled_names,
-            scope=resolved_scope or ScanScope.REPO,
+            scope=effective_scope,
         )
         review_result = review_repository(_ctx, files, repo, options, repo_files=repo_file_list)
         results = review_result.results
@@ -455,6 +456,8 @@ def review(
             pr_num=pr_num,
             title=title,
             file_count=len(files),
+            scan_scope=effective_scope.value,
+            repo_file_count=len(repo_file_list) if repo_file_list is not None else None,
             plugin_renderers=plugin_map,
         )
         if output:

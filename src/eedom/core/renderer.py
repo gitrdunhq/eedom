@@ -360,12 +360,29 @@ def _build_monorepo_sections(
     return overall_verdict, summary_rows, sections
 
 
+def _scan_scope_rows(
+    scan_scope: str,
+    file_count: int,
+    repo_file_count: int | None,
+) -> list[tuple[str, str]]:
+    scope = (scan_scope or "repo").lower()
+    rows = [("Scan scope", scope)]
+    if scope == "diff" and repo_file_count is not None:
+        rows.append(("Changed files", str(file_count)))
+        rows.append(("Repo-wide files", f"{repo_file_count} total"))
+        return rows
+    rows.append(("Files scanned", str(file_count)))
+    return rows
+
+
 def render_comment(
     results: list[PluginResult],
     repo: str = "",
     pr_num: int = 0,
     title: str = "",
     file_count: int = 0,
+    scan_scope: str = "repo",
+    repo_file_count: int | None = None,
     template_dir: Path | None = None,
     plugin_renderers: dict[str, object] | None = None,
 ) -> str:
@@ -406,7 +423,7 @@ def render_comment(
         pr_num=pr_num,
         title=title,
         verdict=verdict,
-        file_count=file_count,
+        scan_scope_rows=_scan_scope_rows(scan_scope, file_count, repo_file_count),
         summary_rows=summary_rows,
         sections=sections,
         severity_score=severity_score,
