@@ -31,30 +31,37 @@ from eedom.data.alternatives import categorize_package
 from eedom.data.scanners.osv import _cvss_score_to_severity
 
 # ---------------------------------------------------------------------------
-# Reusable strategies
+# Reusable strategies — refactored using @st.composite for clarity
 # ---------------------------------------------------------------------------
 
-_finding_strategy = st.builds(
-    Finding,
-    severity=st.sampled_from(list(FindingSeverity)),
-    category=st.sampled_from(list(FindingCategory)),
-    description=st.text(min_size=1, max_size=100),
-    source_tool=st.text(min_size=1, max_size=20),
-    package_name=st.text(min_size=1, max_size=50),
-    version=st.text(min_size=1, max_size=20),
-    advisory_id=st.one_of(st.none(), st.text(min_size=1, max_size=20)),
-)
 
-_scan_result_strategy = st.builds(
-    ScanResult,
-    tool_name=st.text(min_size=1, max_size=20),
-    status=st.sampled_from(list(ScanResultStatus)),
-    findings=st.lists(_finding_strategy, min_size=0, max_size=10),
-    duration_seconds=st.floats(
-        min_value=0.0, max_value=60.0, allow_nan=False, allow_infinity=False
-    ),
-    message=st.one_of(st.none(), st.text(max_size=100)),
-)
+@st.composite
+def _finding_strategy(draw: st.DrawFn) -> Finding:
+    """Build a Finding with drawn values for property testing."""
+    return Finding(
+        severity=draw(st.sampled_from(list(FindingSeverity))),
+        category=draw(st.sampled_from(list(FindingCategory))),
+        description=draw(st.text(min_size=1, max_size=100)),
+        source_tool=draw(st.text(min_size=1, max_size=20)),
+        package_name=draw(st.text(min_size=1, max_size=50)),
+        version=draw(st.text(min_size=1, max_size=20)),
+        advisory_id=draw(st.one_of(st.none(), st.text(min_size=1, max_size=20))),
+    )
+
+
+@st.composite
+def _scan_result_strategy(draw: st.DrawFn) -> ScanResult:
+    """Build a ScanResult with drawn values for property testing."""
+    return ScanResult(
+        tool_name=draw(st.text(min_size=1, max_size=20)),
+        status=draw(st.sampled_from(list(ScanResultStatus))),
+        findings=draw(st.lists(_finding_strategy(), min_size=0, max_size=10)),
+        duration_seconds=draw(
+            st.floats(min_value=0.0, max_value=60.0, allow_nan=False, allow_infinity=False)
+        ),
+        message=draw(st.one_of(st.none(), st.text(max_size=100))),
+    )
+
 
 # Non-license categories — findings with these go through the dedup path
 _non_license_categories = [c for c in FindingCategory if c != FindingCategory.license]
@@ -116,7 +123,7 @@ def test_cvss_severity_monotonic(score: float) -> None:
 # ---------------------------------------------------------------------------
 
 
-@given(scan_results=st.lists(_scan_result_strategy, min_size=0, max_size=10))
+@given(scan_results=st.lists(_scan_result_strategy(), min_size=0, max_size=10))
 @settings(max_examples=200)
 def test_normalize_never_adds_findings(scan_results: list[ScanResult]) -> None:
     """Normalization can only reduce or maintain finding count, never increase it.
@@ -211,7 +218,7 @@ def test_dedup_keeps_higher_severity(
 @given(
     mode=st.sampled_from(list(OperatingMode)),
     verdict=st.sampled_from(list(DecisionVerdict)),
-    findings=st.lists(_finding_strategy, min_size=0, max_size=100),
+    findings=st.lists(_finding_strategy(), min_size=0, max_size=100),
     triggered_rules=st.lists(st.text(min_size=1, max_size=200), min_size=0, max_size=50),
 )
 @settings(max_examples=200)
