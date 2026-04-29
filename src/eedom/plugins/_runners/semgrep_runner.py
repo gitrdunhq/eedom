@@ -1,4 +1,4 @@
-"""Opengrep subprocess runner (semgrep-compatible, local rules only)."""
+"""Opengrep subprocess runner (semgrep-compatible, registry + local rules)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from pathlib import Path
 import structlog
 
 logger = structlog.get_logger(__name__)
-
-_PINNED_RULES_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / "semgrep-rules"
 
 _EXT_TO_RULESETS: dict[str, list[str]] = {
     ".py": ["p/python"],
@@ -53,16 +51,6 @@ def detect_rulesets(changed_files: list[str]) -> list[str]:
     return rulesets
 
 
-def _resolve_ruleset(rs: str) -> str:
-    if not _PINNED_RULES_PATH.exists():
-        return rs
-    if rs.startswith("r/"):
-        local = _PINNED_RULES_PATH / rs[2:].replace(".", "/")
-        if local.exists():
-            return str(local)
-    return rs
-
-
 def run_semgrep(
     changed_files: list[str],
     repo_path: str,
@@ -76,7 +64,7 @@ def run_semgrep(
 
     config_args: list[str] = []
     for rs in rulesets:
-        config_args.extend(["--config", _resolve_ruleset(rs)])
+        config_args.extend(["--config", rs])
     if org_rules.is_dir():
         config_args.extend(["--config", str(org_rules)])
 
@@ -101,23 +89,23 @@ def run_semgrep(
         from eedom.core.errors import ErrorCode, error_msg
 
         msg = error_msg(ErrorCode.NOT_INSTALLED, "opengrep")
-        logger.warning("semgrep.not_installed", error=msg)
+        logger.warning("opengrep.not_installed", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except subprocess.TimeoutExpired:
         from eedom.core.errors import ErrorCode, error_msg
 
         msg = error_msg(ErrorCode.TIMEOUT, "opengrep", timeout=timeout)
-        logger.warning("semgrep.timeout", error=msg)
+        logger.warning("opengrep.timeout", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except json.JSONDecodeError:
         from eedom.core.errors import ErrorCode, error_msg
 
         msg = error_msg(ErrorCode.PARSE_ERROR, "opengrep")
-        logger.warning("semgrep.parse_error", error=msg)
+        logger.warning("opengrep.parse_error", error=msg)
         return {"results": [], "errors": [{"message": msg}], "status": "error"}
     except Exception:
         from eedom.core.errors import ErrorCode, error_msg
 
         msg = error_msg(ErrorCode.BINARY_CRASHED, "opengrep", exit_code=-1)
-        logger.exception("semgrep.failed")
+        logger.exception("opengrep.failed")
         return {"results": [], "errors": [{"message": msg}], "status": "error"}

@@ -45,6 +45,7 @@ ARG JQ_SHA256_ARM64=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8
 ARG KUBE_LINTER_SHA256_ARM64=802e1b09eabd08f6f0a060a6b8ab2bf7bc7e6bf4f673bb2692303704c84b3e22
 ARG LS_LINT_SHA256_ARM64=2abdb71243c619f0bb29587be5c228bec84c107985f2c066139ef0ec35fd3a99
 ARG PMD_SHA256=110934b36d39c19094d1b77386931978093f238f2c2f1851748822b69c7367ac
+ARG OPENGREP_SHA256_ARM64=3bade33c9aee60edf88899cac2b58086bf728caf0a93aced97dd77c272a740f1
 
 # AMD64 checksums
 ARG SYFT_SHA256_AMD64=7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a
@@ -55,6 +56,7 @@ ARG GITLEAKS_SHA256_AMD64=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca
 ARG JQ_SHA256_AMD64=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
 ARG KUBE_LINTER_SHA256_AMD64=1a6d8419b11971372971fdbc22682b684ebfb7cf1c39591662d1b6ca736c41df
 ARG LS_LINT_SHA256_AMD64=b5a0d2e4427ad039fbc574551f17679f38f142b25d15e0e538769f8cf15af397
+ARG OPENGREP_SHA256_AMD64=09cbb4c938df696246018a678823adaa8d651a774f321fd19fb5ad44c0129860
 ARG UV_COMMIT=0e961dd9a2bb6f73493d9e8398b725ad2d3b3837
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -175,16 +177,19 @@ RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
       "lizard==${LIZARD_VERSION}" \
       "mypy==${MYPY_VERSION}"
 
-# opengrep — self-contained binary, no Python dependency
+# opengrep — self-contained binary, sha256-verified
+ARG OPENGREP_SHA256_ARM64 OPENGREP_SHA256_AMD64
 RUN set -eux; \
     case "${TARGETARCH}" in \
-        "amd64") OG_ARCH="x86" ;; \
-        "arm64") OG_ARCH="aarch64" ;; \
+        "amd64") OG_ARCH="x86";     OG_SHA="${OPENGREP_SHA256_AMD64}" ;; \
+        "arm64") OG_ARCH="aarch64"; OG_SHA="${OPENGREP_SHA256_ARM64}" ;; \
         *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     curl -sSfL -o /usr/local/bin/opengrep \
       "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_${OG_ARCH}"; \
-    chmod +x /usr/local/bin/opengrep
+    echo "${OG_SHA}  /usr/local/bin/opengrep" | sha256sum --strict -c -; \
+    chmod +x /usr/local/bin/opengrep; \
+    sha256sum /usr/local/bin/opengrep >> /staging/scripts/checksums.txt
 
 # scancode's plugin loader crashes on arm64 (extractcode-libarchive has no arm64 wheel).
 # Replace the console_script with a wrapper that defers the import.
