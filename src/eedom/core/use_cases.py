@@ -10,11 +10,18 @@ Three public symbols:
 from __future__ import annotations
 
 import dataclasses
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from eedom.core.bootstrap import ApplicationContext
+
+
+class ScanScope(StrEnum):
+    REPO = "repo"
+    DIFF = "diff"
+    FOLDER = "folder"
 
 
 @dataclasses.dataclass
@@ -25,6 +32,7 @@ class ReviewOptions:
     categories: list | None = None
     disabled: set[str] = dataclasses.field(default_factory=set)
     enabled: set[str] = dataclasses.field(default_factory=set)
+    scope: ScanScope = ScanScope.REPO
 
 
 @dataclasses.dataclass
@@ -67,11 +75,16 @@ def review_repository(
     files: list,
     repo_path: Path,
     options: ReviewOptions,
+    repo_files: list | None = None,
 ) -> ReviewResult:
     """Run all matching plugins and return a structured ReviewResult.
 
     Delegates execution to ``context.analyzer_registry.run_all()``.
     Scores and verdict are derived from the aggregated plugin results.
+
+    When *repo_files* is provided (diff mode), code/quality plugins receive
+    *files* (diff-scoped) while dependency/infra/supply_chain plugins receive
+    *repo_files* (full repo).
     """
     from eedom.core.renderer import calculate_quality_score, calculate_severity_score
 
@@ -82,6 +95,7 @@ def review_repository(
         categories=options.categories,
         disabled_names=options.disabled,
         enabled_names=options.enabled,
+        repo_files=repo_files,
     )
 
     verdict = _derive_verdict(plugin_results)

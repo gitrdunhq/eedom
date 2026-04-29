@@ -768,3 +768,120 @@ class TestPluginDependencyGraph:
         from eedom.plugins._opa import OpaPlugin
 
         assert OpaPlugin().depends_on == ["*"]
+
+
+# ── run_all() with repo_files (diff-scoped routing) ──
+
+
+class _TrackingPlugin(ScannerPlugin):
+    """Records which files it received on each run() call."""
+
+    def __init__(self, plugin_name: str, plugin_category: PluginCategory) -> None:
+        self._name = plugin_name
+        self._category = plugin_category
+        self.received_files: list[list[str]] = []
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return f"Tracking plugin {self._name}"
+
+    @property
+    def category(self) -> PluginCategory:
+        return self._category
+
+    def can_run(self, files: list[str], repo_path: Path) -> bool:
+        return True
+
+    def run(self, files: list[str], repo_path: Path) -> PluginResult:
+        self.received_files.append(list(files))
+        return PluginResult(plugin_name=self._name)
+
+
+class TestRepoFilesRouting:
+    """run_all(repo_files=...) routes files by plugin category."""
+
+    def test_repo_files_none_all_plugins_get_same_files(self):
+        reg = PluginRegistry()
+        code_p = _TrackingPlugin("code-scanner", PluginCategory.code)
+        dep_p = _TrackingPlugin("dep-scanner", PluginCategory.dependency)
+        reg.register(code_p)
+        reg.register(dep_p)
+
+        reg.run_all(["a.py", "b.py"], Path("."), repo_files=None)
+
+        assert code_p.received_files[0] == ["a.py", "b.py"]
+        assert dep_p.received_files[0] == ["a.py", "b.py"]
+
+    def test_repo_files_code_plugin_gets_diff_files(self):
+        reg = PluginRegistry()
+        code_p = _TrackingPlugin("code-scanner", PluginCategory.code)
+        reg.register(code_p)
+
+        diff_files = ["changed.py"]
+        repo_files = ["changed.py", "untouched.py", "other.py"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert code_p.received_files[0] == ["changed.py"]
+
+    def test_repo_files_quality_plugin_gets_diff_files(self):
+        reg = PluginRegistry()
+        qual_p = _TrackingPlugin("quality-scanner", PluginCategory.quality)
+        reg.register(qual_p)
+
+        diff_files = ["changed.py"]
+        repo_files = ["changed.py", "untouched.py"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert qual_p.received_files[0] == ["changed.py"]
+
+    def test_repo_files_dependency_plugin_gets_repo_files(self):
+        reg = PluginRegistry()
+        dep_p = _TrackingPlugin("dep-scanner", PluginCategory.dependency)
+        reg.register(dep_p)
+
+        diff_files = ["changed.py"]
+        repo_files = ["changed.py", "untouched.py", "other.py"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert dep_p.received_files[0] == ["changed.py", "untouched.py", "other.py"]
+
+    def test_repo_files_infra_plugin_gets_repo_files(self):
+        reg = PluginRegistry()
+        infra_p = _TrackingPlugin("infra-scanner", PluginCategory.infra)
+        reg.register(infra_p)
+
+        diff_files = ["changed.tf"]
+        repo_files = ["changed.tf", "main.tf", "vars.tf"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert infra_p.received_files[0] == ["changed.tf", "main.tf", "vars.tf"]
+
+    def test_repo_files_supply_chain_plugin_gets_repo_files(self):
+        reg = PluginRegistry()
+        sc_p = _TrackingPlugin("sc-scanner", PluginCategory.supply_chain)
+        reg.register(sc_p)
+
+        diff_files = ["changed.py"]
+        repo_files = ["changed.py", "requirements.txt"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert sc_p.received_files[0] == ["changed.py", "requirements.txt"]
+
+    def test_repo_files_mixed_plugins_route_correctly(self):
+        """Code gets diff files, dependency gets repo files, in same run."""
+        reg = PluginRegistry()
+        code_p = _TrackingPlugin("code-scanner", PluginCategory.code)
+        dep_p = _TrackingPlugin("dep-scanner", PluginCategory.dependency)
+        reg.register(code_p)
+        reg.register(dep_p)
+
+        diff_files = ["changed.py"]
+        repo_files = ["changed.py", "untouched.py", "other.py"]
+        reg.run_all(diff_files, Path("."), repo_files=repo_files)
+
+        assert code_p.received_files[0] == ["changed.py"]
+        assert dep_p.received_files[0] == ["changed.py", "untouched.py", "other.py"]

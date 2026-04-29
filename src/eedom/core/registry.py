@@ -94,6 +94,11 @@ class PluginRegistry:
             plugins = [p for p in plugins if p.name in name_set]
         return plugins
 
+    # Categories that always scan the full repo even in diff mode.
+    _REPO_WIDE_CATEGORIES: frozenset[PluginCategory] = frozenset(
+        {PluginCategory.dependency, PluginCategory.infra, PluginCategory.supply_chain}
+    )
+
     def run_all(
         self,
         files: list[str],
@@ -103,6 +108,7 @@ class PluginRegistry:
         disabled_names: set[str] | list[str] | None = None,
         enabled_names: set[str] | list[str] | None = None,
         package_units: list | None = None,
+        repo_files: list[str] | None = None,
     ) -> list[PluginResult]:
         """Run all matching plugins.
 
@@ -112,6 +118,9 @@ class PluginRegistry:
         3. *enabled_names* — plugins in this set override disabled_names.
            A plugin that is both disabled and enabled will run.
            enabled_names alone (without any disabled_names) has no filtering effect.
+
+        When *repo_files* is provided (diff mode), dependency/infra/supply_chain
+        plugins receive *repo_files* while code/quality plugins receive *files*.
 
         When *package_units* is provided (a list of
         ``eedom.core.manifest_discovery.PackageUnit``), each plugin is executed
@@ -145,7 +154,12 @@ class PluginRegistry:
 
         results: list[PluginResult] = []
         for plugin in plugins:
-            results.append(self._run_one(plugin, files, repo_path))
+            plugin_files = (
+                repo_files
+                if repo_files is not None and plugin.category in self._REPO_WIDE_CATEGORIES
+                else files
+            )
+            results.append(self._run_one(plugin, plugin_files, repo_path))
 
         return results
 
