@@ -1189,3 +1189,40 @@ class TestReviewPRMode:
 
         assert result.exit_code == 1
         assert "API error" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --scope CLI flag
+# ---------------------------------------------------------------------------
+
+
+class TestScopeFlag:
+    def test_scope_option_in_review_help(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--help"])
+        assert "--scope" in result.output
+
+    def test_scope_accepts_repo_value(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--help"])
+        assert "repo" in result.output
+
+    def test_scope_accepts_diff_value(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--help"])
+        assert "diff" in result.output
+
+    def test_scope_accepts_folder_value(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--help"])
+        assert "folder" in result.output
+
+    def test_scope_diff_without_diff_file_errors(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--scope", "diff", "--repo-path", "."])
+        assert result.exit_code != 0
+
+    def test_scope_folder_without_path_errors(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["review", "--scope", "folder", "--repo-path", "."])
+        assert result.exit_code != 0

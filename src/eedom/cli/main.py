@@ -202,6 +202,12 @@ def evaluate(
 
 
 @cli.command()
+@click.option(
+    "--scope",
+    type=click.Choice(["repo", "diff", "folder"]),
+    default=None,
+    help="Scan scope: repo (full), diff (changed files only), folder (single directory).",
+)
 @click.option("--diff", type=str, default=None, help="Path to diff file.")
 @click.option("--repo-path", type=click.Path(exists=True), default=".", help="Repository root.")
 @click.option("--scanners", type=str, default=None, help="Comma-separated plugin names.")
@@ -263,6 +269,7 @@ def evaluate(
     help="GitHub repo (owner/name) for --pr mode. Auto-detected if omitted.",
 )
 def review(
+    scope: str | None,
     diff: str | None,
     repo_path: str,
     scanners: str | None,
@@ -286,6 +293,13 @@ def review(
     from eedom.core.plugin import PluginCategory
     from eedom.core.renderer import render_comment
     from eedom.core.repo_config import RepoConfig, load_repo_config
+    from eedom.core.use_cases import ScanScope
+
+    resolved_scope = ScanScope(scope) if scope else None
+    if resolved_scope == ScanScope.DIFF and not diff:
+        raise click.UsageError("--scope diff requires --diff <path>")
+    if resolved_scope == ScanScope.FOLDER and not package:
+        raise click.UsageError("--scope folder requires --package <path>")
 
     _ctx = bootstrap_review(registry_factory=get_default_registry)
     registry = _ctx.analyzer_registry
@@ -309,28 +323,11 @@ def review(
             enabled_names.add(_e.strip())
     enabled_names.discard("")
 
-    def _build_file_list() -> list[str]:
+    def _all_repo_files() -> list[str]:
         from eedom.core.ignore import load_ignore_patterns, should_ignore
 
         ignore_patterns = load_ignore_patterns(repo)
-
-        if diff:
-            diff_text = _read_diff(diff)
-            files: list[str] = []
-            for line in diff_text.split("\n"):
-                if line.startswith("diff --git"):
-                    parts = line.split(" b/")
-                    if len(parts) == 2:
-                        fpath = parts[1].strip()
-                        full = (repo / fpath).resolve()
-                        if not full.is_relative_to(repo.resolve()):
-                            continue
-                        if (full.exists() or not fpath.startswith(".git")) and not should_ignore(
-                            fpath, ignore_patterns
-                        ):
-                            files.append(str(full))
-            return files
-        files = []
+        files: list[str] = []
         for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
             files.extend(
                 str(p)
@@ -339,18 +336,60 @@ def review(
             )
         return files
 
+    def _diff_files() -> list[str]:
+        from eedom.core.ignore import load_ignore_patterns, should_ignore
+
+        ignore_patterns = load_ignore_patterns(repo)
+        diff_text = _read_diff(diff)  # type: ignore[arg-type]
+        files: list[str] = []
+        for line in diff_text.split("\n"):
+            if line.startswith("diff --git"):
+                parts = line.split(" b/")
+                if len(parts) == 2:
+                    fpath = parts[1].strip()
+                    full = (repo / fpath).resolve()
+                    if not full.is_relative_to(repo.resolve()):
+                        continue
+                    if (full.exists() or not fpath.startswith(".git")) and not should_ignore(
+                        fpath, ignore_patterns
+                    ):
+                        files.append(str(full))
+        return files
+
+    def _build_file_lists() -> tuple[list[str], list[str] | None]:
+        """Return (files, repo_files). repo_files is non-None only in diff scope."""
+        if resolved_scope == ScanScope.DIFF:
+            return _diff_files(), _all_repo_files()
+        if resolved_scope == ScanScope.FOLDER:
+            from eedom.core.ignore import load_ignore_patterns, should_ignore
+
+            ignore_patterns = load_ignore_patterns(repo)
+            folder = Path(package).resolve()  # type: ignore[arg-type]
+            files: list[str] = []
+            for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
+                files.extend(
+                    str(p)
+                    for p in folder.rglob(ext)
+                    if not should_ignore(str(p.relative_to(repo)), ignore_patterns)
+                )
+            return files, None
+        if diff:
+            return _diff_files(), None
+        return _all_repo_files(), None
+
     def run_review() -> None:
         from eedom.core.use_cases import ReviewOptions, review_repository
 
-        files = _build_file_list()
+        files, repo_file_list = _build_file_lists()
 
         options = ReviewOptions(
             scanners=names,
             categories=cats,
             disabled=disabled_names,
             enabled=enabled_names,
+            scope=resolved_scope or ScanScope.REPO,
         )
-        review_result = review_repository(_ctx, files, repo, options)
+        review_result = review_repository(_ctx, files, repo, options, repo_files=repo_file_list)
         results = review_result.results
 
         if output_format == "sarif" or pr is not None:

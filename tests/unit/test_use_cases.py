@@ -202,3 +202,69 @@ class TestReviewRepository:
         # Must accept a real pathlib.Path, not just a string.
         result = review_repository(ctx, files=[], repo_path=Path("/tmp/fake-repo"), options=opts)
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# ScanScope enum
+# ---------------------------------------------------------------------------
+
+
+class TestScanScope:
+    def test_scan_scope_is_importable(self) -> None:
+        from eedom.core.use_cases import ScanScope  # noqa: F401
+
+    def test_scan_scope_has_repo_value(self) -> None:
+        from eedom.core.use_cases import ScanScope
+
+        assert ScanScope.REPO == "repo"
+
+    def test_scan_scope_has_diff_value(self) -> None:
+        from eedom.core.use_cases import ScanScope
+
+        assert ScanScope.DIFF == "diff"
+
+    def test_scan_scope_has_folder_value(self) -> None:
+        from eedom.core.use_cases import ScanScope
+
+        assert ScanScope.FOLDER == "folder"
+
+    def test_review_options_has_scope_field(self) -> None:
+        from eedom.core.use_cases import ReviewOptions
+
+        fields = {f.name for f in dataclasses.fields(ReviewOptions)}
+        assert "scope" in fields
+
+    def test_review_options_scope_defaults_to_repo(self) -> None:
+        from eedom.core.use_cases import ReviewOptions, ScanScope
+
+        opts = ReviewOptions()
+        assert opts.scope == ScanScope.REPO
+
+
+# ---------------------------------------------------------------------------
+# review_repository() with repo_files (diff-scoped routing)
+# ---------------------------------------------------------------------------
+
+
+class TestReviewRepositoryRepoFiles:
+    def test_review_repository_accepts_repo_files_kwarg(self) -> None:
+        from eedom.core.bootstrap import bootstrap_test
+        from eedom.core.use_cases import ReviewOptions, review_repository
+
+        ctx = bootstrap_test()
+        opts = ReviewOptions()
+        result = review_repository(
+            ctx, files=[], repo_path=Path("."), options=opts, repo_files=["a.py"]
+        )
+        assert result is not None
+
+    def test_review_repository_repo_files_none_is_backward_compat(self) -> None:
+        from eedom.core.bootstrap import bootstrap_test
+        from eedom.core.use_cases import ReviewOptions, review_repository
+
+        ctx = bootstrap_test()
+        opts = ReviewOptions()
+        result = review_repository(
+            ctx, files=[], repo_path=Path("."), options=opts, repo_files=None
+        )
+        assert result.verdict == "clear"
