@@ -3,12 +3,10 @@
 {% elif findings %}
 <details open><summary>☸️ <b>K8s/Helm ({{ findings | length }})</b></summary>
 
-{% for f in findings[:15] %}
-**{{ f.get("check", "?") }}** — `{{ f.get("object_kind", "?") }}/{{ f.get("object_name", "?") }}`
-> {{ f.get("message", "") | truncate(200, true, "") }}
-{% if f.get("remediation") %}
-> 💡 {{ f.remediation | truncate(200, true, "") }}
-{% endif %}
+{% for entry in entries %}
+{% for line in entry.lines %}
+{{ line }}
+{% endfor %}
 
 {% endfor %}
 </details>

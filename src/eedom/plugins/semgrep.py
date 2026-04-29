@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
 from eedom.plugins._runners.semgrep_runner import run_semgrep as _run
+
+_REVIEW_WIDTH = 88
 
 _CODE_EXTS = {
     ".py",
@@ -25,6 +28,18 @@ _CODE_EXTS = {
     ".yaml",
     ".yml",
 }
+
+
+def _wrap_review_text(text: str, width: int = _REVIEW_WIDTH) -> list[str]:
+    normalized = " ".join(str(text).split())
+    if not normalized:
+        return []
+    return textwrap.wrap(
+        normalized,
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [normalized]
 
 
 class SemgrepPlugin(ScannerPlugin):
@@ -81,6 +96,11 @@ class SemgrepPlugin(ScannerPlugin):
             summary={"total": len(findings)},
         )
 
+    def _template_context(self, result: PluginResult) -> dict:
+        ctx = super()._template_context(result)
+        ctx["entries"] = [self._guidance_entry(f) for f in result.findings]
+        return ctx
+
     def _render_inline(self, result: PluginResult) -> str:
         if result.error:
             return f"**semgrep**: {result.error}"
@@ -88,12 +108,104 @@ class SemgrepPlugin(ScannerPlugin):
             return ""
         lines = [
             "<details open>",
-            f"<summary>🔍 <b>Semgrep ({len(result.findings)})</b></summary>\n",
+            f"<summary>🔍 <b>Semgrep ({len(result.findings)})</b></summary>",
+            "",
         ]
-        for f in result.findings:
-            icon = {"ERROR": "🔴", "WARNING": "🟡", "INFO": "ℹ️"}.get(f["severity"], "?")
-            rule = f["rule_id"].split(".")[-1]
-            lines.append(f"{icon} **`{f['file']}:{f['start_line']}`** — **{rule}**")
-            lines.append(f"> {f['message'][:200]}\n")
-        lines.append("</details>\n")
-        return "\n".join(lines)
+        for entry in (self._guidance_entry(f) for f in result.findings):
+            lines.extend(entry["lines"])
+            lines.append("")
+        lines.append("</details>")
+        return "\n".join(lines).rstrip()
+
+    def _guidance_entry(self, finding: dict) -> dict[str, list[str]]:
+        severity = str(finding.get("severity") or "WARNING").upper()
+        icon = {"ERROR": "🔴", "WARNING": "🟡", "INFO": "ℹ️"}.get(severity, "•")
+        intent = {"ERROR": "Required", "WARNING": "Consider", "INFO": "FYI"}.get(
+            severity, "Consider"
+        )
+        rule_id = str(finding.get("rule_id") or "?")
+        rule = rule_id.split(".")[-1]
+        file = str(finding.get("file") or "?")
+        line = finding.get("start_line") or 0
+        message = str(finding.get("message") or "Semgrep matched this code pattern.")
+        return {
+            "lines": self._entry_lines(
+                icon=icon,
+                intent=intent,
+                target=f"`{file}:{line}` ({rule})",
+                what_failed=f"{message} Rule: `{rule_id}`.",
+                why=self._why_text(rule_id, message),
+                fix=self._fix_text(rule_id, message),
+                done_when=(
+                    f"`{file}:{line}` no longer matches `{rule_id}`, or the suppression "
+                    "is justified."
+                ),
+                verify="Rerun Semgrep or `uv run eedom review --repo-path . --all`.",
+            )
+        }
+
+    @staticmethod
+    def _why_text(rule_id: str, message: str) -> str:
+        lowered = f"{rule_id} {message}".lower()
+        if "sql" in lowered:
+            return (
+                "SQL construction in changed code can let input alter the query shape, "
+                "which turns reviewable data flow into an injection risk."
+            )
+        if "hash" in lowered or "md5" in lowered:
+            return (
+                "Weak hashes are not suitable for security-sensitive data because attackers "
+                "can brute-force or collide them more easily."
+            )
+        return (
+            "Semgrep matched a code pattern that reviewers should not have to infer from "
+            "scanner output alone."
+        )
+
+    @staticmethod
+    def _fix_text(rule_id: str, message: str) -> str:
+        lowered = f"{rule_id} {message}".lower()
+        if "sql" in lowered:
+            return "Use parameterized queries or the framework query builder for this path."
+        if "hash" in lowered or "md5" in lowered:
+            return "Use an approved password hashing or digest primitive for this use case."
+        return (
+            "Change the code so the rule no longer matches, or add a narrow suppression "
+            "with justification if this is a false positive."
+        )
+
+    def _entry_lines(
+        self,
+        *,
+        icon: str,
+        intent: str,
+        target: str,
+        what_failed: str,
+        why: str,
+        fix: str,
+        done_when: str,
+        verify: str,
+    ) -> list[str]:
+        lines = [f"- {icon} **{intent}:**"]
+        lines.extend(self._inline_field("Target", target))
+        lines.extend(self._block_field("What failed", what_failed))
+        lines.extend(self._block_field("Why it matters", why))
+        lines.extend(self._block_field("Fix", fix))
+        lines.extend(self._block_field("Done when", done_when))
+        lines.extend(self._block_field("Verify", verify))
+        return lines
+
+    @staticmethod
+    def _inline_field(label: str, text: str) -> list[str]:
+        prefix = f"  {label}: "
+        continuation = " " * len(prefix)
+        width = max(40, 110 - len(prefix))
+        wrapped = _wrap_review_text(text, width=width)
+        if not wrapped:
+            return []
+        return [f"{prefix}{wrapped[0]}", *[f"{continuation}{line}" for line in wrapped[1:]]]
+
+    @staticmethod
+    def _block_field(label: str, text: str) -> list[str]:
+        wrapped = _wrap_review_text(text)
+        return [f"  {label}:", *[f"    {line}" for line in wrapped]]
