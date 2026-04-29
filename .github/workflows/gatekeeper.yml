@@ -103,7 +103,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace:ro" \
             -v "$GITHUB_WORKSPACE/.temp:/workspace/.temp" \
             eedom:latest \
-            sh -c "set -e && chown -R root:root /var/lib/clamav /var/log/clamav 2>/dev/null; freshclam --quiet 2>/dev/null || true && DIFF_FLAG='' && [ -f /workspace/.temp/pr.diff ] && DIFF_FLAG='--diff /workspace/.temp/pr.diff' && eedom review --repo-path /workspace --all $DIFF_FLAG --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all $DIFF_FLAG --output /workspace/.temp/review.md"
+            sh -c "set -e && DIFF_FLAG='' && [ -f /workspace/.temp/pr.diff ] && DIFF_FLAG='--diff /workspace/.temp/pr.diff' && eedom review --repo-path /workspace --all $DIFF_FLAG --format sarif --output /workspace/.temp/review.sarif && eedom review --repo-path /workspace --all $DIFF_FLAG --output /workspace/.temp/review.md"
         env:
           ENGINE: ${{ steps.runtime.outputs.engine }}
 

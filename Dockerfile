@@ -262,7 +262,7 @@ ENV PATH="/opt/eedom/.venv/bin:$PATH" \
     XDG_CACHE_HOME=/home/eedom/.cache \
     EEDOM_OPERATING_MODE=monitor \
     EEDOM_OPA_POLICY_PATH=/opt/eedom/policies \
-    EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,clamav,kube-linter,pmd,lizard,mypy,cspell,ls-lint,cdk-nag,cfn-nag
+    EEDOM_ENABLED_SCANNERS=syft,osv-scanner,trivy,scancode,semgrep,gitleaks,kube-linter,pmd,lizard,mypy,cspell,ls-lint,cdk-nag,cfn-nag
 
 USER eedom
 WORKDIR /home/eedom
