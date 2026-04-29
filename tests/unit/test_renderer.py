@@ -106,6 +106,35 @@ class TestRenderComment:
         )
         assert "BLOCKED" in md
 
+    def test_blocked_comment_includes_smart_fix_plan(self):
+        result = PluginResult(
+            plugin_name="gitleaks",
+            category="supply_chain",
+            findings=[
+                {
+                    "severity": "critical",
+                    "file": "src/settings.py",
+                    "line": 12,
+                    "rule": "generic-api-key",
+                    "description": "Hardcoded API key detected",
+                }
+            ],
+        )
+
+        md = render_comment([result], repo="org/repo", pr_num=1, title="test")
+
+        assert "S.M.A.R.T. Fix Plan" in md
+        assert "Why blocked" in md
+        assert "Specific:" in md
+        assert "Measurable:" in md
+        assert "Actionable:" in md
+        assert "Relevant:" in md
+        assert "Targeted:" in md
+        assert "`src/settings.py:12`" in md
+        assert "Remove or rotate the secret" in md
+        assert "uv run eedom review --repo-path . --all" in md
+        assert "upstream dependencies" not in md
+
     def test_verdict_warnings_on_non_critical(self):
         result = PluginResult(
             plugin_name="semgrep",

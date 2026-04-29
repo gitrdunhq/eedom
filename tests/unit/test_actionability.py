@@ -19,8 +19,9 @@ from eedom.core.plugin import PluginResult
 def _make_result(
     plugin_name: str,
     findings: list[dict],
+    category: str = "",
 ) -> PluginResult:
-    return PluginResult(plugin_name=plugin_name, findings=findings)
+    return PluginResult(plugin_name=plugin_name, findings=findings, category=category)
 
 
 def _vuln(
@@ -161,6 +162,24 @@ class TestClassifyFindingsNoFix:
         assert "trivy" in summary.blocked_by_source
         ids = [f["id"] for f in summary.blocked_by_source["trivy"]]
         assert "CVE-2024-0001" in ids
+
+    def test_secret_without_fixed_version_requires_owner_action_not_upstream(self) -> None:
+        finding = {
+            "severity": "critical",
+            "file": "src/settings.py",
+            "line": 12,
+            "rule": "generic-api-key",
+            "description": "Hardcoded API key detected",
+        }
+        result = _make_result("gitleaks", [finding], category="supply_chain")
+
+        summary = classify_findings([result])
+
+        assert summary.owner_action_count == 1
+        assert summary.blocked_count == 0
+        assert "gitleaks" in summary.owner_action_by_source
+        assert "upstream dependencies" not in summary.summary_text
+        assert "code/config" in summary.summary_text
 
 
 # ---------------------------------------------------------------------------

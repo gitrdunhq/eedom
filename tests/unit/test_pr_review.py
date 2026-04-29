@@ -212,6 +212,13 @@ class TestSarifToReviewWithHunks:
         assert "sql-injection" in body
         assert "error" in body
         assert "User input concatenated" in body
+        assert "Specific:" in body
+        assert "Measurable:" in body
+        assert "Actionable:" in body
+        assert "Relevant:" in body
+        assert "Targeted:" in body
+        assert "Fix:" in body
+        assert "Verify:" in body
 
     def test_smart_comment_includes_fix_hint_when_available(self):
         sarif_data = _sarif(
@@ -241,6 +248,28 @@ class TestSarifToReviewWithHunks:
 
         body = review.comments[0].body
         assert "environment variable" in body.lower()
+
+    def test_review_body_lists_smart_fix_plan_for_blockers(self):
+        sarif = _sarif(
+            [
+                _finding(
+                    file="src/settings.py",
+                    line=12,
+                    level="error",
+                    rule="hardcoded-secret",
+                    msg="Hardcoded API key detected",
+                )
+            ],
+            tool="gitleaks",
+        )
+        review = sarif_to_review(sarif, diff_files={"src/settings.py"})
+
+        assert review.event == "REQUEST_CHANGES"
+        assert "S.M.A.R.T. Fix Plan" in review.body
+        assert "Why blocked" in review.body
+        assert "`src/settings.py:12`" in review.body
+        assert "hardcoded-secret" in review.body
+        assert "Verify:" in review.body
 
 
 # ---------------------------------------------------------------------------
