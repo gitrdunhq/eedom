@@ -17,6 +17,8 @@ from eedom.plugins.kube_linter import KubeLinterPlugin
 from eedom.plugins.semgrep import SemgrepPlugin
 from eedom.plugins.supply_chain import SupplyChainPlugin
 
+from tests.unit.prose_assertions import assert_review_prose_contract
+
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "src" / "eedom" / "templates"
 
 
@@ -566,6 +568,30 @@ class TestSupplyChainTemplate:
         out = plugin.render(_supply_chain_result_with_findings(), template_dir=_TEMPLATES_DIR)
         # high severity → 🔴
         assert "🔴" in out or "high" in out.lower()
+
+    def test_supply_chain_template_uses_guidance_lists_not_tables(self):
+        plugin = SupplyChainPlugin()
+        out = plugin.render(_supply_chain_result_with_findings(), template_dir=_TEMPLATES_DIR)
+
+        assert "| Package | Version | Ecosystem | Risk |" not in out
+        assert "| File | Description |" not in out
+        assert "**Required:**" in out
+        assert "**Consider:**" in out
+        assert "Why it matters:" in out
+        assert "Fix:" in out
+        assert "Done when:" in out
+        assert "Verify:" in out
+        assert_review_prose_contract(out)
+
+    def test_supply_chain_inline_render_uses_same_guidance_contract(self):
+        plugin = SupplyChainPlugin()
+        out = plugin._render_inline(_supply_chain_result_with_findings())
+
+        assert "| Package | Version | Ecosystem | Risk |" not in out
+        assert "| File | Description |" not in out
+        assert "**Required:**" in out
+        assert "**Consider:**" in out
+        assert_review_prose_contract(out)
 
 
 # ── Regression: output unchanged from inline render ──────────────────────────
