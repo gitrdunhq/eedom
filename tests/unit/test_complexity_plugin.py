@@ -8,10 +8,15 @@ from eedom.core.plugin import PluginResult
 from eedom.plugins.complexity import ComplexityPlugin
 
 
-def _make_finding(name: str, ccn: int = 3, nloc: int = 10) -> dict:
+def _make_finding(
+    name: str,
+    ccn: int = 3,
+    nloc: int = 10,
+    file: str = "src/mod.py",
+) -> dict:
     return {
         "function": name,
-        "file": "src/mod.py",
+        "file": file,
         "cyclomatic_complexity": ccn,
         "maintainability_index": 85.0,
         "nloc": nloc,
@@ -34,8 +39,8 @@ class TestComplexityRenderCapping:
         )
         plugin = ComplexityPlugin()
         output = plugin._render_inline(result)
-        rows = [line for line in output.split("\n") if line.startswith("| `func_")]
-        assert len(rows) == 25
+        entries = [line for line in output.split("\n") if line.startswith("- **`func_")]
+        assert len(entries) == 25
 
     def test_render_shows_remaining_count(self) -> None:
         findings = [_make_finding(f"func_{i}") for i in range(40)]
@@ -65,9 +70,36 @@ class TestComplexityRenderCapping:
         )
         plugin = ComplexityPlugin()
         output = plugin._render_inline(result)
-        rows = [line for line in output.split("\n") if line.startswith("| `func_")]
-        assert len(rows) == 10
+        entries = [line for line in output.split("\n") if line.startswith("- **`func_")]
+        assert len(entries) == 10
         assert "more" not in output
+
+    def test_render_uses_readable_list_not_bunched_table(self) -> None:
+        result = PluginResult(
+            plugin_name="complexity",
+            findings=[
+                _make_finding(
+                    "validate_deeply_nested_configuration_with_many_branches",
+                    ccn=17,
+                    nloc=80,
+                    file="src/domain/really/long/path/configuration_validator.py",
+                )
+            ],
+            summary={
+                "avg_cyclomatic_complexity": 17,
+                "max_cyclomatic_complexity": 17,
+                "total_nloc": 80,
+            },
+        )
+        plugin = ComplexityPlugin()
+        output = plugin._render_inline(result)
+
+        assert "| Function | File | CCN | MI | NLOC |" not in output
+        assert "| Function | CCN | MI | NLOC |" not in output
+        assert "Top complex functions" in output
+        assert "Why it matters:" in output
+        assert "Consider:" in output
+        assert max(len(line) for line in output.splitlines()) <= 110
 
 
 class TestComplexityRenderTypeCoercion:
