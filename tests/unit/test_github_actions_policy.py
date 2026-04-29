@@ -161,6 +161,10 @@ def test_workflow_policy_runs_read_only_policy_checks() -> None:
     assert "tests/unit/test_github_actions_policy.py" in run_text
     assert "tests/unit/test_dependabot_policy.py" in run_text
     assert "tests/unit/test_ruff_policy.py" in run_text
+    assert "docker.io/library/python@sha256:" in run_text
+    assert '-v "$GITHUB_WORKSPACE:/workspace:ro"' in run_text
+    assert "UV_PROJECT_ENVIRONMENT=/tmp/eedom-policy-venv" in run_text
+    assert "EEDOM_ALLOW_HOST_TESTS" not in run_text
 
 
 def test_pull_request_target_workflows_do_not_checkout_or_execute_pr_head() -> None:
