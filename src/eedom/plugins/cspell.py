@@ -31,13 +31,13 @@ class CspellPlugin(ScannerPlugin):
         return bool(files)
 
     def run(self, files: list[str], repo_path: Path) -> PluginResult:
-        # Use JSON reporter — outputs structured JSON to stdout.
-        # Minimal flags only; extra flags like --no-progress break JSON capture.
         cmd = [
             "cspell",
             "lint",
             "--reporter",
             "@cspell/cspell-json-reporter",
+            "--no-progress",
+            "--no-summary",
             *files,
         ]
 

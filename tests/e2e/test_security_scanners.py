@@ -37,9 +37,6 @@ class TestGitleaks:
 
 
 class TestSemgrep:
-    @pytest.mark.xfail(
-        reason="semgrep 1.67.0 in container is unsupported by registry — needs image rebuild with >=1.76.0"
-    )
     def test_semgrep_finds_dangerous_pattern(self, vuln_repo: Path, tmp_path: Path) -> None:
         result, parsed = run_review(vuln_repo, scanners="semgrep", output_format="json")
         breakpoint_dump(tmp_path, "scanner_semgrep", parsed)

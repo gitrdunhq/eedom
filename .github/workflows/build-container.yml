@@ -24,7 +24,7 @@ permissions:
 jobs:
   build:
     name: Build, Push & Attest
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
     steps:
@@ -56,7 +56,10 @@ jobs:
           TAG="ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           TAG_LATEST="ghcr.io/${{ env.IMAGE_NAME }}:latest"
 
-          $ENGINE build \
+          $ENGINE buildx build \
+            --builder eedom-builder \
+            --allow security.insecure \
+            --load \
             --tag "$TAG" \
             --tag "$TAG_LATEST" \
             --tag "eedom:latest" \

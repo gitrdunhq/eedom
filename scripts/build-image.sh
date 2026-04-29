@@ -91,7 +91,7 @@ build_amd64() {
         "$REPO_ROOT/" "$AMD64_HOST:$remote_dir/"
 
     info "Building on remote host"
-    ssh "$AMD64_HOST" "cd $remote_dir && docker build --security-opt apparmor=unconfined --platform linux/amd64 -t $TAG . 2>&1"
+    ssh "$AMD64_HOST" "cd $remote_dir && docker buildx build --builder eedom-builder --allow security.insecure --platform linux/amd64 --load -t $TAG . 2>&1"
 
     if [ $? -eq 0 ]; then
         pass "amd64 build succeeded"

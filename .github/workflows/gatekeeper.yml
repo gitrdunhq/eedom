@@ -27,7 +27,7 @@ jobs:
   gatekeeper:
     name: GATEKEEPER Review
     if: ${{ !startsWith(github.head_ref || '', 'release-please--') }}
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
 
     steps:
@@ -92,7 +92,7 @@ jobs:
             -e EEDOM_ALLOW_GLOBAL=1 \
             -e PYTHONPATH=/workspace/src \
             eedom:latest \
-            sh -c "pip install -q --no-cache-dir --target /opt/eedom/.venv/lib/python3.12/site-packages pytest && python3 -m pytest /workspace/tests/e2e/ -v --tb=short"
+            sh -c "pip install -q --no-cache-dir --target /opt/eedom/.venv/lib/python3.12/site-packages pytest && python3 -m pytest /workspace/tests/e2e/ -v --tb=short -o cache_dir=/tmp/pytest_cache"
         env:
           ENGINE: ${{ steps.runtime.outputs.engine }}
 

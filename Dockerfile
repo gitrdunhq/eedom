@@ -213,7 +213,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       default-jre-headless ruby ruby-dev build-essential \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g "cspell@${CSPELL_VERSION}" "aws-cdk" --no-fund --no-audit \
+    && npm install -g "cspell@${CSPELL_VERSION}" "@cspell/cspell-json-reporter" "aws-cdk" --no-fund --no-audit \
     && npm cache clean --force \
     && gem install cfn-nag --no-document \
     && apt-get purge -y build-essential ruby-dev curl gnupg \
