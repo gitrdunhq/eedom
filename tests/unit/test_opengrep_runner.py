@@ -21,18 +21,26 @@ class TestOpengrepBinaryName:
         assert "semgrep" not in cmd[0]
 
 
-class TestLocalRulesOnly:
+class TestRegistryAndLocalRules:
     @patch("eedom.plugins._runners.semgrep_runner.subprocess.run")
-    def test_no_registry_rulesets_in_command(self, mock_run):
-        """No p/ or r/ registry prefixes — only local rule paths."""
+    def test_includes_default_registry_rulesets(self, mock_run):
+        """p/default and p/ci should always be present for max coverage."""
         mock_run.return_value.stdout = '{"results": [], "errors": []}'
         mock_run.return_value.returncode = 0
         run_semgrep(["app.py"], "/workspace")
         cmd = mock_run.call_args[0][0]
         config_values = [cmd[i + 1] for i, v in enumerate(cmd) if v == "--config"]
-        for val in config_values:
-            assert not val.startswith("p/"), f"Registry ruleset {val} should not be used"
-            assert not val.startswith("r/"), f"Registry ruleset {val} should not be used"
+        assert "p/default" in config_values
+        assert "p/ci" in config_values
+
+    @patch("eedom.plugins._runners.semgrep_runner.subprocess.run")
+    def test_python_file_adds_python_ruleset(self, mock_run):
+        mock_run.return_value.stdout = '{"results": [], "errors": []}'
+        mock_run.return_value.returncode = 0
+        run_semgrep(["app.py"], "/workspace")
+        cmd = mock_run.call_args[0][0]
+        config_values = [cmd[i + 1] for i, v in enumerate(cmd) if v == "--config"]
+        assert "p/python" in config_values
 
     @patch("eedom.plugins._runners.semgrep_runner.subprocess.run")
     def test_uses_local_policies_dir(self, mock_run):
