@@ -349,6 +349,28 @@ class TestSemgrepTemplate:
         assert "🔴" in out
         assert "🟡" in out
 
+    def test_semgrep_template_uses_prescriptive_guidance(self):
+        plugin = SemgrepPlugin()
+        out = plugin.render(_semgrep_result_with_findings(), template_dir=_TEMPLATES_DIR)
+
+        assert "**Required:**" in out
+        assert "**Consider:**" in out
+        assert "Why it matters:" in out
+        assert "Fix:" in out
+        assert "Done when:" in out
+        assert "Verify:" in out
+        assert_review_prose_contract(out)
+
+    def test_semgrep_inline_render_uses_prescriptive_guidance(self):
+        plugin = SemgrepPlugin()
+        out = plugin._render_inline(_semgrep_result_with_findings())
+
+        assert "**Required:**" in out
+        assert "**Consider:**" in out
+        assert "Why it matters:" in out
+        assert "Fix:" in out
+        assert_review_prose_contract(out)
+
 
 # ── Blast-Radius template tests ───────────────────────────────────────────────
 
@@ -524,6 +546,26 @@ class TestKubeLinterTemplate:
         plugin = KubeLinterPlugin()
         out = plugin.render(_kube_linter_result_with_findings(), template_dir=_TEMPLATES_DIR)
         assert "<details" in out
+
+    def test_kube_linter_template_uses_prescriptive_guidance(self):
+        plugin = KubeLinterPlugin()
+        out = plugin.render(_kube_linter_result_with_findings(), template_dir=_TEMPLATES_DIR)
+
+        assert "**Required:**" in out
+        assert "Why it matters:" in out
+        assert "Fix:" in out
+        assert "Done when:" in out
+        assert "Verify:" in out
+        assert_review_prose_contract(out)
+
+    def test_kube_linter_inline_render_uses_prescriptive_guidance(self):
+        plugin = KubeLinterPlugin()
+        out = plugin._render_inline(_kube_linter_result_with_findings())
+
+        assert "**Required:**" in out
+        assert "Why it matters:" in out
+        assert "Fix:" in out
+        assert_review_prose_contract(out)
 
 
 # ── SupplyChain template tests ────────────────────────────────────────────────
