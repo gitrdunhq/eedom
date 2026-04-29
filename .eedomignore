@@ -1,0 +1,2 @@
+# Test fixtures contain planted vulnerabilities — exclude from self-review
+tests/e2e/fixtures/
