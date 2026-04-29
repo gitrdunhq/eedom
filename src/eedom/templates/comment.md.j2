@@ -23,7 +23,9 @@
 {% endif %}
 | Plugin | Findings |
 |--------|----------|
-| Files scanned | {{ file_count }} |
+{%- for key, value in scan_scope_rows %}
+| {{ key }} | {{ value }} |
+{%- endfor %}
 {%- for key, value in summary_rows %}
 | {{ key }} | {{ value }} |
 {%- endfor %}
