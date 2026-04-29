@@ -409,6 +409,8 @@ class TestComplexityTemplate:
         out = plugin.render(_complexity_result_with_findings(), template_dir=_TEMPLATES_DIR)
         assert "parse_manifest" in out
         assert "15" in out  # CCN value
+        assert "| Function | File | CCN | MI | NLOC |" not in out
+        assert "Top complex functions" in out
 
     def test_renders_summary_stats(self):
         plugin = ComplexityPlugin()
@@ -442,6 +444,33 @@ class TestComplexityTemplate:
         plugin = ComplexityPlugin()
         out = plugin.render(_complexity_result_with_findings(), template_dir=_TEMPLATES_DIR)
         assert "<details" in out
+
+    def test_complexity_template_wraps_long_entries(self):
+        plugin = ComplexityPlugin()
+        result = PluginResult(
+            plugin_name="complexity",
+            findings=[
+                {
+                    "function": "validate_deeply_nested_configuration_with_many_branches",
+                    "file": "src/domain/really/long/path/configuration_validator.py",
+                    "cyclomatic_complexity": 17,
+                    "maintainability_index": 45,
+                    "nloc": 80,
+                }
+            ],
+            summary={
+                "avg_cyclomatic_complexity": 17,
+                "max_cyclomatic_complexity": 17,
+                "total_nloc": 80,
+            },
+        )
+
+        out = plugin.render(result, template_dir=_TEMPLATES_DIR)
+
+        assert "| Function |" not in out
+        assert "Why it matters:" in out
+        assert "Consider:" in out
+        assert max(len(line) for line in out.splitlines()) <= 110
 
 
 # ── KubeLinter template tests ─────────────────────────────────────────────────
