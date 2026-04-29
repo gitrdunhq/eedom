@@ -229,6 +229,19 @@ class TestLockfileShaPath:
             f"Expected {expected_sha}, got {lockfile_findings[0]['sha256']!r}"
         )
 
+    def test_lockfile_message_uses_professional_prose(self, tmp_path):
+        pkg_dir = tmp_path / "apps" / "web"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "package-lock.json").write_text('{"lockfileVersion": 2}')
+
+        plugin = SupplyChainPlugin()
+        findings = plugin._check_lockfiles([str(pkg_dir / "package-lock.json")], tmp_path)
+
+        assert findings
+        message = findings[0]["message"]
+        assert "DID NOT" not in message
+        assert "was not" in message
+
 
 # ── Unpinned severity tests ──────────────────────────────────────────────────
 
