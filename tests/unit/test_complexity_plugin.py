@@ -72,7 +72,7 @@ class TestComplexityRenderCapping:
         output = plugin._render_inline(result)
         entries = [line for line in output.split("\n") if line.startswith("- **`func_")]
         assert len(entries) == 10
-        assert "more" not in output
+        assert "more functions" not in output
 
     def test_render_uses_readable_list_not_bunched_table(self) -> None:
         result = PluginResult(

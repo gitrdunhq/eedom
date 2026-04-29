@@ -1,23 +1,26 @@
 {% if error %}
 **complexity**: {{ error }}
 {% elif findings %}
-<details><summary>📊 <b>Complexity (avg CCN: {{ summary.get("avg_cyclomatic_complexity", 0) }}, max: {{ summary.get("max_cyclomatic_complexity", 0) }}, {{ summary.get("total_nloc", 0) }} NLOC)</b></summary>
+<details><summary>📊 <b>Complexity: avg CCN {{ summary.get("avg_cyclomatic_complexity", 0) }}, max {{ summary.get("max_cyclomatic_complexity", 0) }}, {{ summary.get("total_nloc", 0) }} NLOC</b></summary>
 
-{% if high_ccn %}
-**⚠️ High complexity (CCN > 10):**
+**Top complex functions** — showing {{ shown_count }} of {{ findings | length }}{% if high_count %}, {{ high_count }} with CCN > 10{% endif %}.
 
-| Function | File | CCN | MI | NLOC |
-|----------|------|-----|----|------|
-{% for f in high_ccn %}
-| `{{ f.function }}` | `{{ f.file }}` | {{ f.cyclomatic_complexity }} | {{ f.get("maintainability_index", "?") }} | {{ f.nloc }} |
+{% for entry in entries %}
+- **`{{ entry.function }}`** — CCN {{ entry.ccn }}, MI {{ entry.mi }}, NLOC {{ entry.nloc }}
+  - File: `{{ entry.file }}`
+  - Why it matters:
+{% for line in entry.why_lines %}
+    {{ line }}
 {% endfor %}
+  - Consider:
+{% for line in entry.consider_lines %}
+    {{ line }}
+{% endfor %}
+{% endfor %}
+{% if remaining_count > 0 %}
 
+*...{{ remaining_count }} more functions; see SARIF for the full list.*
 {% endif %}
-| Function | CCN | MI | NLOC |
-|----------|-----|----|------|
-{% for f in findings %}
-| `{{ f.function }}` | {{ f.cyclomatic_complexity }} | {{ f.get("maintainability_index", "?") }} | {{ f.nloc }} |
-{% endfor %}
 
 </details>
 
