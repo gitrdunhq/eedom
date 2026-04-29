@@ -1,0 +1,29 @@
+name: Workflow Policy
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions-allowlist.yml"
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+      - "tests/unit/test_dependabot_policy.py"
+      - "tests/unit/test_github_actions_policy.py"
+      - "tests/unit/test_ruff_policy.py"
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Workflow policy checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - name: Run workflow policy tests
+        run: >
+          uv run pytest
+          tests/unit/test_github_actions_policy.py
+          tests/unit/test_dependabot_policy.py
+          tests/unit/test_ruff_policy.py
+          -q

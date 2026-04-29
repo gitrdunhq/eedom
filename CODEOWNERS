@@ -10,3 +10,11 @@ policies/ @samfakhreddine
 # GitHub Actions
 .github/ @samfakhreddine
 action.yml @samfakhreddine
+
+# Workflow policy guardrails
+.github/actions-allowlist.yml @samfakhreddine
+.github/workflows/workflow-policy.yml @samfakhreddine
+tests/unit/test_github_actions_policy.py @samfakhreddine
+tests/unit/test_dependabot_policy.py @samfakhreddine
+tests/unit/test_ruff_policy.py @samfakhreddine
+docs/adr/005-github-actions-update-vetting-policy.md @samfakhreddine

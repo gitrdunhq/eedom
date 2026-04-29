@@ -1,0 +1,9 @@
+actions:
+  - actions/attest
+  - actions/attest-build-provenance
+  - actions/checkout
+  - actions/github-script
+  - actions/upload-artifact
+  - astral-sh/setup-uv
+  - googleapis/release-please-action
+  - pypa/gh-action-pypi-publish
