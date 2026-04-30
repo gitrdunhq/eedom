@@ -100,7 +100,7 @@ class DetectorRegistry(metaclass=_DetectorRegistryMeta):
         return detector_class
 
     @classmethod
-    def discover(cls, package_name: str = "eedom.detectors") -> None:
+    def discover(cls, package_name: str = "eedom.detectors", _is_root: bool = True) -> None:
         """Auto-discover all detectors in registered packages.
 
         This imports all submodules to trigger class definitions and
@@ -108,9 +108,10 @@ class DetectorRegistry(metaclass=_DetectorRegistryMeta):
 
         Args:
             package_name: Package to discover detectors in
+            _is_root: Internal flag to track root call vs recursive calls
         """
         with cls._lock:
-            if cls._discovered:
+            if _is_root and cls._discovered:
                 return
 
         try:
@@ -127,12 +128,13 @@ class DetectorRegistry(metaclass=_DetectorRegistryMeta):
             except ImportError:
                 continue
 
-            # If it's a package, recursively discover
+            # If it's a package, recursively discover (not root)
             if is_pkg:
-                cls.discover(name)
+                cls.discover(name, _is_root=False)
 
         with cls._lock:
-            cls._discovered = True
+            if _is_root:
+                cls._discovered = True
 
     @classmethod
     def get_detector(cls, detector_id: str) -> BugDetector | None:
