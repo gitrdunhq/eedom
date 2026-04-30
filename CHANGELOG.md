@@ -7,6 +7,13 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.11](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.10...eedom-v0.2.11) (2026-04-30)
+
+
+### Bug Fixes
+
+* skip CI for draft PRs ([87c7efd](https://github.com/gitrdunhq/eedom/commit/87c7efd60ae0c9b4246c0b6631bdc45aaef335ec))
+
 ## [0.2.10](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.9...eedom-v0.2.10) (2026-04-30)
 
 
