@@ -21,7 +21,7 @@ class TestRateLimitingDetector:
 
     def test_detects_fastapi_endpoint_without_limit(self, detector):
         """Detects FastAPI endpoint without rate limiting decorator."""
-        code = '''
+        code = """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -29,7 +29,7 @@ app = FastAPI()
 @app.get("/api/data")
 def get_data():
     return {"data": "value"}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -41,7 +41,7 @@ def get_data():
 
     def test_detects_flask_endpoint_without_limit(self, detector):
         """Detects Flask endpoint without rate limiting."""
-        code = '''
+        code = """
 from flask import Flask
 
 app = Flask(__name__)
@@ -49,7 +49,7 @@ app = Flask(__name__)
 @app.route("/api/data")
 def get_data():
     return {"data": "value"}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -60,7 +60,7 @@ def get_data():
 
     def test_ignores_fastapi_with_limit(self, detector):
         """No finding when FastAPI has rate limit decorator."""
-        code = '''
+        code = """
 from fastapi import FastAPI
 from slowapi import Limiter
 
@@ -71,7 +71,7 @@ limiter = Limiter(key_func=get_remote_address)
 @limiter.limit("5/minute")
 def get_data():
     return {"data": "value"}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -82,7 +82,7 @@ def get_data():
 
     def test_ignores_flask_with_limit(self, detector):
         """No finding when Flask has rate limit decorator."""
-        code = '''
+        code = """
 from flask import Flask
 from flask_limiter import Limiter
 
@@ -93,7 +93,7 @@ limiter = Limiter(app)
 @limiter.limit("5/minute")
 def get_data():
     return {"data": "value"}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -104,14 +104,14 @@ def get_data():
 
     def test_ignores_non_endpoint_functions(self, detector):
         """No finding for regular functions."""
-        code = '''
+        code = """
 def helper_function():
     return "help"
 
 class MyClass:
     def method(self):
         return "method"
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

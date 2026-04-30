@@ -21,14 +21,14 @@ class TestSQLInjectionDetector:
 
     def test_detects_fstring_in_execute(self, detector):
         """Detects f-string in SQL execute."""
-        code = '''
+        code = """
 import sqlite3
 
 conn = sqlite3.connect("db.sqlite")
 cursor = conn.cursor()
 user_id = "123"
 cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -41,14 +41,14 @@ cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
 
     def test_detects_percent_formatting_in_execute(self, detector):
         """Detects % formatting in SQL execute."""
-        code = '''
+        code = """
 import psycopg2
 
 conn = psycopg2.connect(dsn)
 cursor = conn.cursor()
 user_id = "123"
 cursor.execute("SELECT * FROM users WHERE id = %s" % user_id)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -60,14 +60,14 @@ cursor.execute("SELECT * FROM users WHERE id = %s" % user_id)
 
     def test_detects_dot_format_in_execute(self, detector):
         """Detects .format() in SQL execute."""
-        code = '''
+        code = """
 import sqlite3
 
 conn = sqlite3.connect("db.sqlite")
 cursor = conn.cursor()
 table_name = "users"
 cursor.execute("SELECT * FROM {}".format(table_name))
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -78,13 +78,13 @@ cursor.execute("SELECT * FROM {}".format(table_name))
 
     def test_ignores_parameterized_query(self, detector):
         """No finding for parameterized queries."""
-        code = '''
+        code = """
 import sqlite3
 
 conn = sqlite3.connect("db.sqlite")
 cursor = conn.cursor()
 cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -95,13 +95,13 @@ cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
 
     def test_ignores_string_literal(self, detector):
         """No finding for string literal queries."""
-        code = '''
+        code = """
 import sqlite3
 
 conn = sqlite3.connect("db.sqlite")
 cursor = conn.cursor()
 cursor.execute("SELECT * FROM users WHERE active = 1")
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -112,14 +112,14 @@ cursor.execute("SELECT * FROM users WHERE active = 1")
 
     def test_detects_executemany_violation(self, detector):
         """Detects formatting in executemany."""
-        code = '''
+        code = """
 import sqlite3
 
 conn = sqlite3.connect("db.sqlite")
 cursor = conn.cursor()
 table = "logs"
 cursor.executemany(f"INSERT INTO {table} VALUES (?, ?)", data)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

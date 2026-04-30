@@ -21,13 +21,13 @@ class TestConfigMergeDetector:
 
     def test_detects_dict_merge_dropping_telemetry(self, detector):
         """Detects dict merge that may drop telemetry keys."""
-        code = '''
+        code = """
 def load_config():
     base = {"debug": False, "telemetry": True}
     user = {"debug": True}
     config = {**base, **user}  # telemetry key lost if not in user
     return config
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -39,12 +39,12 @@ def load_config():
 
     def test_detects_update_call_dropping_telemetry(self, detector):
         """Detects dict.update() that may drop telemetry keys."""
-        code = '''
+        code = """
 def merge_configs(base, override):
     result = base.copy()
     result.update(override)
     return result
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -57,7 +57,7 @@ def merge_configs(base, override):
 
     def test_ignores_safe_merge_with_default(self, detector):
         """No finding for safe merge patterns."""
-        code = '''
+        code = """
 from collections import ChainMap
 
 def load_config():
@@ -65,7 +65,7 @@ def load_config():
     user = {"debug": True}
     config = ChainMap(user, base)
     return dict(config)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -76,10 +76,10 @@ def load_config():
 
     def test_ignores_no_merge(self, detector):
         """No finding when no config merge occurs."""
-        code = '''
+        code = """
 def get_config():
     return {"debug": False, "telemetry": True}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

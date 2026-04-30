@@ -21,7 +21,7 @@ class TestCacheTTLDetector:
 
     def test_detects_cache_lookup_without_ttl_check(self, detector):
         """Detects cache.get() without TTL/freshness check."""
-        code = '''
+        code = """
 import redis
 
 r = redis.Redis()
@@ -33,7 +33,7 @@ def get_user(user_id):
     user = fetch_from_db(user_id)
     r.setex(f"user:{user_id}", 3600, json.dumps(user))
     return user
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -45,7 +45,7 @@ def get_user(user_id):
 
     def test_detects_dict_cache_without_freshness(self, detector):
         """Detects dict cache lookup without freshness check."""
-        code = '''
+        code = """
 _cache = {}
 
 def get_data(key):
@@ -54,7 +54,7 @@ def get_data(key):
     value = expensive_compute(key)
     _cache[key] = value
     return value
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -65,7 +65,7 @@ def get_data(key):
 
     def test_ignores_cache_with_ttl_check(self, detector):
         """No finding when TTL is checked."""
-        code = '''
+        code = """
 import redis
 import time
 
@@ -79,7 +79,7 @@ def get_user(user_id):
     user = fetch_from_db(user_id)
     r.setex(f"user:{user_id}", 3600, json.dumps(user))
     return user
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -90,10 +90,10 @@ def get_user(user_id):
 
     def test_ignores_no_cache_usage(self, detector):
         """No finding when no cache is used."""
-        code = '''
+        code = """
 def get_user(user_id):
     return fetch_from_db(user_id)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

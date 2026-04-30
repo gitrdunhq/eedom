@@ -21,13 +21,13 @@ class TestSubprocessTimeoutDetector:
 
     def test_detects_subprocess_run_without_timeout(self, detector):
         """Detects subprocess.run() without timeout."""
-        code = '''
+        code = """
 import subprocess
 
 def run_command(cmd):
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.stdout
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -39,12 +39,12 @@ def run_command(cmd):
 
     def test_detects_subprocess_call_without_timeout(self, detector):
         """Detects subprocess.call() without timeout."""
-        code = '''
+        code = """
 import subprocess
 
 def run_command(cmd):
     return subprocess.call(cmd, shell=True)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -55,12 +55,12 @@ def run_command(cmd):
 
     def test_detects_subprocess_check_output_without_timeout(self, detector):
         """Detects subprocess.check_output() without timeout."""
-        code = '''
+        code = """
 import subprocess
 
 def get_output(cmd):
     return subprocess.check_output(cmd, text=True)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -71,13 +71,13 @@ def get_output(cmd):
 
     def test_ignores_subprocess_with_timeout(self, detector):
         """No finding when timeout is specified."""
-        code = '''
+        code = """
 import subprocess
 
 def run_command(cmd):
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return result.stdout
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -88,14 +88,14 @@ def run_command(cmd):
 
     def test_ignores_popen_with_timeout(self, detector):
         """No finding when Popen has timeout via communicate."""
-        code = '''
+        code = """
 import subprocess
 
 def run_command(cmd):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     stdout, _ = proc.communicate(timeout=30)
     return stdout
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -106,14 +106,14 @@ def run_command(cmd):
 
     def test_detects_multiple_violations(self, detector):
         """Detects multiple subprocess calls without timeout."""
-        code = '''
+        code = """
 import subprocess
 
 def run_commands(cmds):
     for cmd in cmds:
         subprocess.run(cmd)
         subprocess.call(cmd)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

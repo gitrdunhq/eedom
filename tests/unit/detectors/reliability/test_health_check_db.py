@@ -21,7 +21,7 @@ class TestHealthCheckDBDetector:
 
     def test_detects_health_endpoint_without_db_check(self, detector):
         """Detects health check endpoint without DB verification."""
-        code = '''
+        code = """
 from flask import Flask, jsonify
 
 app = Flask(__name__)
@@ -29,7 +29,7 @@ app = Flask(__name__)
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -41,7 +41,7 @@ def health():
 
     def test_detects_fastapi_health_without_db(self, detector):
         """Detects FastAPI health endpoint without DB check."""
-        code = '''
+        code = """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -49,7 +49,7 @@ app = FastAPI()
 @app.get("/health")
 def health():
     return {"status": "healthy"}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -60,7 +60,7 @@ def health():
 
     def test_ignores_health_with_db_check(self, detector):
         """No finding when DB is verified in health check."""
-        code = '''
+        code = """
 from flask import Flask, jsonify
 import psycopg2
 
@@ -77,7 +77,7 @@ def health():
         return jsonify({"status": "ok", "database": "connected"})
     except Exception as e:
         return jsonify({"status": "error", "database": str(e)}), 500
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -88,7 +88,7 @@ def health():
 
     def test_ignores_non_health_endpoints(self, detector):
         """No finding for non-health endpoints."""
-        code = '''
+        code = """
 from flask import Flask
 
 app = Flask(__name__)
@@ -96,7 +96,7 @@ app = Flask(__name__)
 @app.route("/api/users")
 def get_users():
     return {"users": []}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -107,7 +107,7 @@ def get_users():
 
     def test_detects_readiness_without_db(self, detector):
         """Detects readiness endpoint without DB check."""
-        code = '''
+        code = """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -115,7 +115,7 @@ app = FastAPI()
 @app.get("/ready")
 def readiness():
     return {"ready": True}
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

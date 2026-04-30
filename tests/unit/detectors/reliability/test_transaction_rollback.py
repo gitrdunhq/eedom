@@ -21,7 +21,7 @@ class TestTransactionRollbackDetector:
 
     def test_detects_batch_insert_without_rollback(self, detector):
         """Detects batch insert without exception handling."""
-        code = '''
+        code = """
 import sqlite3
 
 def batch_insert_users(users):
@@ -32,7 +32,7 @@ def batch_insert_users(users):
                       (user["name"], user["email"]))
     conn.commit()
     conn.close()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -44,7 +44,7 @@ def batch_insert_users(users):
 
     def test_detects_executemany_without_rollback(self, detector):
         """Detects executemany without exception handling."""
-        code = '''
+        code = """
 import psycopg2
 
 def batch_insert(data):
@@ -54,7 +54,7 @@ def batch_insert(data):
     conn.commit()
     cursor.close()
     conn.close()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -65,7 +65,7 @@ def batch_insert(data):
 
     def test_ignores_with_proper_rollback(self, detector):
         """No finding when rollback is implemented."""
-        code = '''
+        code = """
 import sqlite3
 
 def batch_insert_users(users):
@@ -81,7 +81,7 @@ def batch_insert_users(users):
         raise
     finally:
         conn.close()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -92,7 +92,7 @@ def batch_insert_users(users):
 
     def test_ignores_context_manager(self, detector):
         """No finding when using context manager with rollback."""
-        code = '''
+        code = """
 import sqlite3
 
 def batch_insert_users(users):
@@ -102,7 +102,7 @@ def batch_insert_users(users):
             cursor.execute("INSERT INTO users (name, email) VALUES (?, ?)",
                           (user["name"], user["email"]))
         conn.commit()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -113,7 +113,7 @@ def batch_insert_users(users):
 
     def test_ignores_single_insert(self, detector):
         """No finding for single inserts."""
-        code = '''
+        code = """
 import sqlite3
 
 def insert_user(user):
@@ -123,7 +123,7 @@ def insert_user(user):
                   (user["name"], user["email"]))
     conn.commit()
     conn.close()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

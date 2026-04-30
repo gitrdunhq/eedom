@@ -21,7 +21,7 @@ class TestCircuitBreakerDetector:
 
     def test_detects_breaker_without_half_open(self, detector):
         """Detects circuit breaker without half-open state handling."""
-        code = '''
+        code = """
 from pybreaker import CircuitBreaker
 
 breaker = CircuitBreaker(fail_max=5, reset_timeout=60)
@@ -29,7 +29,7 @@ breaker = CircuitBreaker(fail_max=5, reset_timeout=60)
 @breaker
 def call_api():
     return requests.get("https://api.example.com/data")
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -41,7 +41,7 @@ def call_api():
 
     def test_detects_manual_breaker_without_half_open(self, detector):
         """Detects manually implemented breaker without half-open."""
-        code = '''
+        code = """
 class CircuitBreaker:
     def __init__(self):
         self.failures = 0
@@ -51,7 +51,7 @@ class CircuitBreaker:
         if self.state == "open":
             raise Exception("Circuit open")
         return func()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -62,7 +62,7 @@ class CircuitBreaker:
 
     def test_ignores_breaker_with_half_open(self, detector):
         """No finding when half-open state is implemented."""
-        code = '''
+        code = """
 from pybreaker import CircuitBreaker
 
 breaker = CircuitBreaker(
@@ -77,7 +77,7 @@ def call_api():
 
 # With half-open monitoring
 breaker.half_open_max_calls = 3
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -89,10 +89,10 @@ breaker.half_open_max_calls = 3
 
     def test_ignores_no_breaker(self, detector):
         """No finding when no circuit breaker is present."""
-        code = '''
+        code = """
 def call_api():
     return requests.get("https://api.example.com/data")
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()

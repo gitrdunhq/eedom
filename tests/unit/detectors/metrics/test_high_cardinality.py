@@ -21,14 +21,14 @@ class TestHighCardinalityMetricsDetector:
 
     def test_detects_user_id_in_metric_labels(self, detector):
         """Detects user_id as metric label (high cardinality)."""
-        code = '''
+        code = """
 from prometheus_client import Counter
 
 request_count = Counter("http_requests", "HTTP requests", ["user_id", "endpoint"])
 
 def handle_request(user_id, endpoint):
     request_count.labels(user_id=user_id, endpoint=endpoint).inc()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -40,7 +40,7 @@ def handle_request(user_id, endpoint):
 
     def test_detects_request_id_in_labels(self, detector):
         """Detects request_id as metric label (high cardinality)."""
-        code = '''
+        code = """
 from prometheus_client import Histogram
 
 request_duration = Histogram("request_duration", "Request duration", ["request_id"])
@@ -48,7 +48,7 @@ request_duration = Histogram("request_duration", "Request duration", ["request_i
 def process(request_id):
     with request_duration.labels(request_id=request_id).time():
         do_work()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -59,14 +59,14 @@ def process(request_id):
 
     def test_detects_email_in_labels(self, detector):
         """Detects email as metric label (high cardinality)."""
-        code = '''
+        code = """
 from prometheus_client import Gauge
 
 active_users = Gauge("active_users", "Active users", ["email"])
 
 def track_user(email):
     active_users.labels(email=email).set(1)
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -77,14 +77,14 @@ def track_user(email):
 
     def test_ignores_low_cardinality_labels(self, detector):
         """No finding for low cardinality labels."""
-        code = '''
+        code = """
 from prometheus_client import Counter
 
 request_count = Counter("http_requests", "HTTP requests", ["method", "status"])
 
 def handle_request(method, status):
     request_count.labels(method=method, status=status).inc()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -95,10 +95,10 @@ def handle_request(method, status):
 
     def test_ignores_no_metrics(self, detector):
         """No finding when no metrics are used."""
-        code = '''
+        code = """
 def process(data):
     return data.upper()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
@@ -109,14 +109,14 @@ def process(data):
 
     def test_detects_timestamp_in_labels(self, detector):
         """Detects timestamp as metric label (high cardinality)."""
-        code = '''
+        code = """
 from prometheus_client import Counter
 
 events = Counter("events", "Events", ["timestamp"])
 
 def log_event(ts):
     events.labels(timestamp=ts).inc()
-'''
+"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             f.flush()
