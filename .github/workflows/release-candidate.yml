@@ -1,0 +1,299 @@
+name: Daily Release Candidate
+
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: "Base SemVer for the release candidate, for example 0.2.30. Defaults to next patch from pyproject.toml."
+        required: false
+        type: string
+      candidate_number:
+        description: "Candidate ordinal for today's RC. Defaults to next available number."
+        required: false
+        type: string
+      dry_run:
+        description: "Run the release gate without creating a prerelease."
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: daily-release-candidate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UV_CACHE_DIR: /tmp/uv-cache
+  SCANNER_BIN: /tmp/scanner-bin
+  TRIVY_CACHE_DIR: /tmp/trivy-cache
+  SCANNER_VERSIONS: trivy=0.70.0 osv=2.3.5 kube-linter=0.8.3 gitleaks=8.30.1 pmd=7.9.0 opengrep=1.20.0 syft=1.43.0 scancode=32.3.0
+
+jobs:
+  release_candidate:
+    name: Release Candidate Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      tag_name: ${{ steps.metadata.outputs.tag_name }}
+      base_version: ${{ steps.metadata.outputs.base_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Prepare candidate metadata
+        id: metadata
+        run: |
+          python3 << 'PY'
+          import datetime as dt
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          version_re = re.compile(r"^\d+\.\d+\.\d+$")
+          ordinal_re = re.compile(r"^[1-9]\d*$")
+
+          raw_base_version = os.environ.get("INPUT_BASE_VERSION", "").strip()
+          if raw_base_version:
+              if not version_re.fullmatch(raw_base_version):
+                  raise SystemExit(f"base_version must be MAJOR.MINOR.PATCH, got {raw_base_version!r}")
+              base_version = raw_base_version
+          else:
+              pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+              current = pyproject["project"]["version"]
+              major, minor, patch = (int(part) for part in current.split("."))
+              base_version = f"{major}.{minor}.{patch + 1}"
+
+          run_date = dt.datetime.now(dt.UTC).strftime("%Y%m%d")
+          raw_candidate = os.environ.get("INPUT_CANDIDATE_NUMBER", "").strip()
+          if raw_candidate:
+              if not ordinal_re.fullmatch(raw_candidate):
+                  raise SystemExit(f"candidate_number must be a positive integer, got {raw_candidate!r}")
+              candidate_number = int(raw_candidate)
+          else:
+              prefix = f"v{base_version}-rc.{run_date}."
+              existing = subprocess.run(
+                  ["git", "tag", "--list", f"{prefix}*"],
+                  check=True,
+                  text=True,
+                  capture_output=True,
+              ).stdout.splitlines()
+              used_numbers = []
+              for tag in existing:
+                  suffix = tag.removeprefix(prefix)
+                  if suffix.isdigit():
+                      used_numbers.append(int(suffix))
+              candidate_number = max(used_numbers, default=0) + 1
+
+          tag_name = f"v{base_version}-rc.{run_date}.{candidate_number}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"tag_name={tag_name}\n")
+              out.write(f"base_version={base_version}\n")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"TAG_NAME={tag_name}\n")
+              env.write(f"BASE_VERSION={base_version}\n")
+              env.write(f"RUN_DATE={run_date}\n")
+              env.write(f"CANDIDATE_NUMBER={candidate_number}\n")
+          PY
+        env:
+          INPUT_BASE_VERSION: ${{ inputs.base_version }}
+          INPUT_CANDIDATE_NUMBER: ${{ inputs.candidate_number }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+
+      - name: Cache uv packages
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/uv-cache
+          key: uv-release-candidate-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-release-candidate-
+
+      - name: Cache scanner binaries
+        id: scanner-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/scanner-bin
+          key: scanners-${{ env.SCANNER_VERSIONS }}
+
+      - name: Cache trivy DB
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/trivy-cache
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+          uv pip install lizard mypy scancode-toolkit==32.3.0 || true
+          npm install -g cspell --no-fund --no-audit || true
+
+      - name: Install scanner binaries
+        if: steps.scanner-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$SCANNER_BIN"
+          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-64bit.tar.gz" | tar xz -C "$SCANNER_BIN" trivy || true
+          curl -sSfL -o "$SCANNER_BIN/osv-scanner" "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64" && chmod +x "$SCANNER_BIN/osv-scanner" || true
+          curl -sSfL -o "$SCANNER_BIN/kube-linter" "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-linux" && chmod +x "$SCANNER_BIN/kube-linter" || true
+          curl -sSfL "https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.9.0/pmd-dist-7.9.0-bin.zip" -o /tmp/pmd.zip && unzip -qo /tmp/pmd.zip -d /tmp && cp /tmp/pmd-bin-7.9.0/bin/pmd "$SCANNER_BIN/pmd" && cp -r /tmp/pmd-bin-7.9.0 "$SCANNER_BIN/pmd-bin-7.9.0" || true
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" | tar xz -C "$SCANNER_BIN" gitleaks || true
+          curl -sSfL -o "$SCANNER_BIN/opengrep" "https://github.com/opengrep/opengrep/releases/download/v1.20.0/opengrep_manylinux_x86" && chmod +x "$SCANNER_BIN/opengrep" || true
+          curl -sSfL "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz" | tar xz -C "$SCANNER_BIN" syft || true
+
+      - name: Add scanners to PATH and warm trivy DB
+        run: |
+          echo "$SCANNER_BIN" >> "$GITHUB_PATH"
+          if [ -f "$SCANNER_BIN/pmd-bin-7.9.0/bin/pmd" ]; then
+            echo "$SCANNER_BIN/pmd-bin-7.9.0/bin" >> "$GITHUB_PATH"
+          fi
+          "$SCANNER_BIN/trivy" fs --download-db-only --cache-dir "$TRIVY_CACHE_DIR" || true
+
+      - name: Run full e2e tests
+        run: uv run pytest tests/e2e/ -v --tb=short
+        env:
+          EEDOM_ALLOW_HOST_TESTS: "1"
+          EEDOM_E2E: "1"
+
+      - name: Run full Dom review
+        run: |
+          mkdir -p .temp
+          uv run eedom review --repo-path . --all --format sarif --output .temp/release-review.sarif
+          uv run eedom review --repo-path . --all --output .temp/release-review.md
+
+      - name: Enforce Dom release verdict
+        run: |
+          python3 << 'PY'
+          import json
+          import os
+          import re
+
+          errors = 0
+          crashed = 0
+          skipped = 0
+          warnings = 0
+
+          sarif_path = ".temp/release-review.sarif"
+          md_path = ".temp/release-review.md"
+
+          if os.path.isfile(sarif_path):
+              with open(sarif_path, encoding="utf-8") as f:
+                  sarif = json.load(f)
+              for run in sarif.get("runs", []):
+                  plugin_errored = False
+                  for result in run.get("results", []):
+                      if result.get("ruleId") == "eedom-plugin-error":
+                          crashed += 1
+                          plugin_errored = True
+                          break
+                  if plugin_errored:
+                      continue
+                  for result in run.get("results", []):
+                      if result.get("level") == "error":
+                          errors += 1
+                      elif result.get("level") == "warning":
+                          warnings += 1
+
+          if os.path.isfile(md_path):
+              with open(md_path, encoding="utf-8") as f:
+                  markdown = f.read()
+              if crashed == 0:
+                  crashed = len(re.findall(r"BINARY_CRASHED", markdown))
+              skipped = len(re.findall(r"NOT_INSTALLED", markdown))
+              warnings += len(re.findall(r"\[TIMEOUT\]", markdown))
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Dom release verdict\n\n")
+              summary.write(f"- **Errors:** {errors}\n")
+              summary.write(f"- **Warnings:** {warnings}\n")
+              summary.write(f"- **Skipped plugins:** {skipped}\n")
+              summary.write(f"- **Crashed plugins:** {crashed}\n")
+
+          if errors > 0 or crashed > 0:
+              raise SystemExit(
+                  f"Release candidate blocked by Dom review: {errors} errors, {crashed} crashed plugins"
+              )
+          PY
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Write release notes
+        run: |
+          mkdir -p .temp
+          PREVIOUS_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -Ev '-' | head -1 || true)
+          {
+            echo "# ${TAG_NAME}"
+            echo ""
+            echo "Daily release candidate for ${BASE_VERSION}."
+            echo ""
+            echo "## Validation"
+            echo "- Full E2E passed"
+            echo "- Full Dom review passed"
+            echo "- Distribution build passed"
+            echo ""
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "## Collected changes since ${PREVIOUS_TAG}"
+              git log --first-parent --oneline "${PREVIOUS_TAG}..HEAD"
+            else
+              echo "## Collected changes"
+              git log --first-parent --oneline -20
+            fi
+          } > .temp/release-notes.md
+
+      - name: Upload release-candidate artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ steps.metadata.outputs.tag_name }}
+          path: |
+            .temp/release-review.sarif
+            .temp/release-review.md
+            .temp/release-notes.md
+            dist/*
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Summarize candidate
+        run: |
+          echo "## Release candidate" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag:** ${TAG_NAME}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Base version:** ${BASE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Dry run:** ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+
+  publish_prerelease:
+    name: Publish Prerelease
+    needs: release_candidate
+    if: inputs.dry_run != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download release-candidate artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ needs.release_candidate.outputs.tag_name }}
+          path: .release-candidate
+
+      - name: Create GitHub prerelease
+        run: |
+          gh release create "$TAG_NAME" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "$TAG_NAME" \
+            --notes-file .release-candidate/.temp/release-notes.md
+          gh release upload "$TAG_NAME" .release-candidate/dist/*.whl .release-candidate/dist/*.tar.gz --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.release_candidate.outputs.tag_name }}

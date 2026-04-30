@@ -45,8 +45,6 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       api_contract: ${{ steps.classify.outputs.api_contract }}
       api_contract_reason: ${{ steps.classify.outputs.api_contract_reason }}
-      full_e2e: ${{ steps.classify.outputs.full_e2e }}
-      full_e2e_reason: ${{ steps.classify.outputs.full_e2e_reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -94,40 +92,6 @@ jobs:
             esac
           done <<< "$CHANGED_FILES"
 
-          FULL_E2E_CHANGES=""
-          while IFS= read -r changed_path; do
-            case "$changed_path" in
-              tests/e2e/*|\
-              src/eedom/data/scanners/*|\
-              src/eedom/core/subprocess_runner.py|\
-              src/eedom/core/tool_runner.py|\
-              src/eedom/plugins/_runners/*|\
-              src/eedom/plugins/cdk_nag.py|\
-              src/eedom/plugins/cfn_nag.py|\
-              src/eedom/plugins/clamav.py|\
-              src/eedom/plugins/complexity.py|\
-              src/eedom/plugins/cpd.py|\
-              src/eedom/plugins/cspell.py|\
-              src/eedom/plugins/gitleaks.py|\
-              src/eedom/plugins/kube_linter.py|\
-              src/eedom/plugins/ls_lint.py|\
-              src/eedom/plugins/mypy.py|\
-              src/eedom/plugins/osv_scanner.py|\
-              src/eedom/plugins/scancode.py|\
-              src/eedom/plugins/semgrep.py|\
-              src/eedom/plugins/syft.py|\
-              src/eedom/plugins/trivy.py|\
-              policies/*|\
-              Dockerfile|\
-              Dockerfile.test|\
-              Makefile|\
-              pyproject.toml|\
-              uv.lock|\
-              .github/workflows/gatekeeper.yml)
-                FULL_E2E_CHANGES="${FULL_E2E_CHANGES}${changed_path}"$'\n'
-                ;;
-            esac
-          done <<< "$CHANGED_FILES"
           if [ -n "$API_CONTRACT_CHANGES" ]; then
             echo "api_contract=true" >> "$GITHUB_OUTPUT"
             echo "api_contract_reason=contract_path" >> "$GITHUB_OUTPUT"
@@ -146,30 +110,10 @@ jobs:
             echo "api_contract=false" >> "$GITHUB_OUTPUT"
             echo "api_contract_reason=not_required" >> "$GITHUB_OUTPUT"
           fi
-
-          if [ -n "$FULL_E2E_CHANGES" ]; then
-            echo "full_e2e=true" >> "$GITHUB_OUTPUT"
-            echo "full_e2e_reason=runtime_path" >> "$GITHUB_OUTPUT"
-            echo "::notice::Full e2e required by runtime path changes"
-            {
-              echo "### Full e2e required"
-              echo ""
-              echo "Runtime-sensitive paths changed:"
-              printf '%s\n' "$FULL_E2E_CHANGES" | sed 's/^/- `/' | sed 's/$/`/'
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$E2E_LABEL_PRESENT" = "true" ]; then
-            echo "full_e2e=true" >> "$GITHUB_OUTPUT"
-            echo "full_e2e_reason=e2e-needed_label" >> "$GITHUB_OUTPUT"
-            echo "::notice::Full e2e required by e2e-needed label"
-          else
-            echo "full_e2e=false" >> "$GITHUB_OUTPUT"
-            echo "full_e2e_reason=not_required" >> "$GITHUB_OUTPUT"
-          fi
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           API_CONTRACT_LABEL_PRESENT: ${{ contains(github.event.pull_request.labels.*.name, 'api-contract-needed') }}
-          E2E_LABEL_PRESENT: ${{ contains(github.event.pull_request.labels.*.name, 'e2e-needed') }}
 
   # ── Push to main: stamp release key only (PR already validated) ──
 
@@ -339,17 +283,7 @@ jobs:
   e2e_full:
     name: E2E Full
     needs: preflight
-    if: >-
-      github.event_name != 'push' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
-      needs.preflight.outputs.docs_only != 'true' &&
-      (
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'pull_request' &&
-          needs.preflight.outputs.full_e2e == 'true'
-        )
-      )
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -540,8 +474,7 @@ jobs:
           [ "$TEST" != "success" ] && FAILED="$FAILED test($TEST)"
           [ "$API_CONTRACT" != "success" ] && [ "$API_CONTRACT" != "skipped" ] && FAILED="$FAILED api-contract($API_CONTRACT)"
           [ "$E2E_SMOKE" != "success" ] && FAILED="$FAILED e2e-smoke($E2E_SMOKE)"
-          [ "$E2E_FULL" != "success" ] && [ "$E2E_FULL" != "failure" ] && [ "$E2E_FULL" != "skipped" ] && FAILED="$FAILED e2e-full($E2E_FULL)"
-          [ "$E2E_FULL" = "failure" ] && echo "::warning::Full e2e tests failed — not blocking gate (scanner binary compat issues on GH runners)"
+          [ "$E2E_FULL" != "success" ] && [ "$E2E_FULL" != "skipped" ] && FAILED="$FAILED e2e-full($E2E_FULL)"
           [ "$REVIEW" != "success" ] && FAILED="$FAILED review($REVIEW)"
 
           if [ -n "$FAILED" ]; then
@@ -643,7 +576,7 @@ jobs:
           echo "- **Tests:** ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **API contract:** ${{ needs.api_contract.result }} (${{ needs.preflight.outputs.api_contract_reason }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- **E2E smoke:** ${{ needs.e2e_smoke.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **E2E full:** ${{ needs.e2e_full.result }} (${{ needs.preflight.outputs.full_e2e_reason }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **E2E full:** ${{ needs.e2e_full.result }} (release/manual only)" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Review errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Review warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Skipped plugins (not installed):** $SKIPPED" >> "$GITHUB_STEP_SUMMARY"

@@ -198,14 +198,17 @@ def test_pull_request_ci_skips_draft_prs_and_runs_when_ready_for_review() -> Non
         for job_name, raw_job in _as_mapping(workflow.get("jobs")).items():
             job = _as_mapping(raw_job)
             condition = str(job.get("if", ""))
-            if condition.strip() == "github.event_name == 'push'":
+            if condition.strip() in {
+                "github.event_name == 'push'",
+                "github.event_name == 'workflow_dispatch'",
+            }:
                 continue
             assert (
                 "github.event.pull_request.draft == false" in condition
             ), f"{path.relative_to(_ROOT)} job {job_name} must skip draft PRs"
 
 
-def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
+def test_gatekeeper_keeps_pr_ci_fast_and_full_e2e_manual_only() -> None:
     workflow = _load_yaml(_WORKFLOWS / "gatekeeper.yml")
     assert workflow.get("permissions") == {"contents": "read"}
     on_block = _github_on(workflow)
@@ -213,8 +216,8 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     pull_request = _as_mapping(on_block.get("pull_request"))
     pr_types = pull_request.get("types")
     assert isinstance(pr_types, list)
-    assert "labeled" in pr_types, "adding e2e-needed must trigger a new CI evaluation"
-    assert "unlabeled" in pr_types, "removing e2e-needed must trigger a new CI evaluation"
+    assert "labeled" in pr_types, "adding api-contract-needed must trigger CI evaluation"
+    assert "unlabeled" in pr_types, "removing api-contract-needed must trigger CI evaluation"
 
     jobs = _as_mapping(workflow.get("jobs"))
     preflight = _as_mapping(jobs.get("preflight"))
@@ -238,17 +241,14 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     outputs = _as_mapping(preflight.get("outputs"))
     assert outputs.get("api_contract") == "${{ steps.classify.outputs.api_contract }}"
     assert outputs.get("api_contract_reason") == "${{ steps.classify.outputs.api_contract_reason }}"
-    assert outputs.get("full_e2e") == "${{ steps.classify.outputs.full_e2e }}"
-    assert outputs.get("full_e2e_reason") == "${{ steps.classify.outputs.full_e2e_reason }}"
+    assert "full_e2e" not in outputs
+    assert "full_e2e_reason" not in outputs
     classify_env = _as_mapping(classify_step.get("env"))
     assert (
         classify_env.get("API_CONTRACT_LABEL_PRESENT")
         == "${{ contains(github.event.pull_request.labels.*.name, 'api-contract-needed') }}"
     )
-    assert (
-        classify_env.get("E2E_LABEL_PRESENT")
-        == "${{ contains(github.event.pull_request.labels.*.name, 'e2e-needed') }}"
-    )
+    assert "E2E_LABEL_PRESENT" not in classify_env
 
     preflight_run = _job_run_text(preflight)
     for contract_path in (
@@ -260,15 +260,13 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     ):
         assert contract_path in preflight_run
 
-    for full_e2e_path in (
+    for release_only_path in (
         "tests/e2e/",
         "src/eedom/data/scanners/",
         "src/eedom/plugins/_runners/",
         "src/eedom/plugins/cspell.py",
-        ".github/workflows/gatekeeper.yml",
-        "uv.lock",
     ):
-        assert full_e2e_path in preflight_run
+        assert release_only_path not in preflight_run
     assert "src/eedom/plugins/*" not in preflight_run
 
     contract_step_names = {
@@ -299,8 +297,7 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     assert "needs.preflight.outputs.api_contract == 'true'" in contract_condition
 
     full_condition = str(full.get("if", ""))
-    assert "github.event_name == 'workflow_dispatch'" in full_condition
-    assert "needs.preflight.outputs.full_e2e == 'true'" in full_condition
+    assert full_condition.strip() == "github.event_name == 'workflow_dispatch'"
 
     assert _as_sequence(gate.get("needs")) == [
         "preflight",
@@ -318,6 +315,106 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     assert "api-contract($API_CONTRACT)" in gate_run
     assert "e2e-smoke($E2E_SMOKE)" in gate_run
     assert "e2e-full($E2E_FULL)" in gate_run
+    assert "release/manual only" in gate_run
+    assert "not blocking gate" not in gate_run
+
+
+def test_daily_release_candidate_runs_full_e2e_and_creates_prerelease() -> None:
+    workflow = _load_yaml(_WORKFLOWS / "release-candidate.yml")
+
+    assert workflow.get("permissions") == {"contents": "read"}
+    events = _workflow_events(workflow)
+    assert "schedule" in events
+    assert "workflow_dispatch" in events
+    assert "pull_request" not in events
+
+    on_block = _github_on(workflow)
+    assert isinstance(on_block, dict)
+    schedule = _as_sequence(on_block.get("schedule"))
+    assert schedule
+    assert any(_as_mapping(entry).get("cron") == "0 23 * * *" for entry in schedule)
+
+    dispatch = _as_mapping(on_block.get("workflow_dispatch"))
+    inputs = _as_mapping(dispatch.get("inputs"))
+    assert {"base_version", "candidate_number", "dry_run"}.issubset(inputs)
+
+    jobs = _as_mapping(workflow.get("jobs"))
+    release_candidate = _as_mapping(jobs.get("release_candidate"))
+    publish_prerelease = _as_mapping(jobs.get("publish_prerelease"))
+    assert release_candidate.get("timeout-minutes") == 25
+    outputs = _as_mapping(release_candidate.get("outputs"))
+    assert outputs.get("tag_name") == "${{ steps.metadata.outputs.tag_name }}"
+    assert outputs.get("base_version") == "${{ steps.metadata.outputs.base_version }}"
+    assert publish_prerelease.get("needs") == "release_candidate"
+    assert publish_prerelease.get("if") == "inputs.dry_run != true"
+    assert publish_prerelease.get("timeout-minutes") == 5
+    assert publish_prerelease.get("permissions") == {"contents": "write"}
+
+    release_step_names = {
+        step.get("name")
+        for step in _job_steps(release_candidate)
+        if isinstance(step.get("name"), str)
+    }
+    publish_step_names = {
+        step.get("name")
+        for step in _job_steps(publish_prerelease)
+        if isinstance(step.get("name"), str)
+    }
+    assert "Run full e2e tests" in release_step_names
+    assert "Run full Dom review" in release_step_names
+    assert "Enforce Dom release verdict" in release_step_names
+    assert "Build distributions" in release_step_names
+    assert "Upload release-candidate artifacts" in release_step_names
+    assert "Create GitHub prerelease" not in release_step_names
+    assert "Download release-candidate artifacts" in publish_step_names
+    assert "Create GitHub prerelease" in publish_step_names
+
+    release_run_text = _job_run_text(release_candidate)
+    publish_run_text = _job_run_text(publish_prerelease)
+    run_text = f"{release_run_text}\n{publish_run_text}"
+    assert "tag_name={tag_name}" in run_text
+    assert 'f"v{base_version}-rc.{run_date}.{candidate_number}"' in run_text
+    assert "uv run pytest tests/e2e/ -v --tb=short" in run_text
+    assert "uv run eedom review --repo-path . --all --format sarif" in run_text
+    assert "uv run eedom review --repo-path . --all --output" in run_text
+    assert 'result.get("ruleId") == "eedom-plugin-error"' in run_text
+    assert 're.findall(r"BINARY_CRASHED", markdown)' in run_text
+    assert "Release candidate blocked by Dom review" in run_text
+    assert "uv build" in run_text
+    assert 'gh release create "$TAG_NAME"' in run_text
+    assert "--prerelease" in run_text
+    assert (
+        'gh release upload "$TAG_NAME" .release-candidate/dist/*.whl '
+        ".release-candidate/dist/*.tar.gz --clobber"
+    ) in run_text
+
+    metadata_step = next(
+        step
+        for step in _job_steps(release_candidate)
+        if step.get("name") == "Prepare candidate metadata"
+    )
+    metadata_env = _as_mapping(metadata_step.get("env"))
+    assert metadata_env.get("INPUT_BASE_VERSION") == "${{ inputs.base_version }}"
+    assert metadata_env.get("INPUT_CANDIDATE_NUMBER") == "${{ inputs.candidate_number }}"
+
+    download_step = next(
+        step
+        for step in _job_steps(publish_prerelease)
+        if step.get("name") == "Download release-candidate artifacts"
+    )
+    download_with = _as_mapping(download_step.get("with"))
+    assert (
+        download_with.get("name")
+        == "release-candidate-${{ needs.release_candidate.outputs.tag_name }}"
+    )
+
+    create_step = next(
+        step
+        for step in _job_steps(publish_prerelease)
+        if step.get("name") == "Create GitHub prerelease"
+    )
+    create_env = _as_mapping(create_step.get("env"))
+    assert create_env.get("TAG_NAME") == "${{ needs.release_candidate.outputs.tag_name }}"
 
 
 def test_pull_request_target_workflows_do_not_checkout_or_execute_pr_head() -> None:
