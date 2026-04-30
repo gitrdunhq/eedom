@@ -37,7 +37,9 @@ class TestKubeLinter:
 
 
 class TestCfnNag:
-    @pytest.mark.xfail(reason="Flaky test - cfn-nag scanner intermittently fails to find findings", strict=False)
+    @pytest.mark.xfail(
+        reason="Flaky test - cfn-nag scanner intermittently fails to find findings", strict=False
+    )
     def test_cfn_nag_finds_unencrypted(self, vuln_repo: Path, tmp_path: Path) -> None:
         result, parsed = run_review(vuln_repo, scanners="cfn-nag", output_format="json")
         breakpoint_dump(tmp_path, "scanner_cfn_nag", parsed)
