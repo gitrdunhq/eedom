@@ -104,3 +104,6 @@ line-length = 100
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "contract: pure API contract tests that run without scanner binaries, network, or containers",
+]

@@ -1,0 +1,1 @@
+"""Pure API contract tests."""

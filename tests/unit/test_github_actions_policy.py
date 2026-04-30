@@ -207,6 +207,7 @@ def test_pull_request_ci_skips_draft_prs_and_runs_when_ready_for_review() -> Non
 
 def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
     workflow = _load_yaml(_WORKFLOWS / "gatekeeper.yml")
+    assert workflow.get("permissions") == {"contents": "read"}
     on_block = _github_on(workflow)
     assert isinstance(on_block, dict)
     pull_request = _as_mapping(on_block.get("pull_request"))
@@ -217,6 +218,8 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
 
     jobs = _as_mapping(workflow.get("jobs"))
     preflight = _as_mapping(jobs.get("preflight"))
+    release_key = _as_mapping(jobs.get("release-key"))
+    contract = _as_mapping(jobs.get("api_contract"))
     smoke = _as_mapping(jobs.get("e2e_smoke"))
     full = _as_mapping(jobs.get("e2e_full"))
     gate = _as_mapping(jobs.get("gate"))
@@ -224,41 +227,76 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
         step for step in _job_steps(preflight) if step.get("name") == "Classify PR changes"
     )
 
+    assert release_key.get("permissions") == {"contents": "read", "statuses": "write"}
+    assert gate.get("permissions") == {
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "write",
+        "statuses": "write",
+    }
+
     outputs = _as_mapping(preflight.get("outputs"))
+    assert outputs.get("api_contract") == "${{ steps.classify.outputs.api_contract }}"
+    assert outputs.get("api_contract_reason") == "${{ steps.classify.outputs.api_contract_reason }}"
     assert outputs.get("full_e2e") == "${{ steps.classify.outputs.full_e2e }}"
     assert outputs.get("full_e2e_reason") == "${{ steps.classify.outputs.full_e2e_reason }}"
     classify_env = _as_mapping(classify_step.get("env"))
+    assert (
+        classify_env.get("API_CONTRACT_LABEL_PRESENT")
+        == "${{ contains(github.event.pull_request.labels.*.name, 'api-contract-needed') }}"
+    )
     assert (
         classify_env.get("E2E_LABEL_PRESENT")
         == "${{ contains(github.event.pull_request.labels.*.name, 'e2e-needed') }}"
     )
 
     preflight_run = _job_run_text(preflight)
-    for required_path in (
+    for contract_path in (
+        "tests/contract/",
+        "src/eedom/core/use_cases.py",
+        "src/eedom/core/registry.py",
+        "src/eedom/core/renderer.py",
+        "src/eedom/plugins/supply_chain.py",
+    ):
+        assert contract_path in preflight_run
+
+    for full_e2e_path in (
         "tests/e2e/",
-        "src/eedom/plugins/",
         "src/eedom/data/scanners/",
+        "src/eedom/plugins/_runners/",
+        "src/eedom/plugins/cspell.py",
         ".github/workflows/gatekeeper.yml",
         "uv.lock",
     ):
-        assert required_path in preflight_run
+        assert full_e2e_path in preflight_run
+    assert "src/eedom/plugins/*" not in preflight_run
 
+    contract_step_names = {
+        step.get("name") for step in _job_steps(contract) if isinstance(step.get("name"), str)
+    }
     smoke_step_names = {
         step.get("name") for step in _job_steps(smoke) if isinstance(step.get("name"), str)
     }
     full_step_names = {
         step.get("name") for step in _job_steps(full) if isinstance(step.get("name"), str)
     }
+    assert "Run API contract tests" in contract_step_names
     assert "Run smoke e2e tests" in smoke_step_names
     assert "Cache scanner binaries" not in smoke_step_names
     assert "Add scanners to PATH and warm trivy DB" not in smoke_step_names
     assert "Cache scanner binaries" in full_step_names
     assert "Add scanners to PATH and warm trivy DB" in full_step_names
 
+    contract_run = _job_run_text(contract)
     smoke_run = _job_run_text(smoke)
     full_run = _job_run_text(full)
+    assert "tests/contract/ -v --tb=short" in contract_run
     assert "tests/e2e/test_smoke_review.py" in smoke_run
     assert "tests/e2e/ -v --tb=short" in full_run
+
+    contract_condition = str(contract.get("if", ""))
+    assert "github.event_name == 'workflow_dispatch'" in contract_condition
+    assert "needs.preflight.outputs.api_contract == 'true'" in contract_condition
 
     full_condition = str(full.get("if", ""))
     assert "github.event_name == 'workflow_dispatch'" in full_condition
@@ -268,13 +306,16 @@ def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
         "preflight",
         "lint",
         "test",
+        "api_contract",
         "e2e_smoke",
         "e2e_full",
         "review",
     ]
     gate_run = _job_run_text(gate)
+    assert "API_CONTRACT" in gate_run
     assert "E2E_SMOKE" in gate_run
     assert "E2E_FULL" in gate_run
+    assert "api-contract($API_CONTRACT)" in gate_run
     assert "e2e-smoke($E2E_SMOKE)" in gate_run
     assert "e2e-full($E2E_FULL)" in gate_run
 
