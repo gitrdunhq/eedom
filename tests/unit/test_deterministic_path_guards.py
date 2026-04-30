@@ -32,6 +32,12 @@ _PATH_VAR_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r".*key.*", re.IGNORECASE),
 )
 
+# Functions that should use Path objects, not strings
+_PATH_CONSTRUCTION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"os\.rename\s*\("),
+    re.compile(r"os\.path\.join"),
+    re.compile(r"tempfile\.\w+.*dir\s*="),
+)
 
 def _rel(path: Path) -> str:
     """Return relative path from repo root as posix string."""
@@ -103,6 +109,33 @@ def _contains_os_path_join(node: ast.AST) -> list[tuple[str, int]]:
     return violations
 
 
+def _find_str_conversion_with_concat(tree: ast.Module) -> list[tuple[int, str]]:
+    """
+    Find instances where str() is used to convert a Path for string concatenation.
+    This is a red flag for improper path construction.
+    """
+    violations: list[tuple[int, str]] = []
+
+    for node in ast.walk(tree):
+        # Look for str(path_var) patterns followed by concatenation
+        if isinstance(node, ast.Call):
+            func_str = ast.unparse(node.func)
+            if func_str == "str":
+                # Check if the argument is a path-related variable
+                if node.args:
+                    arg_str = ast.unparse(node.args[0])
+                    if _is_path_related_name(arg_str):
+                        # Check if parent context involves concatenation
+                        parent = getattr(node, "parent", None)
+                        if isinstance(parent, ast.BinOp):
+                            source = ast.unparse(parent)
+                            if "/" in source or "+" in source:
+                                lineno = getattr(node, "lineno", 0)
+                                violations.append((lineno, source))
+
+    return violations
+
+
 @pytest.mark.xfail(
     reason="deterministic bug detector — issue #235 (parent #201)",
     strict=False,
@@ -167,6 +200,7 @@ def test_235_evidence_store_uses_pathlib_consistently() -> None:
         pytest.skip(f"Evidence file not found: {_EVIDENCE_FILE}")
 
     content = _EVIDENCE_FILE.read_text()
+    tree = _parse(_EVIDENCE_FILE)
 
     violations: list[str] = []
 
@@ -213,6 +247,14 @@ def test_235_evidence_dir_uses_path_operator() -> None:
     # Find the _evidence_dir function
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "_evidence_dir":
+            source = ast.unparse(node)
+
+            # Check it uses Path / operator
+            if "/" not in source or "+" in source:
+                # If we see + or don't see /, check more carefully
+                # Actually / is the Path operator, so we need to distinguish
+                # Path operator (good) from string concatenation (bad)
+                pass  # Will be caught by the concat check below
             # Check for string concatenation within the function
             concat_violations = _contains_string_concat(node)
             for concat_source, lineno in concat_violations:
