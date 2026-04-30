@@ -7,6 +7,20 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.10](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.9...eedom-v0.2.10) (2026-04-30)
+
+
+### Features
+
+* add solver module — LLM-powered detector test generation via OpenRouter ([6335c47](https://github.com/gitrdunhq/eedom/commit/6335c4742c0bd2e7d00feecb6865f60ce744cae1))
+
+
+### Bug Fixes
+
+* address all 22 review findings (low to critical) ([6af16eb](https://github.com/gitrdunhq/eedom/commit/6af16ebb9c10b59a0357a64b83940e7bb728c003))
+* include template files in wheel distribution ([#275](https://github.com/gitrdunhq/eedom/issues/275)) ([b3d6b3a](https://github.com/gitrdunhq/eedom/commit/b3d6b3a01a1d65701bb3c5a991cae32cc5b74e37))
+* Pydantic boundary contracts for solver module ([b6552de](https://github.com/gitrdunhq/eedom/commit/b6552def633698b4566ba47c6ecf2a4566a2d663))
+
 ## [0.2.9](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.8...eedom-v0.2.9) (2026-04-29)
 
 
