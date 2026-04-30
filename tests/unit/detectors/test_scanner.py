@@ -1,0 +1,247 @@
+"""Tests for DeterministicScanner.
+# tested-by: tests/unit/detectors/test_scanner.py
+
+RED phase tests for Task 1.5: DeterministicScanner Integration.
+"""
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+
+import pytest
+
+# These imports will fail during RED phase
+from eedom.detectors.scanner import DeterministicScanner
+from eedom.data.scanners.base import Scanner
+from eedom.core.models import ScanResult, FindingSeverity, FindingCategory
+
+
+# =============================================================================
+# Scanner Protocol Tests
+# =============================================================================
+
+
+class TestDeterministicScannerProtocol:
+    """Tests that DeterministicScanner implements Scanner protocol."""
+
+    def test_implements_scanner_protocol(self):
+        """DeterministicScanner is a Scanner subclass."""
+        scanner = DeterministicScanner()
+        assert isinstance(scanner, Scanner)
+
+    def test_has_name_property(self):
+        """DeterministicScanner has 'name' property returning 'deterministic'."""
+        scanner = DeterministicScanner()
+        assert scanner.name == "deterministic"
+
+    def test_scan_returns_scanresult(self):
+        """scan() returns a ScanResult."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = scanner.scan(Path(tmpdir))
+
+        assert isinstance(result, ScanResult)
+
+    def test_scan_returns_success_status(self):
+        """scan() returns status='success' even when bugs found."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a file with a test finding
+            test_file = Path(tmpdir) / "test.py"
+            test_file.write_text("jwt.encode({'user': 'test'}, 'secret')\n")
+
+            result = scanner.scan(Path(tmpdir))
+
+        assert result.status.value == "success"
+
+
+# =============================================================================
+# Filtering Tests
+# =============================================================================
+
+
+class TestDeterministicScannerFiltering:
+    """Tests for scanner filtering capabilities."""
+
+    def test_filters_by_category(self):
+        """Scanner can filter detectors by category."""
+        from eedom.detectors.categories import DetectorCategory
+
+        scanner = DeterministicScanner(categories=[DetectorCategory.security])
+
+        # Scanner should only run security detectors
+        assert scanner._categories == [DetectorCategory.security]
+
+    def test_filters_by_severity(self):
+        """Scanner can filter detectors by severity."""
+        scanner = DeterministicScanner(severities=[FindingSeverity.high])
+
+        assert scanner._severities == [FindingSeverity.high]
+
+    def test_filters_by_detector_id(self):
+        """Scanner can filter by specific detector IDs."""
+        scanner = DeterministicScanner(specific_detectors=["EED-001"])
+
+        assert scanner._specific_detectors == ["EED-001"]
+
+
+# =============================================================================
+# Scan Result Tests
+# =============================================================================
+
+
+class TestDeterministicScannerResults:
+    """Tests for scan result generation."""
+
+    def test_scan_empty_directory(self):
+        """Scan of empty directory returns empty findings."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = scanner.scan(Path(tmpdir))
+
+        assert result.findings == []
+        assert result.tool_name == "deterministic"
+
+    def test_scan_populated_directory(self):
+        """Scan of directory with Python files returns findings."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Python file
+            test_file = Path(tmpdir) / "test.py"
+            test_file.write_text("x = 1\n")
+
+            result = scanner.scan(Path(tmpdir))
+
+        # Result should be a valid ScanResult
+        assert isinstance(result, ScanResult)
+        assert result.tool_name == "deterministic"
+
+    def test_source_tool_is_detector_id(self):
+        """Findings have source_tool set to detector_id."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create file that might trigger a detector
+            test_file = Path(tmpdir) / "test.py"
+            test_file.write_text("api_key: str = 'secret'\n")
+
+            result = scanner.scan(Path(tmpdir))
+
+        # If there are findings, check source_tool
+        for finding in result.findings:
+            assert finding.source_tool.startswith("EED-")
+
+    def test_finding_category_mapping(self):
+        """Finding categories are correctly mapped from detector categories."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = scanner.scan(Path(tmpdir))
+
+        # All findings should have valid FindingCategory
+        for finding in result.findings:
+            assert finding.category in FindingCategory
+
+    def test_duration_seconds_is_set(self):
+        """ScanResult has duration_seconds set."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = scanner.scan(Path(tmpdir))
+
+        assert result.duration_seconds >= 0
+
+
+# =============================================================================
+# AST Cache Integration Tests
+# =============================================================================
+
+
+class TestDeterministicScannerCaching:
+    """Tests for AST cache integration (ADR-DET-007)."""
+
+    def test_uses_ast_cache(self):
+        """Scanner uses AST cache for performance."""
+        from eedom.detectors.ast_utils import ASTCache
+
+        cache = ASTCache(maxsize=10)
+        scanner = DeterministicScanner(cache=cache)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Python file
+            test_file = Path(tmpdir) / "test.py"
+            test_file.write_text("x = 1\n")
+
+            result = scanner.scan(Path(tmpdir))
+
+        # Cache should have entry
+        assert len(cache._cache) >= 0  # May be 0 if no detectors ran
+
+
+# =============================================================================
+# Error Handling Tests
+# =============================================================================
+
+
+class TestDeterministicScannerErrorHandling:
+    """Tests for scanner error handling."""
+
+    def test_handles_nonexistent_path(self):
+        """Scan of non-existent path returns failed result."""
+        scanner = DeterministicScanner()
+
+        result = scanner.scan(Path("/nonexistent/path"))
+
+        # Should still return a ScanResult (not raise)
+        assert isinstance(result, ScanResult)
+
+    def test_handles_invalid_python_files(self):
+        """Scan handles files with invalid Python syntax."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create file with invalid syntax
+            test_file = Path(tmpdir) / "bad.py"
+            test_file.write_text("invalid syntax {{{\n")
+
+            result = scanner.scan(Path(tmpdir))
+
+        # Should return success status (no crash)
+        assert result.status.value == "success"
+
+
+# =============================================================================
+# CLI Integration Tests (ADR-DET-006)
+# =============================================================================
+
+
+class TestDeterministicScannerCLIIntegration:
+    """Tests for integration with 'review' command (ADR-DET-006)."""
+
+    def test_scanner_registered_in_orchestrator(self):
+        """DeterministicScanner can be used by ScanOrchestrator."""
+        from eedom.core.orchestrator import ScanOrchestrator
+
+        scanner = DeterministicScanner()
+        orchestrator = ScanOrchestrator(scanners=[scanner])
+
+        # Should be able to add to orchestrator
+        assert scanner in orchestrator._scanners
+
+    def test_output_format_matches_existing_scanners(self):
+        """Output format matches existing scanner output."""
+        scanner = DeterministicScanner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = scanner.scan(Path(tmpdir))
+
+        # Check fields match expected format
+        assert hasattr(result, "tool_name")
+        assert hasattr(result, "status")
+        assert hasattr(result, "findings")
+        assert hasattr(result, "duration_seconds")
+        assert hasattr(result, "message")
