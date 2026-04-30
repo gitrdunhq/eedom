@@ -56,7 +56,7 @@ cursor.execute("SELECT * FROM users WHERE id = %s" % user_id)
             findings = detector.detect(Path(f.name))
 
         assert len(findings) == 1
-        assert "% formatting" in findings[0].message
+        assert "string formatting" in findings[0].message
 
     def test_detects_dot_format_in_execute(self, detector):
         """Detects .format() in SQL execute."""
