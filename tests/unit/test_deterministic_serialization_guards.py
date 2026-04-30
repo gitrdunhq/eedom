@@ -213,6 +213,8 @@ def test_236_review_decision_model_uses_explicit_identifiers() -> None:
                 pass
 
     # The real test is that there's no deterministic serialization option
+    # model_dump includes non-deterministic fields
+    # without any way to normalize them for replay
     assert "model_dump" in dir(decision), "ReviewDecision should have model_dump method"
 
     # Verify the issue: model_dump includes non-deterministic fields
