@@ -39,6 +39,7 @@ _PATH_CONSTRUCTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"tempfile\.\w+.*dir\s*="),
 )
 
+
 def _rel(path: Path) -> str:
     """Return relative path from repo root as posix string."""
     return path.relative_to(_REPO).as_posix()
