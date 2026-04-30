@@ -55,6 +55,13 @@ def _is_timeout_field(node: ast.AnnAssign) -> bool:
     if isinstance(node.annotation, ast.Name):
         if node.annotation.id != "int":
             return False
+    elif isinstance(node.annotation, ast.Subscript):
+        # Handle Optional[int] or similar - check the base type
+        if isinstance(node.annotation.value, ast.Name):
+            if node.annotation.value.id not in ("Optional", "Union"):
+                return False
+        else:
+            return False
     else:
         return False
 
