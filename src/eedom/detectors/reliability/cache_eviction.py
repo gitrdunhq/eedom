@@ -51,23 +51,23 @@ class CacheEvictionDetector(BugDetector):
         findings = []
 
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Check for @cache (no args) - functools.cache
-                if self._has_unbounded_cache(node):
-                    findings.append(
-                        DetectorFinding(
-                            detector_id=self.detector_id,
-                            detector_name=self.name,
-                            category=self.category,
-                            severity=self.severity,
-                            file_path=str(file_path),
-                            line_number=node.lineno,
-                            message=f"@{node.name} uses cache without maxsize/TTL limit",
-                            snippet=self._get_decorator_line(content, node),
-                            issue_reference="#166, #167",
-                            fix_hint="Add maxsize= to @lru_cache or use TTL cache",
-                        )
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                self._has_unbounded_cache(node)
+            ):
+                findings.append(
+                    DetectorFinding(
+                        detector_id=self.detector_id,
+                        detector_name=self.name,
+                        category=self.category,
+                        severity=self.severity,
+                        file_path=str(file_path),
+                        line_number=node.lineno,
+                        message=f"@{node.name} uses cache without maxsize/TTL limit",
+                        snippet=self._get_decorator_line(content, node),
+                        issue_reference="#166, #167",
+                        fix_hint="Add maxsize= to @lru_cache or use TTL cache",
                     )
+                )
 
         return findings
 
@@ -80,21 +80,18 @@ class CacheEvictionDetector(BugDetector):
         """
         for decorator in node.decorator_list:
             # Check for bare @cache
-            if isinstance(decorator, ast.Name):
-                if decorator.id == "cache":
-                    return True
+            if isinstance(decorator, ast.Name) and decorator.id == "cache":
+                return True
 
             # Check for @lru_cache() without maxsize
-            if isinstance(decorator, ast.Call):
-                if isinstance(decorator.func, ast.Name):
-                    if decorator.func.id == "lru_cache":
-                        # Check if maxsize is specified
-                        has_maxsize = False
-                        for kw in decorator.keywords:
-                            if kw.arg == "maxsize":
-                                has_maxsize = True
-                                break
-                        return not has_maxsize
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Name)
+                and decorator.func.id == "lru_cache"
+            ):
+                # Check if maxsize is specified
+                has_maxsize = any(kw.arg == "maxsize" for kw in decorator.keywords)
+                return not has_maxsize
 
         return False
 

@@ -9,6 +9,7 @@ Per ADR-DET-006: Integrated into 'review' command, not separate 'detect'.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from pathlib import Path
 
@@ -85,19 +86,19 @@ class DeterministicScanner(Scanner):
                 continue
 
             # Apply category filter
-            if self._categories is not None:
-                if detector.category not in self._categories:
-                    continue
+            if self._categories is not None and detector.category not in self._categories:
+                continue
 
             # Apply severity filter
-            if self._severities is not None:
-                if detector.severity not in self._severities:
-                    continue
+            if self._severities is not None and detector.severity not in self._severities:
+                continue
 
             # Apply specific detector filter
-            if self._specific_detectors is not None:
-                if detector.detector_id not in self._specific_detectors:
-                    continue
+            if (
+                self._specific_detectors is not None
+                and detector.detector_id not in self._specific_detectors
+            ):
+                continue
 
             applicable.append(detector)
 
@@ -174,10 +175,8 @@ class DeterministicScanner(Scanner):
                 files_to_scan.append(target_path)
         else:
             # Find all Python files recursively
-            try:
+            with contextlib.suppress(OSError, PermissionError):
                 files_to_scan = list(target_path.rglob("*.py"))
-            except (OSError, PermissionError):
-                pass
 
         # Run detectors on all files
         all_findings: list[DetectorFinding] = []
