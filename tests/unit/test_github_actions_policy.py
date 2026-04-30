@@ -164,7 +164,36 @@ def test_workflow_policy_runs_read_only_policy_checks() -> None:
     assert "docker.io/library/python@sha256:" in run_text
     assert '-v "$GITHUB_WORKSPACE:/workspace:ro"' in run_text
     assert "UV_PROJECT_ENVIRONMENT=/tmp/eedom-policy-venv" in run_text
+    assert "uv run --frozen pytest" in run_text
     assert "EEDOM_ALLOW_HOST_TESTS" not in run_text
+
+
+def test_pull_request_ci_skips_draft_prs_and_runs_when_ready_for_review() -> None:
+    pr_ci_workflows = [
+        _WORKFLOWS / "gatekeeper.yml",
+        _WORKFLOWS / "workflow-policy.yml",
+    ]
+
+    for path in pr_ci_workflows:
+        workflow = _load_yaml(path)
+        on_block = _github_on(workflow)
+        assert isinstance(on_block, dict), f"{path.relative_to(_ROOT)} must define events"
+        pull_request = on_block.get("pull_request")
+        assert isinstance(
+            pull_request, dict
+        ), f"{path.relative_to(_ROOT)} must configure pull_request"
+        assert "ready_for_review" in pull_request.get(
+            "types", []
+        ), f"{path.relative_to(_ROOT)} must run CI when a draft PR is marked ready"
+
+        for job_name, raw_job in _as_mapping(workflow.get("jobs")).items():
+            job = _as_mapping(raw_job)
+            condition = str(job.get("if", ""))
+            if condition.strip() == "github.event_name == 'push'":
+                continue
+            assert (
+                "github.event.pull_request.draft == false" in condition
+            ), f"{path.relative_to(_ROOT)} job {job_name} must skip draft PRs"
 
 
 def test_pull_request_target_workflows_do_not_checkout_or_execute_pr_head() -> None:

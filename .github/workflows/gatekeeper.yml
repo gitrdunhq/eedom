@@ -2,6 +2,7 @@ name: GATEKEEPER — Dependency & Code Review
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -35,7 +36,12 @@ jobs:
 
   preflight:
     name: Preflight
-    if: github.event_name == 'push' || !startsWith(github.head_ref || '', 'release-please--')
+    if: >-
+      github.event_name != 'pull_request' ||
+      (
+        github.event.pull_request.draft == false &&
+        !startsWith(github.head_ref || '', 'release-please--')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -95,6 +101,7 @@ jobs:
     needs: preflight
     if: >-
       github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -126,6 +133,7 @@ jobs:
     needs: preflight
     if: >-
       github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -156,6 +164,7 @@ jobs:
     needs: preflight
     if: >-
       github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -224,6 +233,7 @@ jobs:
     needs: preflight
     if: >-
       github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -324,6 +334,7 @@ jobs:
       always() &&
       !cancelled() &&
       github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.result == 'success' &&
       needs.preflight.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
