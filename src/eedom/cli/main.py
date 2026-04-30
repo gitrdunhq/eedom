@@ -17,6 +17,13 @@ from eedom.plugins import get_default_registry
 
 logger = structlog.get_logger()
 
+
+def _write_output(path: str, content: str) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content)
+
+
 _ALLOWED_TEAMS: frozenset[str] = frozenset(
     {"backend", "frontend", "platform", "infra", "security", "data"}
 )
@@ -190,9 +197,9 @@ def evaluate(
 
         if output_json and decisions:
             last = decisions[-1]
-            Path(output_json).write_bytes(
-                orjson.dumps(last.model_dump(mode="json"), option=orjson.OPT_INDENT_2)
-            )
+            p = Path(output_json)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(orjson.dumps(last.model_dump(mode="json"), option=orjson.OPT_INDENT_2))
 
         sys.exit(0)
 
@@ -432,7 +439,7 @@ def review(
 
             sarif_text = orjson.dumps(sarif_doc, option=orjson.OPT_INDENT_2).decode()
             if output:
-                Path(output).write_text(sarif_text)
+                _write_output(output, sarif_text)
                 click.echo(f"SARIF written to {output}")
             else:
                 click.echo(sarif_text)
@@ -443,7 +450,7 @@ def review(
 
             json_text = render_json(results, repo=repo_name or str(repo))
             if output:
-                Path(output).write_text(json_text)
+                _write_output(output, json_text)
                 click.echo(f"JSON written to {output}")
             else:
                 click.echo(json_text)
@@ -458,7 +465,7 @@ def review(
             plugin_renderers=plugin_map,
         )
         if output:
-            Path(output).write_text(md)
+            _write_output(output, md)
             click.echo(f"Review written to {output} ({len(md)} chars)")
         else:
             click.echo(md)
@@ -541,7 +548,7 @@ def audit(
 
     md = render_audit_markdown(report)
     if output:
-        Path(output).write_text(md)
+        _write_output(output, md)
         click.echo(f"Audit written to {output} ({report.concern_count} concerns)")
     else:
         click.echo(md)
