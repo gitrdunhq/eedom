@@ -94,8 +94,17 @@ def _workflow_steps(workflow: dict[object, object]) -> list[dict[object, object]
     return steps
 
 
+def _job_steps(job: dict[object, object]) -> list[dict[object, object]]:
+    return [step for raw_step in _as_sequence(job.get("steps")) if (step := _as_mapping(raw_step))]
+
+
 def _run_text(workflow: dict[object, object]) -> str:
     runs = [step["run"] for step in _workflow_steps(workflow) if isinstance(step.get("run"), str)]
+    return "\n".join(runs)
+
+
+def _job_run_text(job: dict[object, object]) -> str:
+    runs = [step["run"] for step in _job_steps(job) if isinstance(step.get("run"), str)]
     return "\n".join(runs)
 
 
@@ -194,6 +203,80 @@ def test_pull_request_ci_skips_draft_prs_and_runs_when_ready_for_review() -> Non
             assert (
                 "github.event.pull_request.draft == false" in condition
             ), f"{path.relative_to(_ROOT)} job {job_name} must skip draft PRs"
+
+
+def test_gatekeeper_splits_smoke_e2e_from_conditional_full_e2e() -> None:
+    workflow = _load_yaml(_WORKFLOWS / "gatekeeper.yml")
+    on_block = _github_on(workflow)
+    assert isinstance(on_block, dict)
+    pull_request = _as_mapping(on_block.get("pull_request"))
+    pr_types = pull_request.get("types")
+    assert isinstance(pr_types, list)
+    assert "labeled" in pr_types, "adding e2e-needed must trigger a new CI evaluation"
+    assert "unlabeled" in pr_types, "removing e2e-needed must trigger a new CI evaluation"
+
+    jobs = _as_mapping(workflow.get("jobs"))
+    preflight = _as_mapping(jobs.get("preflight"))
+    smoke = _as_mapping(jobs.get("e2e_smoke"))
+    full = _as_mapping(jobs.get("e2e_full"))
+    gate = _as_mapping(jobs.get("gate"))
+    classify_step = next(
+        step for step in _job_steps(preflight) if step.get("name") == "Classify PR changes"
+    )
+
+    outputs = _as_mapping(preflight.get("outputs"))
+    assert outputs.get("full_e2e") == "${{ steps.classify.outputs.full_e2e }}"
+    assert outputs.get("full_e2e_reason") == "${{ steps.classify.outputs.full_e2e_reason }}"
+    classify_env = _as_mapping(classify_step.get("env"))
+    assert (
+        classify_env.get("E2E_LABEL_PRESENT")
+        == "${{ contains(github.event.pull_request.labels.*.name, 'e2e-needed') }}"
+    )
+
+    preflight_run = _job_run_text(preflight)
+    for required_path in (
+        "tests/e2e/",
+        "src/eedom/plugins/",
+        "src/eedom/data/scanners/",
+        ".github/workflows/gatekeeper.yml",
+        "uv.lock",
+    ):
+        assert required_path in preflight_run
+
+    smoke_step_names = {
+        step.get("name") for step in _job_steps(smoke) if isinstance(step.get("name"), str)
+    }
+    full_step_names = {
+        step.get("name") for step in _job_steps(full) if isinstance(step.get("name"), str)
+    }
+    assert "Run smoke e2e tests" in smoke_step_names
+    assert "Cache scanner binaries" not in smoke_step_names
+    assert "Add scanners to PATH and warm trivy DB" not in smoke_step_names
+    assert "Cache scanner binaries" in full_step_names
+    assert "Add scanners to PATH and warm trivy DB" in full_step_names
+
+    smoke_run = _job_run_text(smoke)
+    full_run = _job_run_text(full)
+    assert "tests/e2e/test_smoke_review.py" in smoke_run
+    assert "tests/e2e/ -v --tb=short" in full_run
+
+    full_condition = str(full.get("if", ""))
+    assert "github.event_name == 'workflow_dispatch'" in full_condition
+    assert "needs.preflight.outputs.full_e2e == 'true'" in full_condition
+
+    assert _as_sequence(gate.get("needs")) == [
+        "preflight",
+        "lint",
+        "test",
+        "e2e_smoke",
+        "e2e_full",
+        "review",
+    ]
+    gate_run = _job_run_text(gate)
+    assert "E2E_SMOKE" in gate_run
+    assert "E2E_FULL" in gate_run
+    assert "e2e-smoke($E2E_SMOKE)" in gate_run
+    assert "e2e-full($E2E_FULL)" in gate_run
 
 
 def test_pull_request_target_workflows_do_not_checkout_or_execute_pr_head() -> None:

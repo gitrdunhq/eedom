@@ -2,7 +2,7 @@ name: GATEKEEPER — Dependency & Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -45,27 +45,83 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
-      docs_only: ${{ steps.docs.outputs.docs_only }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      full_e2e: ${{ steps.classify.outputs.full_e2e }}
+      full_e2e_reason: ${{ steps.classify.outputs.full_e2e_reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
-      - name: Detect docs-only PR
+      - name: Classify PR changes
         if: github.event_name == 'pull_request'
-        id: docs
+        id: classify
         run: |
-          CODE_CHANGES=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" | grep -cvE '\.(md|txt)$|^docs/|^LICENSE|^CODEOWNERS|^\.github/ISSUE_TEMPLATE/' || true)
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")
+          CODE_CHANGES=$(printf '%s\n' "$CHANGED_FILES" | grep -cvE '\.(md|txt)$|^docs/|^LICENSE|^CODEOWNERS|^\.github/ISSUE_TEMPLATE/' || true)
           if [ "$CODE_CHANGES" -eq 0 ]; then
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Docs-only PR — skipping review"
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
+
+          FULL_E2E_CHANGES=""
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              tests/e2e/*|\
+              src/eedom/plugins/*|\
+              src/eedom/data/scanners/*|\
+              src/eedom/core/bootstrap.py|\
+              src/eedom/core/config.py|\
+              src/eedom/core/diff.py|\
+              src/eedom/core/ignore.py|\
+              src/eedom/core/json_report.py|\
+              src/eedom/core/manifest_discovery.py|\
+              src/eedom/core/orchestrator.py|\
+              src/eedom/core/pipeline.py|\
+              src/eedom/core/registry.py|\
+              src/eedom/core/renderer.py|\
+              src/eedom/core/repo_config.py|\
+              src/eedom/core/sarif.py|\
+              src/eedom/core/subprocess_runner.py|\
+              src/eedom/core/tool_runner.py|\
+              src/eedom/core/use_cases.py|\
+              src/eedom/cli/main.py|\
+              policies/*|\
+              Dockerfile|\
+              Dockerfile.test|\
+              Makefile|\
+              pyproject.toml|\
+              uv.lock|\
+              .github/workflows/gatekeeper.yml)
+                FULL_E2E_CHANGES="${FULL_E2E_CHANGES}${changed_path}"$'\n'
+                ;;
+            esac
+          done <<< "$CHANGED_FILES"
+          if [ -n "$FULL_E2E_CHANGES" ]; then
+            echo "full_e2e=true" >> "$GITHUB_OUTPUT"
+            echo "full_e2e_reason=runtime_path" >> "$GITHUB_OUTPUT"
+            echo "::notice::Full e2e required by runtime path changes"
+            {
+              echo "### Full e2e required"
+              echo ""
+              echo "Runtime-sensitive paths changed:"
+              printf '%s\n' "$FULL_E2E_CHANGES" | sed 's/^/- `/' | sed 's/$/`/'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$E2E_LABEL_PRESENT" = "true" ]; then
+            echo "full_e2e=true" >> "$GITHUB_OUTPUT"
+            echo "full_e2e_reason=e2e-needed_label" >> "$GITHUB_OUTPUT"
+            echo "::notice::Full e2e required by e2e-needed label"
+          else
+            echo "full_e2e=false" >> "$GITHUB_OUTPUT"
+            echo "full_e2e_reason=not_required" >> "$GITHUB_OUTPUT"
+          fi
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          E2E_LABEL_PRESENT: ${{ contains(github.event.pull_request.labels.*.name, 'e2e-needed') }}
 
   # ── Push to main: stamp release key only (PR already validated) ──
 
@@ -159,13 +215,52 @@ jobs:
         env:
           EEDOM_ALLOW_HOST_TESTS: "1"
 
-  e2e:
-    name: E2E Tests
+  e2e_smoke:
+    name: E2E Smoke
     needs: preflight
     if: >-
       github.event_name != 'push' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       needs.preflight.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv packages
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/uv-cache
+          key: uv-e2e-smoke-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-e2e-smoke-
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run smoke e2e tests
+        run: uv run pytest tests/e2e/test_smoke_review.py -v --tb=short
+        env:
+          EEDOM_ALLOW_HOST_TESTS: "1"
+          EEDOM_E2E: "1"
+
+  e2e_full:
+    name: E2E Full
+    needs: preflight
+    if: >-
+      github.event_name != 'push' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
+      needs.preflight.outputs.docs_only != 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          needs.preflight.outputs.full_e2e == 'true'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -179,8 +274,8 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: /tmp/uv-cache
-          key: uv-e2e-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-e2e-
+          key: uv-e2e-full-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-e2e-full-
 
       - name: Cache scanner binaries
         id: scanner-cache
@@ -329,7 +424,7 @@ jobs:
 
   gate:
     name: Gate
-    needs: [preflight, lint, test, e2e, review]
+    needs: [preflight, lint, test, e2e_smoke, e2e_full, review]
     if: >-
       always() &&
       !cancelled() &&
@@ -349,8 +444,9 @@ jobs:
           FAILED=""
           [ "$LINT" != "success" ] && FAILED="$FAILED lint($LINT)"
           [ "$TEST" != "success" ] && FAILED="$FAILED test($TEST)"
-          [ "$E2E" != "success" ] && [ "$E2E" != "failure" ] && FAILED="$FAILED e2e($E2E)"
-          [ "$E2E" = "failure" ] && echo "::warning::E2E tests failed — not blocking gate (scanner binary compat issues on GH runners)"
+          [ "$E2E_SMOKE" != "success" ] && FAILED="$FAILED e2e-smoke($E2E_SMOKE)"
+          [ "$E2E_FULL" != "success" ] && [ "$E2E_FULL" != "failure" ] && [ "$E2E_FULL" != "skipped" ] && FAILED="$FAILED e2e-full($E2E_FULL)"
+          [ "$E2E_FULL" = "failure" ] && echo "::warning::Full e2e tests failed — not blocking gate (scanner binary compat issues on GH runners)"
           [ "$REVIEW" != "success" ] && FAILED="$FAILED review($REVIEW)"
 
           if [ -n "$FAILED" ]; then
@@ -362,7 +458,8 @@ jobs:
         env:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
-          E2E: ${{ needs.e2e.result }}
+          E2E_SMOKE: ${{ needs.e2e_smoke.result }}
+          E2E_FULL: ${{ needs.e2e_full.result }}
           REVIEW: ${{ needs.review.result }}
 
       - name: Download review artifacts
@@ -448,7 +545,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Lint:** ${{ needs.lint.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Tests:** ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **E2E:** ${{ needs.e2e.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **E2E smoke:** ${{ needs.e2e_smoke.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **E2E full:** ${{ needs.e2e_full.result }} (${{ needs.preflight.outputs.full_e2e_reason }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Review errors (critical/high):** $ERRORS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Review warnings (medium):** $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Skipped plugins (not installed):** $SKIPPED" >> "$GITHUB_STEP_SUMMARY"
@@ -591,7 +689,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
-            echo "::error::GATEKEEPER fail-closed — upstream job(s) failed (lint=${{ needs.lint.result }}, test=${{ needs.test.result }}, e2e=${{ needs.e2e.result }}, review=${{ needs.review.result }})"
+            echo "::error::GATEKEEPER fail-closed — upstream job(s) failed (lint=${{ needs.lint.result }}, test=${{ needs.test.result }}, e2e_smoke=${{ needs.e2e_smoke.result }}, e2e_full=${{ needs.e2e_full.result }}, review=${{ needs.review.result }})"
             exit 1
           fi
 
