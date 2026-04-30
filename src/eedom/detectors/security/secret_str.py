@@ -71,28 +71,27 @@ class SecretStrDetector(BugDetector):
 
         for node in ast.walk(tree):
             # Check annotated assignments: api_key: str
-            if isinstance(node, ast.AnnAssign):
-                if isinstance(node.target, ast.Name):
-                    var_name = node.target.id
-
-                    # Check if name suggests secret
-                    if self._is_secret_name(var_name):
-                        # Check if using plain str
-                        if is_plain_type(node.annotation, "str"):
-                            findings.append(
-                                DetectorFinding(
-                                    detector_id=self.detector_id,
-                                    detector_name=self.name,
-                                    category=self.category,
-                                    severity=self.severity,
-                                    file_path=str(file_path),
-                                    line_number=node.lineno,
-                                    message=f"'{var_name}' should be SecretStr instead of str",
-                                    snippet=self._get_line(content, node.lineno),
-                                    issue_reference="#227, #261",
-                                    fix_hint=f"Change '{var_name}: str' to '{var_name}: SecretStr'",
-                                )
-                            )
+            if (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and self._is_secret_name(node.target.id)
+                and is_plain_type(node.annotation, "str")
+            ):
+                var_name = node.target.id
+                findings.append(
+                    DetectorFinding(
+                        detector_id=self.detector_id,
+                        detector_name=self.name,
+                        category=self.category,
+                        severity=self.severity,
+                        file_path=str(file_path),
+                        line_number=node.lineno,
+                        message=f"'{var_name}' should be SecretStr instead of str",
+                        snippet=self._get_line(content, node.lineno),
+                        issue_reference="#227, #261",
+                        fix_hint=f"Change '{var_name}: str' to '{var_name}: SecretStr'",
+                    )
+                )
 
         return findings
 

@@ -93,7 +93,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E402", "E501", "SIM117", "SIM105", "SIM102", "B017", "B905", "F841"]
-"src/eedom/detectors/**" = ["SIM102", "SIM110", "SIM105"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["eedom"]

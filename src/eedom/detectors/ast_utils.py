@@ -271,10 +271,8 @@ def find_assignments(tree: ast.AST, var_pattern: str) -> list[ast.Assign | ast.A
             for target in node.targets:
                 if isinstance(target, ast.Name) and matches_pattern(target.id, var_pattern):
                     results.append(node)
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and matches_pattern(  # noqa: SIM102
-                node.target.id, var_pattern
-            ):
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):  # noqa: SIM102
+            if matches_pattern(node.target.id, var_pattern):
                 results.append(node)
 
     return results
@@ -346,9 +344,12 @@ def has_import(tree: ast.AST, module_pattern: str) -> bool:
             for alias in node.names:
                 if matches_pattern(alias.name, module_pattern):
                     return True
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and matches_pattern(node.module, module_pattern):  # noqa: SIM102
-                return True
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and matches_pattern(node.module, module_pattern)
+        ):
+            return True
     return False
 
 
@@ -368,11 +369,10 @@ def get_import_aliases(tree: ast.AST) -> dict[str, str]:
             for alias in node.names:
                 name = alias.asname if alias.asname else alias.name
                 aliases[name] = alias.name
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                for alias in node.names:
-                    name = alias.asname if alias.asname else alias.name
-                    aliases[name] = f"{node.module}.{alias.name}"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                name = alias.asname if alias.asname else alias.name
+                aliases[name] = f"{node.module}.{alias.name}"
 
     return aliases
 
@@ -396,14 +396,20 @@ def contains_string_formatting(node: ast.AST) -> bool:
         if isinstance(child, ast.JoinedStr):
             return True
         # % formatting (BinOp with Mod)
-        if isinstance(child, ast.BinOp) and isinstance(child.op, ast.Mod):
-            if isinstance(child.left, ast.Constant) and isinstance(child.left.value, str):
-                return True
+        if (
+            isinstance(child, ast.BinOp)
+            and isinstance(child.op, ast.Mod)
+            and isinstance(child.left, ast.Constant)
+            and isinstance(child.left.value, str)
+        ):
+            return True
         # .format() call
-        if isinstance(child, ast.Call):
-            if isinstance(child.func, ast.Attribute):
-                if child.func.attr == "format":
-                    return True
+        if (
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "format"
+        ):
+            return True
     return False
 
 
@@ -418,13 +424,15 @@ def is_f_string_with_variable(node: ast.JoinedStr, var_name: str) -> bool:
         True if f-string contains the variable
     """
     for child in ast.walk(node):
-        if isinstance(child, ast.Name):
-            if child.id == var_name:
-                return True
+        if isinstance(child, ast.Name) and child.id == var_name:
+            return True
         # Also check for formatted values in f-strings
-        if isinstance(child, ast.FormattedValue):
-            if isinstance(child.value, ast.Name) and child.value.id == var_name:
-                return True
+        if (
+            isinstance(child, ast.FormattedValue)
+            and isinstance(child.value, ast.Name)
+            and child.value.id == var_name
+        ):
+            return True
     return False
 
 
@@ -446,11 +454,12 @@ def find_class_methods(tree: ast.AST, class_name: str | None = None) -> list[ast
     results = []
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            if class_name is None or matches_pattern(node.name, class_name):
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef):
-                        results.append(item)
+        if isinstance(node, ast.ClassDef) and (
+            class_name is None or matches_pattern(node.name, class_name)
+        ):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef):
+                    results.append(item)
 
     return results
 
@@ -468,9 +477,10 @@ def find_classes(tree: ast.AST, name_pattern: str | None = None) -> list[ast.Cla
     results = []
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            if name_pattern is None or matches_pattern(node.name, name_pattern):
-                results.append(node)
+        if isinstance(node, ast.ClassDef) and (
+            name_pattern is None or matches_pattern(node.name, name_pattern)
+        ):
+            results.append(node)
 
     return results
 
@@ -504,10 +514,9 @@ def find_exception_handlers(tree: ast.AST, exc_type: str | None = None) -> list[
                 elif isinstance(node.type, ast.Tuple):
                     # Multiple exception types: except (A, B):
                     for elt in node.type.elts:
-                        if isinstance(elt, ast.Name):
-                            if matches_pattern(elt.id, exc_type):
-                                results.append(node)
-                                break
+                        if isinstance(elt, ast.Name) and matches_pattern(elt.id, exc_type):
+                            results.append(node)
+                            break
                     continue
 
                 if type_name and matches_pattern(type_name, exc_type):
@@ -533,11 +542,7 @@ def handler_exposes_variable(handler: ast.ExceptHandler, var_name: str) -> bool:
         return False
 
     # Check if variable is used in the handler body
-    for node in ast.walk(handler):
-        if isinstance(node, ast.Name) and node.id == var_name:
-            return True
-
-    return False
+    return any(isinstance(node, ast.Name) and node.id == var_name for node in ast.walk(handler))
 
 
 # =============================================================================
