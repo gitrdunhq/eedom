@@ -65,6 +65,8 @@ def test_release_manager_agent_preserves_release_safety_contract() -> None:
         "Treat merge status, CI status, release-candidate status, and stable publish",
         "release-key verification path",
         "v<base>-rc.<YYYYMMDD>.<N>",
+        "Nightly release candidates",
+        "Nightly Release Candidate",
         "GitHub immutable releases must stay enabled",
         "Do not upload assets to a GitHub release after it is published",
         "gh api repos/gitrdunhq/eedom/immutable-releases --jq .",
@@ -86,3 +88,4 @@ def test_release_manager_agent_preserves_release_safety_contract() -> None:
 
     assert "UV_CACHE_DIR=/tmp/uv-cache EEDOM_ALLOW_HOST_TESTS=1 uv run pytest" in body
     assert "tests/unit/test_copilot_agent_profiles.py" in body
+    assert "daily release" not in normalized_body.lower()

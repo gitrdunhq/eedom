@@ -1,4 +1,4 @@
-name: Daily Release Candidate
+name: Nightly Release Candidate
 
 on:
   schedule:
@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       candidate_number:
-        description: "Candidate ordinal for today's RC. Defaults to next available number."
+        description: "Candidate ordinal for this nightly RC. Defaults to next available number."
         required: false
         type: string
       dry_run:
@@ -20,7 +20,7 @@ on:
         type: boolean
 
 concurrency:
-  group: daily-release-candidate
+  group: nightly-release-candidate
   cancel-in-progress: false
 
 permissions:
@@ -232,7 +232,7 @@ jobs:
           {
             echo "# ${TAG_NAME}"
             echo ""
-            echo "Daily release candidate for ${BASE_VERSION}."
+            echo "Nightly release candidate for ${BASE_VERSION}."
             echo ""
             echo "## Validation"
             echo "- Full E2E passed"

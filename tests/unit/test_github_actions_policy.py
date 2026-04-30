@@ -320,9 +320,14 @@ def test_gatekeeper_keeps_pr_ci_fast_and_full_e2e_manual_only() -> None:
     assert "not blocking gate" not in gate_run
 
 
-def test_daily_release_candidate_runs_full_e2e_and_creates_prerelease() -> None:
+def test_nightly_release_candidate_runs_full_e2e_and_creates_prerelease() -> None:
     workflow = _load_yaml(_WORKFLOWS / "release-candidate.yml")
 
+    assert workflow.get("name") == "Nightly Release Candidate"
+    assert workflow.get("concurrency") == {
+        "group": "nightly-release-candidate",
+        "cancel-in-progress": False,
+    }
     assert workflow.get("permissions") == {"contents": "read"}
     events = _workflow_events(workflow)
     assert "schedule" in events
@@ -381,6 +386,8 @@ def test_daily_release_candidate_runs_full_e2e_and_creates_prerelease() -> None:
     assert 'result.get("ruleId") == "eedom-plugin-error"' in run_text
     assert 're.findall(r"BINARY_CRASHED", markdown)' in run_text
     assert "Release candidate blocked by Dom review" in run_text
+    assert "Nightly release candidate for ${BASE_VERSION}." in run_text
+    assert "Daily release candidate" not in run_text
     assert "uv build" in run_text
     assert 'gh release create "$TAG_NAME"' in run_text
     assert ".release-candidate/dist/*.whl" in run_text
