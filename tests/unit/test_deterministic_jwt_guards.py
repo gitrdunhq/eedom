@@ -74,7 +74,7 @@ def _has_dict_key(node: ast.AST | None, key: str) -> bool:
         for k in node.keys:
             if isinstance(k, ast.Constant) and k.value == key:
                 return True
-            if isinstance(k, ast.Str) and key in str(k.s):  # Python < 3.8 compatibility
+            if isinstance(k, ast.Str) and k.s == key:  # Python < 3.8 compatibility
                 return True
     return False
 
