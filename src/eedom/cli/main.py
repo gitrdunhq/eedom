@@ -328,7 +328,7 @@ def review(
 
         ignore_patterns = load_ignore_patterns(repo)
         files: list[str] = []
-        for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
+        for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json", "*.swift"):
             files.extend(
                 str(p)
                 for p in repo.rglob(ext)
@@ -366,7 +366,7 @@ def review(
             ignore_patterns = load_ignore_patterns(repo)
             folder = Path(package).resolve()  # type: ignore[arg-type]
             files: list[str] = []
-            for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json"):
+            for ext in ("*.py", "*.ts", "*.js", "*.tf", "*.yaml", "*.yml", "*.json", "*.swift"):
                 files.extend(
                     str(p)
                     for p in folder.rglob(ext)

@@ -9,7 +9,7 @@ from pathlib import Path
 from eedom.core.plugin import PluginCategory, PluginResult, ScannerPlugin
 from eedom.plugins._runners.complexity_runner import run_complexity as _run
 
-_CODE_EXTS = {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".java", ".rs", ".c", ".cpp"}
+_CODE_EXTS = {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".java", ".rs", ".c", ".cpp", ".swift"}
 
 
 class ComplexityPlugin(ScannerPlugin):

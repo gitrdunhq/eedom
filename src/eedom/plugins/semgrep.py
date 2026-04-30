@@ -24,6 +24,7 @@ _CODE_EXTS = {
     ".hcl",
     ".yaml",
     ".yml",
+    ".swift",
 }
 
 
