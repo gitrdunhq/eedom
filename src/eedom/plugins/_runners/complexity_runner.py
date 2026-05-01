@@ -24,6 +24,7 @@ _SUPPORTED_EXTS = (
     ".rs",
     ".c",
     ".cpp",
+    ".swift",
 )
 
 _JS_TS_EXTS = {".js", ".ts", ".jsx", ".tsx"}
