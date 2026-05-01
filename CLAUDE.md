@@ -32,8 +32,7 @@ bash scripts/build.sh arm64        # explicit architecture
 bash scripts/build.sh amd64 --no-cache  # force clean rebuild
 bash scripts/build-test.sh         # test image + run all tests
 bash scripts/build-test.sh -- tests/unit/ -x  # specific tests
-bash scripts/build-push.sh         # build + push to GHCR
-bash scripts/build-push.sh v0.2.11 # with version tag
+bash scripts/build-push.sh         # build + push to GHCR (SHA tag only, latest via release workflow)
 ```
 
 **Why scripts, not raw commands:**

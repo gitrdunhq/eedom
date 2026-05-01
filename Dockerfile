@@ -171,11 +171,14 @@ RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
 # Scanner tools — external CLIs installed into the same venv, version-pinned by ARG.
 # Not in the lockfile because scancode-toolkit's transitive dep (extractcode-7z)
 # lacks arm64 wheels, breaking cross-platform uv sync.
+# SKIP_SCANCODE=1 omits scancode for fast arm64 dev builds.
+ARG SKIP_SCANCODE=0
 RUN --security=insecure --mount=type=cache,target=/root/.cache/uv \
-    uv pip install \
-      "scancode-toolkit==${SCANCODE_VERSION}" \
-      "lizard==${LIZARD_VERSION}" \
-      "mypy==${MYPY_VERSION}"
+    if [ "$SKIP_SCANCODE" = "1" ]; then \
+      uv pip install "lizard==${LIZARD_VERSION}" "mypy==${MYPY_VERSION}"; \
+    else \
+      uv pip install "scancode-toolkit==${SCANCODE_VERSION}" "lizard==${LIZARD_VERSION}" "mypy==${MYPY_VERSION}"; \
+    fi
 
 # opengrep — self-contained binary, sha256-verified
 ARG OPENGREP_SHA256_ARM64 OPENGREP_SHA256_AMD64
@@ -193,17 +196,20 @@ RUN set -eux; \
 
 # scancode's plugin loader crashes on arm64 (extractcode-libarchive has no arm64 wheel).
 # Replace the console_script with a wrapper that defers the import.
-RUN printf '%s\n' \
-      '#!/opt/eedom/.venv/bin/python3' \
-      'import sys' \
-      'if "--version" in sys.argv:' \
-      '    from importlib.metadata import version' \
-      '    print("ScanCode version", version("scancode-toolkit"))' \
-      '    sys.exit(0)' \
-      'from scancode.cli import scancode' \
-      'scancode()' \
-    > /opt/eedom/.venv/bin/scancode \
-    && chmod +x /opt/eedom/.venv/bin/scancode
+# Skipped when SKIP_SCANCODE=1.
+RUN if [ "$SKIP_SCANCODE" != "1" ]; then \
+      printf '%s\n' \
+        '#!/opt/eedom/.venv/bin/python3' \
+        'import sys' \
+        'if "--version" in sys.argv:' \
+        '    from importlib.metadata import version' \
+        '    print("ScanCode version", version("scancode-toolkit"))' \
+        '    sys.exit(0)' \
+        'from scancode.cli import scancode' \
+        'scancode()' \
+      > /opt/eedom/.venv/bin/scancode \
+      && chmod +x /opt/eedom/.venv/bin/scancode; \
+    fi
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage 2: runtime

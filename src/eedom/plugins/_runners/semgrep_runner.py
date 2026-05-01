@@ -23,7 +23,6 @@ _EXT_TO_RULESETS: dict[str, list[str]] = {
     ".rb": ["p/ruby"],
     ".java": ["p/java"],
     ".sh": ["r/bash.lang"],
-    ".swift": ["p/swift"],
 }
 
 _NAME_TO_RULESETS: dict[str, list[str]] = {

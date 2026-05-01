@@ -96,11 +96,18 @@ rules:
     languages: [javascript, typescript]
 
   - id: org.resource.lock-held-during-io-python
-    pattern: |
-      with $LOCK:
-          ...
-          $F.write(...)
-          ...
+    patterns:
+      - pattern: |
+          with $LOCK:
+              ...
+              $F.write(...)
+              ...
+      - metavariable-regex:
+          metavariable: $LOCK
+          regex: ".*(?:lock|mutex|Lock|RLock).*"
+    paths:
+      exclude:
+        - tests/
     message: >
       File I/O performed while holding a lock. This blocks other
       threads waiting for the lock during slow disk operations.
