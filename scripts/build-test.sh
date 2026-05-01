@@ -9,10 +9,12 @@ set -euo pipefail
 #   bash scripts/build-test.sh --build-only          # just build
 #   bash scripts/build-test.sh --run-only            # just run (image must exist)
 #   bash scripts/build-test.sh -- tests/unit/ -x     # pass args to pytest
+#   bash scripts/build-test.sh --fast                 # native arm64, no emulation
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ARCH="amd64"
+FAST=false
 IMAGE="eedom-test:${ARCH}"
 BUILD=true
 RUN=true
@@ -22,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --build-only) RUN=false; shift ;;
         --run-only)   BUILD=false; shift ;;
+        --fast) FAST=true; ARCH="arm64"; IMAGE="eedom-test:arm64"; shift ;;
         --) shift; PYTEST_ARGS=("$@"); break ;;
         *) PYTEST_ARGS=("$@"); break ;;
     esac

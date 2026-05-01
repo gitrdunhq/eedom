@@ -5,14 +5,26 @@ set -euo pipefail
 # Auto-detects podman vs docker and applies the right flags.
 #
 # Usage:
-#   bash scripts/build.sh              # default: linux/amd64
-#   bash scripts/build.sh arm64        # explicit arch
-#   bash scripts/build.sh amd64 --no-cache
+#   bash scripts/build.sh                    # default: linux/amd64
+#   bash scripts/build.sh arm64              # explicit arch
+#   bash scripts/build.sh --fast             # native arm64, skip scancode (local dev)
+#   bash scripts/build.sh amd64 --no-cache   # force clean rebuild
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ARCH="${1:-amd64}"; shift 2>/dev/null || true
-EXTRA_ARGS=("$@")
+
+FAST=false
+ARCH="amd64"
+EXTRA_ARGS=()
+
+for arg in "$@"; do
+    case "$arg" in
+        --fast) FAST=true; ARCH="arm64" ;;
+        arm64|amd64) ARCH="$arg" ;;
+        *) EXTRA_ARGS+=("$arg") ;;
+    esac
+done
+
 IMAGE="eedom:${ARCH}"
 
 if command -v podman &>/dev/null; then
@@ -24,11 +36,27 @@ else
     exit 1
 fi
 
-echo "Engine: $ENGINE | Platform: linux/$ARCH | Image: $IMAGE"
+echo "Engine: $ENGINE | Platform: linux/$ARCH | Image: $IMAGE${FAST:+ (fast — no scancode)}"
+
+# Prepare Dockerfile: strip --security=insecure for podman, skip scancode for --fast
+DOCKERFILE_CONTENT=$(cat "$REPO_ROOT/Dockerfile")
 
 if [[ "$ENGINE" == "podman" ]]; then
-    # Podman: strip --security=insecure from RUN directives (not needed, not supported)
-    sed 's/--security=insecure //g' "$REPO_ROOT/Dockerfile" \
+    DOCKERFILE_CONTENT=$(echo "$DOCKERFILE_CONTENT" | sed 's/--security=insecure //g')
+fi
+
+if $FAST; then
+    # Remove scancode install and its wrapper script
+    DOCKERFILE_CONTENT=$(echo "$DOCKERFILE_CONTENT" | sed \
+        -e '/scancode-toolkit/d' \
+        -e '/scancode_wrapper/d' \
+        -e '/scancode\.cli/d' \
+        -e '/scancode()/d' \
+        -e '/extractcode/d')
+fi
+
+if [[ "$ENGINE" == "podman" ]]; then
+    echo "$DOCKERFILE_CONTENT" \
       | $ENGINE build \
           --platform "linux/$ARCH" \
           -t "$IMAGE" \
@@ -36,22 +64,22 @@ if [[ "$ENGINE" == "podman" ]]; then
           "${EXTRA_ARGS[@]}" \
           -f - "$REPO_ROOT"
 else
-    # Docker: needs buildx with insecure entitlement for uv tokio workaround
     BUILDER="eedom-builder"
     if ! docker buildx inspect "$BUILDER" &>/dev/null; then
         echo "Creating buildx builder '$BUILDER' with insecure entitlements..."
         docker buildx create --name "$BUILDER" --driver docker-container \
             --buildkitd-flags '--allow-insecure-entitlement security.insecure' --use
     fi
-    docker buildx build \
-        --builder "$BUILDER" \
-        --allow security.insecure \
-        --load \
-        --platform "linux/$ARCH" \
-        -t "$IMAGE" \
-        -t eedom:latest \
-        "${EXTRA_ARGS[@]}" \
-        "$REPO_ROOT"
+    echo "$DOCKERFILE_CONTENT" \
+      | docker buildx build \
+          --builder "$BUILDER" \
+          --allow security.insecure \
+          --load \
+          --platform "linux/$ARCH" \
+          -t "$IMAGE" \
+          -t eedom:latest \
+          "${EXTRA_ARGS[@]}" \
+          -f - "$REPO_ROOT"
 fi
 
 echo "Built: $IMAGE"
