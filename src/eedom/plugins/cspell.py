@@ -80,6 +80,7 @@ class CspellPlugin(ScannerPlugin):
                     {
                         "file": issue.get("uri", "").removeprefix("file://"),
                         "line": issue.get("row", 0),
+                        "severity": "info",
                         "word": issue.get("text", ""),
                         "suggestions": ", ".join(
                             s if isinstance(s, str) else str(s)
@@ -103,6 +104,7 @@ class CspellPlugin(ScannerPlugin):
                             {
                                 "file": match.group("file"),
                                 "line": int(match.group("line")),
+                                "severity": "info",
                                 "word": match.group("word"),
                                 "suggestions": "",
                             }
