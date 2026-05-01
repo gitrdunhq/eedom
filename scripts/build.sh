@@ -13,13 +13,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-FAST=false
+FAST=""
 ARCH="amd64"
 EXTRA_ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --fast) FAST=true; ARCH="arm64" ;;
+        --fast) FAST=1; ARCH="arm64" ;;
         arm64|amd64) ARCH="$arg" ;;
         *) EXTRA_ARGS+=("$arg") ;;
     esac
@@ -36,23 +36,24 @@ else
     exit 1
 fi
 
+$ENGINE info >/dev/null 2>&1 || { echo "ERROR: $ENGINE is installed but not running" >&2; exit 1; }
+
 echo "Engine: $ENGINE | Platform: linux/$ARCH | Image: $IMAGE${FAST:+ (fast — no scancode)}"
 
-# Prepare Dockerfile: strip --security=insecure for podman, skip scancode for --fast
+# Prepare Dockerfile: strip --security=insecure for podman
 DOCKERFILE_CONTENT=$(cat "$REPO_ROOT/Dockerfile")
 
 if [[ "$ENGINE" == "podman" ]]; then
     DOCKERFILE_CONTENT=$(echo "$DOCKERFILE_CONTENT" | sed 's/--security=insecure //g')
 fi
 
-if $FAST; then
-    # Remove scancode install and its wrapper script
-    DOCKERFILE_CONTENT=$(echo "$DOCKERFILE_CONTENT" | sed \
-        -e '/scancode-toolkit/d' \
-        -e '/scancode_wrapper/d' \
-        -e '/scancode\.cli/d' \
-        -e '/scancode()/d' \
-        -e '/extractcode/d')
+if [[ -n "$FAST" ]]; then
+    EXTRA_ARGS+=("--build-arg" "SKIP_SCANCODE=1")
+fi
+
+if ! echo "$DOCKERFILE_CONTENT" | grep -q '^FROM '; then
+    echo "ERROR: Dockerfile processing produced invalid output" >&2
+    exit 1
 fi
 
 if [[ "$ENGINE" == "podman" ]]; then

@@ -31,6 +31,8 @@ DEFAULT_PATTERNS: list[str] = [
     ".dogfood/",
     "cdk.out/",
     "build/",
+    ".build/",
+    "DerivedData/",
     "dist/",
     "*.egg-info/",
     ".temp/",
