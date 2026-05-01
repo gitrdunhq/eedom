@@ -22,12 +22,51 @@ opa test policies/                     # OPA Rego policy tests
 
 **Tests MUST run in a container.** `make test` handles this automatically. Never use `EEDOM_ALLOW_HOST_TESTS=1`.
 
-Container:
+## Container Builds
+
+**NEVER run `podman build` or `docker build` directly.** Use the build scripts — they handle the podman vs docker differences automatically.
+
 ```bash
-podman build -t eedom:latest .
-podman run --rm -v /path/to/repo:/workspace:ro eedom:latest \
-  review --repo-path /workspace --all
+bash scripts/build.sh              # production image (auto-detects engine)
+bash scripts/build.sh arm64        # explicit architecture
+bash scripts/build.sh amd64 --no-cache  # force clean rebuild
+bash scripts/build-test.sh         # test image + run all tests
+bash scripts/build-test.sh -- tests/unit/ -x  # specific tests
+bash scripts/build-push.sh         # build + push to GHCR
+bash scripts/build-push.sh v0.2.11 # with version tag
 ```
+
+**Why scripts, not raw commands:**
+- Podman (Mac) does NOT support `--security=insecure` in RUN directives — the scripts strip it via sed
+- Docker (Linux) NEEDS `--security=insecure` for uv's tokio runtime (AppArmor blocks socketpair)
+- Docker also needs a buildx builder with `--allow-insecure-entitlement` — the scripts create it automatically
+- Getting this wrong wastes tokens every time
+
+**Running eedom from the container:**
+```bash
+dom                          # scan current directory (alias in .zshrc)
+dom ../openoats              # scan another repo
+dom ../openoats sarif        # SARIF output format
+
+# Or manually:
+podman run --rm --platform linux/amd64 \
+  -v /path/to/repo:/workspace:ro \
+  -v /path/to/repo/.temp:/workspace/.temp \
+  eedom:latest review --repo-path /workspace --all
+```
+
+**Key paths inside container:**
+
+| Path | Purpose |
+|------|---------|
+| `/opt/eedom/.venv/bin/python` | Python with all deps |
+| `/opt/test-venv/bin/python` | Test image Python (use for pytest) |
+| `/workspace/` | Repo mount point |
+| `/usr/local/bin/entrypoint.sh` | Verifies binary checksums before running |
+
+**Rebuilding after code changes:** Always use `bash scripts/build.sh`. The old `podman build -t eedom:latest .` command will fail on Mac.
+
+**x86 build host (sambou@192.168.0.210):** For Docker builds, GHCR pushes, and CI runner. Has the buildx builder pre-configured.
 
 ## Architecture
 
