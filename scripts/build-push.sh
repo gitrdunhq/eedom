@@ -2,16 +2,15 @@
 set -euo pipefail
 
 # Build the eedom production image and push to GHCR.
-# For self-hosted runner (sambou@192.168.0.210) or any host with GHCR access.
+# Tags with commit SHA only. The `latest` tag is applied by the release
+# workflow (build-container.yml) after release-please cuts a version.
 #
 # Usage:
-#   bash scripts/build-push.sh                   # build + push latest
-#   bash scripts/build-push.sh v0.2.11           # build + push with version tag
+#   bash scripts/build-push.sh
 #   REGISTRY=ghcr.io/gitrdunhq/eedom bash scripts/build-push.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="${1:-}"
 REGISTRY="${REGISTRY:-ghcr.io/gitrdunhq/eedom}"
 ARCH="amd64"
 SHA=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -25,17 +24,14 @@ else
     exit 1
 fi
 
-TAGS=("-t" "${REGISTRY}:latest" "-t" "${REGISTRY}:${SHA}")
-[[ -n "$VERSION" ]] && TAGS+=("-t" "${REGISTRY}:${VERSION}")
+TAG="${REGISTRY}:${SHA}"
+echo "Engine: $ENGINE | Tag: ${TAG:0:60}..."
 
-echo "Engine: $ENGINE | Registry: $REGISTRY | SHA: ${SHA:0:12}"
-
-# Build
 if [[ "$ENGINE" == "podman" ]]; then
     sed 's/--security=insecure //g' "$REPO_ROOT/Dockerfile" \
       | $ENGINE build \
           --platform "linux/$ARCH" \
-          "${TAGS[@]}" \
+          -t "$TAG" \
           -f - "$REPO_ROOT"
 else
     BUILDER="eedom-builder"
@@ -48,16 +44,10 @@ else
         --allow security.insecure \
         --load \
         --platform "linux/$ARCH" \
-        "${TAGS[@]}" \
+        -t "$TAG" \
         "$REPO_ROOT"
 fi
 
-echo "Built: ${REGISTRY}:latest (${SHA:0:12})"
-
-# Push
-echo "Pushing to GHCR..."
-$ENGINE push "${REGISTRY}:latest"
-$ENGINE push "${REGISTRY}:${SHA}"
-[[ -n "$VERSION" ]] && $ENGINE push "${REGISTRY}:${VERSION}"
-
-echo "Pushed: ${REGISTRY}:latest, :${SHA:0:12}${VERSION:+, :$VERSION}"
+echo "Pushing ${SHA:0:12}..."
+$ENGINE push "$TAG"
+echo "Pushed: $TAG"
