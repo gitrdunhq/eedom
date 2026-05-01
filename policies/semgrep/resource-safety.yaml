@@ -1,0 +1,141 @@
+rules:
+  # ── Tier 1: High value, low false-positive ──────────────────────────────────
+
+  - id: org.resource.file-read-all-python
+    patterns:
+      - pattern-either:
+          - pattern: $F.read()
+          - pattern: Path(...).read_text(...)
+          - pattern: Path(...).read_bytes()
+          - pattern: open(...).read()
+    paths:
+      exclude:
+        - tests/
+        - scripts/
+    message: >
+      Reading an entire file into memory. For large files this causes OOM.
+      Use chunked reading or streaming instead.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.resource.file-read-all-js
+    patterns:
+      - pattern-either:
+          - pattern: fs.readFileSync(...)
+          - pattern: fs.readFile(...)
+          - pattern: await fs.promises.readFile(...)
+    paths:
+      exclude:
+        - tests/
+        - "*.test.*"
+    message: >
+      Reading an entire file into memory. For large files this causes OOM.
+      Use streaming (createReadStream) instead.
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  - id: org.resource.temp-dir-persistent-python
+    patterns:
+      - pattern-either:
+          - pattern: tempfile.mktemp(...)
+          - pattern: tempfile.NamedTemporaryFile(..., delete=False, ...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Temp files can be purged by the OS at any time. If this file must
+      survive the process, use a persistent directory instead.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.resource.temp-dir-persistent-js
+    pattern: os.tmpdir()
+    paths:
+      exclude:
+        - tests/
+        - "*.test.*"
+    message: >
+      os.tmpdir() returns a directory that can be purged by the OS.
+      If this file must survive the process, use a persistent directory.
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  - id: org.resource.fire-and-forget-task-python
+    patterns:
+      - pattern: asyncio.create_task(...)
+      - pattern-not-inside: $VAR = asyncio.create_task(...)
+    paths:
+      exclude:
+        - tests/
+    message: >
+      asyncio.create_task() without storing the reference. The task
+      cannot be cancelled or awaited. Store it and cancel on shutdown.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.resource.fire-and-forget-promise-js
+    patterns:
+      - pattern-either:
+          - pattern: $F(...).then(...)
+          - pattern: $F(...)
+      - metavariable-pattern:
+          metavariable: $F
+          pattern-either:
+            - pattern: fetch
+            - pattern: axios.$M
+      - pattern-not-inside: $VAR = ...
+      - pattern-not-inside: await ...
+      - pattern-not-inside: return ...
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Unhandled async call — no await, no .catch, no stored reference.
+      Errors will be silently swallowed.
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  - id: org.resource.lock-held-during-io-python
+    pattern: |
+      with $LOCK:
+          ...
+          $F.write(...)
+          ...
+    message: >
+      File I/O performed while holding a lock. This blocks other
+      threads waiting for the lock during slow disk operations.
+      Do I/O outside the lock.
+    severity: WARNING
+    languages: [python]
+
+  - id: org.resource.unbounded-append-in-loop-python
+    pattern: |
+      for ... in ...:
+          ...
+          $LIST.append(...)
+          ...
+    paths:
+      exclude:
+        - tests/
+    message: >
+      Collection grows unbounded inside a loop. Consider adding a
+      size cap or using a fixed-size buffer to prevent OOM on large inputs.
+    severity: INFO
+    languages: [python]
+
+  - id: org.resource.unbounded-append-in-loop-js
+    pattern: |
+      for (...) {
+          ...
+          $ARR.push(...)
+          ...
+      }
+    paths:
+      exclude:
+        - tests/
+        - "*.test.*"
+    message: >
+      Array grows unbounded inside a loop. Consider adding a size cap
+      or using a streaming approach to prevent OOM on large inputs.
+    severity: INFO
+    languages: [javascript, typescript]
