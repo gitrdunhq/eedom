@@ -60,7 +60,10 @@ def load_ignore_patterns(repo_path: Path) -> list[str]:
     """
     patterns: list[str] = list(DEFAULT_PATTERNS)
 
-    ignore_file = repo_path / ".eedomignore"
+    root = repo_path.resolve()
+    ignore_file = (repo_path / ".eedomignore").resolve()
+    if not ignore_file.is_relative_to(root):
+        return patterns
     if not ignore_file.exists():
         return patterns
 

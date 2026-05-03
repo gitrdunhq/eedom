@@ -36,7 +36,7 @@ else
     exit 1
 fi
 
-$ENGINE info >/dev/null 2>&1 || { echo "ERROR: $ENGINE is installed but not running" >&2; exit 1; }
+"$ENGINE" info >/dev/null 2>&1 || { echo "ERROR: $ENGINE is installed but not running" >&2; exit 1; }
 
 echo "Engine: $ENGINE | Platform: linux/$ARCH | Image: $IMAGE${FAST:+ (fast — no scancode)}"
 
@@ -58,7 +58,7 @@ fi
 
 if [[ "$ENGINE" == "podman" ]]; then
     echo "$DOCKERFILE_CONTENT" \
-      | $ENGINE build \
+      | "$ENGINE" build \
           --platform "linux/$ARCH" \
           -t "$IMAGE" \
           -t eedom:latest \
@@ -84,4 +84,4 @@ else
 fi
 
 echo "Built: $IMAGE"
-$ENGINE run --rm --platform "linux/$ARCH" --entrypoint "" "$IMAGE" eedom --version 2>&1 | tail -1
+"$ENGINE" run --rm --platform "linux/$ARCH" --entrypoint "" "$IMAGE" eedom --version 2>&1 | tail -1

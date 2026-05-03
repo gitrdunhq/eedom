@@ -46,6 +46,7 @@ diagrams/
 .eedom/reports/
 .eedom/code_graph.sqlite
 .claude/worktrees/
+.worktrees/
 
 # Local infrastructure (never commit, never delete)
 .dogfood/

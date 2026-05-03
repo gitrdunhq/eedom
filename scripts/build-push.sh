@@ -29,7 +29,7 @@ echo "Engine: $ENGINE | Tag: ${TAG:0:60}..."
 
 if [[ "$ENGINE" == "podman" ]]; then
     sed 's/--security=insecure //g' "$REPO_ROOT/Dockerfile" \
-      | $ENGINE build \
+      | "$ENGINE" build \
           --platform "linux/$ARCH" \
           -t "$TAG" \
           -f - "$REPO_ROOT"
@@ -49,5 +49,5 @@ else
 fi
 
 echo "Pushing ${SHA:0:12}..."
-$ENGINE push "$TAG"
+"$ENGINE" push "$TAG"
 echo "Pushed: $TAG"

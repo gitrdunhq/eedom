@@ -41,11 +41,11 @@ fi
 
 echo "Engine: $ENGINE | Image: $IMAGE"
 
-if $BUILD; then
+if "$BUILD"; then
     echo "Building test image..."
     if [[ "$ENGINE" == "podman" ]]; then
         sed 's/--security=insecure //g' "$REPO_ROOT/Dockerfile.test" \
-          | $ENGINE build \
+          | "$ENGINE" build \
               --platform "linux/$ARCH" \
               -t "$IMAGE" \
               -f - "$REPO_ROOT"
@@ -68,13 +68,13 @@ if $BUILD; then
     echo "Built: $IMAGE"
 fi
 
-if $RUN; then
+if "$RUN"; then
     echo "Running pytest ${PYTEST_ARGS[*]}..."
-    SECURITY_OPT=""
-    [[ "$ENGINE" == "podman" ]] && SECURITY_OPT="--security-opt apparmor=unconfined"
-    $ENGINE run --rm \
+    SECURITY_OPTS=()
+    [[ "$ENGINE" == "podman" ]] && SECURITY_OPTS=("--security-opt" "apparmor=unconfined")
+    "$ENGINE" run --rm \
         --platform "linux/$ARCH" \
-        $SECURITY_OPT \
+        "${SECURITY_OPTS[@]}" \
         --entrypoint "" \
         "$IMAGE" \
         /opt/test-venv/bin/python -m pytest "${PYTEST_ARGS[@]}"
