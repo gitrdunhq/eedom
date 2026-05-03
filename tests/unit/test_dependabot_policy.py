@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import tomllib
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -11,6 +12,13 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[2]
 _VULN_FIXTURE = "tests/e2e/fixtures/vuln-repo"
 _VULN_FIXTURE_GLOB = f"{_VULN_FIXTURE}/**"
+_CLEAN_FIXTURE = "tests/e2e/fixtures/clean-repo"
+
+
+def _is_excluded(fixture_path: str, excluded: set[str]) -> bool:
+    """Return True if a sample file under fixture_path matches any excluded glob."""
+    sample = f"{fixture_path}/requirements.txt"
+    return any(fnmatch(sample, pattern) for pattern in excluded)
 
 
 def _load_dependabot_config() -> dict[object, object]:
@@ -40,9 +48,13 @@ def test_dependabot_excludes_intentional_vulnerability_fixture() -> None:
         for item in update.get("exclude-paths", [])
         if isinstance(item, str)
     }
-    assert _VULN_FIXTURE_GLOB in excluded, (
+    assert _is_excluded(_VULN_FIXTURE, excluded), (
         "Dependabot must not update the intentionally vulnerable e2e fixture; "
         "scanner coverage depends on those pinned vulnerable manifests."
+    )
+    assert _is_excluded(_CLEAN_FIXTURE, excluded), (
+        "Dependabot must not update the clean e2e fixture; "
+        "its pinned deps are intentional test inputs."
     )
 
 
