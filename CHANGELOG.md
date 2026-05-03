@@ -7,6 +7,34 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.12](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.11...eedom-v0.2.12) (2026-05-03)
+
+
+### Features
+
+* add @DetectorRegistry.register decorator to all 15 Phase 1-2 detectors ([eb493d8](https://github.com/gitrdunhq/eedom/commit/eb493d8a8e8d96c51b4a97c47af5b1ea0651ca47))
+* add 9 resource-safety opengrep rules (Tier 1) ([8634cc0](https://github.com/gitrdunhq/eedom/commit/8634cc0770446c07693cab6c6ea4301a9f9bd22e))
+* add cross-platform container build scripts ([5e8495a](https://github.com/gitrdunhq/eedom/commit/5e8495a4a2d781b638ce52b700568b9a720eb70d))
+* add Swift language support ([9410669](https://github.com/gitrdunhq/eedom/commit/9410669d7827907ae5e1bac6d0089f6429ba3896))
+* implement 4 core bug detectors (EED-001, EED-004, EED-006, EED-014) ([8448c5b](https://github.com/gitrdunhq/eedom/commit/8448c5b0eece46e0e9c90ed29b5d498aa3e55506))
+
+
+### Bug Fixes
+
+* add --fast flag for native arm64 builds without scancode ([0e4e1d2](https://github.com/gitrdunhq/eedom/commit/0e4e1d283f706a6e4e5e434df1d9e744191cb385))
+* add .swift to complexity runner _SUPPORTED_EXTS ([fdbea91](https://github.com/gitrdunhq/eedom/commit/fdbea91393cfd7c642f58f38635c750b8a913b9d))
+* address all review findings (F1-F9) ([61912ce](https://github.com/gitrdunhq/eedom/commit/61912ce79ce40a1d6c56d963bf067de4ca96642f))
+* address dom review findings (R1-R5) ([4fd86cd](https://github.com/gitrdunhq/eedom/commit/4fd86cde80868b54b283472e00bbbeac8af1d140))
+* build-push tags SHA only, latest reserved for releases ([f186edd](https://github.com/gitrdunhq/eedom/commit/f186edd3cf7f5659149c7211b567c8f0e6a63b09))
+* create output parent directory before writing (mkdir -p) ([a38993d](https://github.com/gitrdunhq/eedom/commit/a38993dd3871c023a1da28b5c5b8b4d61c33a0bb))
+* DetectorRegistry.discover() now correctly discovers all subpackages ([67159f8](https://github.com/gitrdunhq/eedom/commit/67159f84210834e597442f111a0e952713dc96c3))
+* set cspell findings to info severity ([3f27e79](https://github.com/gitrdunhq/eedom/commit/3f27e794cd72f871ab24806650c1d73d855cbfa7))
+
+
+### Documentation
+
+* add engineer-output.json delivery summary ([4322ca0](https://github.com/gitrdunhq/eedom/commit/4322ca0104f13d3d3c1ad0226b64cb04b51302b9))
+
 ## [0.2.11](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.10...eedom-v0.2.11) (2026-04-30)
 
 
