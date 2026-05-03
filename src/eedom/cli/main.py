@@ -556,7 +556,9 @@ def audit(
 
 def _read_diff(diff_path: str) -> str:
     if diff_path == "-":
-        return sys.stdin.read()
+        return (
+            sys.stdin.read()
+        )  # nosemgrep: file-read-all-python — diff content must be fully buffered for parsing
     path = Path(diff_path)
     if not path.exists():
         logger.warning("diff_file_not_found", path=diff_path)
