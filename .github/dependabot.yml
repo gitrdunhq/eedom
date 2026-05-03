@@ -13,7 +13,7 @@ updates:
       default-days: 14
     open-pull-requests-limit: 5
     exclude-paths:
-      - "tests/e2e/fixtures/vuln-repo/**"
+      - "tests/e2e/fixtures/**"
     groups:
       python-runtime:
         patterns:
