@@ -7,6 +7,31 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 
+## [0.2.13](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.12...eedom-v0.2.13) (2026-05-04)
+
+
+### Features
+
+* add Swift code smell rules for ball-of-mud decomposition ([e6c0c6b](https://github.com/gitrdunhq/eedom/commit/e6c0c6b29b54b0197fd6756310f265277604445b))
+* add SwiftFormat plugin; rename test files to match hook convention ([e3eb68a](https://github.com/gitrdunhq/eedom/commit/e3eb68a3bfc8425df7f4b0947a66ddca12058bf1))
+* add SwiftLint plugin with 13 project-specific custom rules ([afa8df9](https://github.com/gitrdunhq/eedom/commit/afa8df967933037295877a640370393aa3963021))
+* add SwiftUI rendering and synchronisation code smell rules ([0a4f4f2](https://github.com/gitrdunhq/eedom/commit/0a4f4f266a14cf24268e2238044c43b8ea2eba0a))
+
+
+### Bug Fixes
+
+* add verified SHA256 for swiftlint_linux.zip 0.57.1 ([d74c42b](https://github.com/gitrdunhq/eedom/commit/d74c42bee1188e1568ba6e17a4311f6b92d972e7))
+* disable scancode until timeout + scoping are fixed ([#335](https://github.com/gitrdunhq/eedom/issues/335)) ([ba98763](https://github.com/gitrdunhq/eedom/commit/ba987631acdaaa707444edb60b204671631fcf93))
+* **osv-scanner:** exclude fixture dirs via --experimental-exclude + centralized config ([eb41789](https://github.com/gitrdunhq/eedom/commit/eb41789ff238870d7462e8a607cab77be9f35897))
+* resolve swiftlint config in priority order (dom override &gt; project &gt; bundled) ([a095c3c](https://github.com/gitrdunhq/eedom/commit/a095c3c921edd6186c58eda346087f9cb90792f1))
+* **swiftlint:** reject symlinked configs that escape repo_path (path-no-resolve-check) ([0bf087c](https://github.com/gitrdunhq/eedom/commit/0bf087c68f9ce309cbae92f2632b7fa7c07babd2))
+* unblock nightly release gate ([fa40113](https://github.com/gitrdunhq/eedom/commit/fa401131bd8437064c350a6282a3b291c85d0b5f))
+
+
+### Documentation
+
+* **claude:** document scanner exclusion workflow and centralized config ([b2f1c50](https://github.com/gitrdunhq/eedom/commit/b2f1c50a5d395fb68aa6b832b5266fe787aa6ce1))
+
 ## [0.2.12](https://github.com/gitrdunhq/eedom/compare/eedom-v0.2.11...eedom-v0.2.12) (2026-05-03)
 
 
