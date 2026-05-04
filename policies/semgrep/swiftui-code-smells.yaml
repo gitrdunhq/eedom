@@ -1,0 +1,118 @@
+rules:
+  # ── ForEach identity & rendering cost ────────────────────────────────────────
+
+  - id: org.swiftui.foreach-unstable-id-self
+    pattern: "ForEach($X, id: \\.self)"
+    message: >
+      `ForEach(..., id: \.self)` uses the value itself as identity. For
+      non-stable values or collections that reorder, this causes identity
+      churn: SwiftUI destroys and recreates rows instead of diffing.
+      Use a stable domain identifier (e.g. `id: \.id` on an `Identifiable`
+      type).
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  - id: org.swiftui.foreach-sort-inline
+    pattern: "ForEach($ITEMS.sorted(by: $RULE))"
+    message: >
+      Sorting inside `ForEach` runs on every render pass. Move the sort
+      upstream: compute it once in a model, store, or `.task` result and
+      pass the pre-sorted collection to the view.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  - id: org.swiftui.foreach-sort-inline-no-comparator
+    pattern: "ForEach($ITEMS.sorted())"
+    message: >
+      Sorting inside `ForEach` runs on every render pass. Move the sort
+      upstream into the model or store and pass a pre-sorted collection.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  - id: org.swiftui.foreach-filter-inline
+    pattern: "ForEach($ITEMS.filter { ... })"
+    message: >
+      Filtering inside `ForEach` runs on every render pass and produces
+      an unstable identity sequence. Pre-filter in the model or store,
+      give the result a stable `Identifiable` identity, and pass it down.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  # ── Formatter allocation cost ─────────────────────────────────────────────────
+
+  - id: org.swiftui.formatter-allocation-in-view
+    pattern-either:
+      - pattern: NumberFormatter()
+      - pattern: DateFormatter()
+      - pattern: MeasurementFormatter()
+      - pattern: ByteCountFormatter()
+      - pattern: RelativeDateTimeFormatter()
+      - pattern: DateComponentsFormatter()
+    paths:
+      exclude:
+        - Tests/
+        - "*Tests.swift"
+        - "*Spec.swift"
+    message: >
+      Formatters are expensive to allocate and should not be created
+      inline — they are recreated on every render pass when placed in a
+      view or `body`. Cache them in a model, a static helper, or a
+      `@State`-held formatter object.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  # ── Main-thread work ──────────────────────────────────────────────────────────
+
+  - id: org.swiftui.image-decode-inline
+    pattern-either:
+      - pattern: "Image(uiImage: UIImage(data: $DATA))"
+      - pattern: "Image(uiImage: UIImage(data: $DATA)!)"
+      - pattern: "Image(nsImage: NSImage(data: $DATA)!)"
+      - pattern: "Image(nsImage: NSImage(data: $DATA))"
+    paths:
+      exclude:
+        - Tests/
+        - "*Tests.swift"
+        - "*Spec.swift"
+    message: >
+      Decoding image data inline inside a `View` runs on the main thread
+      during render. Decode and downsample on a background task, store
+      the result, and pass the already-decoded image to the view.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: performance
+      source: codex:swiftui-performance-audit code-smells.md
+
+  # ── Synchronisation primitives ────────────────────────────────────────────────
+
+  - id: org.swiftui.nslock-use-actor-instead
+    pattern-either:
+      - pattern: NSLock()
+      - pattern: NSRecursiveLock()
+    message: >
+      `NSLock` / `NSRecursiveLock` provide runtime synchronisation but
+      give the Swift 6 compiler no proof of thread safety. Replace with
+      `actor`: isolation is compile-time verified, Sendable conformance is
+      implicit, and there is no manual unlock to forget.
+      See docs/solutions/build-errors/nslock-actor-migration.md.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: correctness
+      source: openoats:docs/solutions/build-errors/nslock-actor-migration.md
