@@ -152,6 +152,56 @@ class TestOsvScannerSuccess:
         assert "--sbom" in cmd
 
 
+class TestOsvScannerExcludePaths:
+    """Tests for --experimental-exclude path exclusion support."""
+
+    @patch("eedom.data.scanners.osv.run_subprocess_with_timeout")
+    def test_exclude_paths_added_to_cmd(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = (0, OSV_OUTPUT_ZERO_VULNS, "")
+        scanner = OsvScanner(exclude_paths=["tests/e2e/fixtures"])
+
+        scanner.scan(Path("/project"))
+
+        cmd = mock_run.call_args[1].get("cmd") or mock_run.call_args[0][0]
+        assert any("--experimental-exclude" in arg for arg in cmd)
+        assert any("tests/e2e/fixtures" in arg for arg in cmd)
+
+    @patch("eedom.data.scanners.osv.run_subprocess_with_timeout")
+    def test_multiple_exclude_paths_each_get_flag(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = (0, OSV_OUTPUT_ZERO_VULNS, "")
+        scanner = OsvScanner(exclude_paths=["tests/e2e/fixtures", "vendor"])
+
+        scanner.scan(Path("/project"))
+
+        cmd = mock_run.call_args[1].get("cmd") or mock_run.call_args[0][0]
+        exclude_args = [a for a in cmd if "--experimental-exclude" in a]
+        assert len(exclude_args) == 2
+
+    @patch("eedom.data.scanners.osv.run_subprocess_with_timeout")
+    def test_no_exclude_paths_omits_flag(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = (0, OSV_OUTPUT_ZERO_VULNS, "")
+        scanner = OsvScanner()
+
+        scanner.scan(Path("/project"))
+
+        cmd = mock_run.call_args[1].get("cmd") or mock_run.call_args[0][0]
+        assert not any("--experimental-exclude" in arg for arg in cmd)
+
+    @patch("eedom.data.scanners.osv.run_subprocess_with_timeout")
+    def test_exclude_paths_not_added_in_sbom_mode(self, mock_run: MagicMock) -> None:
+        """Exclusions are path-based and irrelevant when scanning an SBOM directly."""
+        mock_run.return_value = (0, OSV_OUTPUT_ZERO_VULNS, "")
+        scanner = OsvScanner(
+            sbom_path=Path("/evidence/sbom.json"),
+            exclude_paths=["tests/e2e/fixtures"],
+        )
+
+        scanner.scan(Path("/project"))
+
+        cmd = mock_run.call_args[1].get("cmd") or mock_run.call_args[0][0]
+        assert not any("--experimental-exclude" in arg for arg in cmd)
+
+
 class TestOsvScannerFailure:
     """Tests for OSV-Scanner failure modes."""
 
