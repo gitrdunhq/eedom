@@ -94,6 +94,26 @@ Three-tier — imports flow downward only (cli -> core -> data):
 
 **Plugin dependency graph**: plugins declare `depends_on` for topological execution order.
 
+## Scanner Exclusions — Fixture Dirs
+
+`tests/e2e/fixtures/` contains intentionally pinned old dependencies used as scan-target inputs for e2e tests. These are **not** eedom's own deps — never update them via Dependabot or fix their CVEs.
+
+**Centralized exclusion source of truth:** `config/scan-exclusions.toml`
+
+All scanner exclusion configs are generated from this file:
+
+```bash
+uv run scripts/sync_scan_exclusions.py   # regenerate after editing
+```
+
+What the script manages:
+- `tests/e2e/fixtures/*/osv-scanner.toml` — `[[PackageOverrides]] ignore = true` for standalone CLI runs
+- Validates `dependabot.yml` `exclude-paths` covers all fixture roots
+
+**Runtime exclusion:** `OsvScanner` passes `--experimental-exclude=<path>` per entry in `EedomSettings.osv_exclude_paths` (default: `["tests/e2e/fixtures"]`). Override via `EEDOM_OSV_EXCLUDE_PATHS` env var.
+
+**Rule:** If you add a new fixture directory, add it to `config/scan-exclusions.toml` and run the sync script. Do NOT manually edit the generated `osv-scanner.toml` files.
+
 ## OPA Policy
 
 6 rules in `policies/policy.rego`. Critical/high vulns deny. Forbidden licenses deny. Package age < 30 days denies. Malicious packages deny. Medium vulns warn. High transitive dep count warns.
