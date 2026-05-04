@@ -180,7 +180,31 @@ class TestSwiftLintPluginRun:
         config_idx = cmd.index("--config")
         assert ".eedom/swiftlint.yml" in cmd[config_idx + 1]
 
-    def test_uses_bundled_config_as_fallback(self) -> None:
+    def test_uses_project_swiftlint_yml_when_present(self, tmp_path: Path) -> None:
+        project_config = tmp_path / ".swiftlint.yml"
+        project_config.write_text("disabled_rules: []\n")
+        runner = MagicMock()
+        runner.run.return_value = _tool_result(_CLEAN_OUTPUT)
+        p = SwiftLintPlugin(tool_runner=runner)
+        p.run(_SWIFT_FILES, tmp_path)
+        cmd = runner.run.call_args[0][0].cmd
+        config_idx = cmd.index("--config")
+        assert str(project_config) in cmd[config_idx + 1]
+
+    def test_dom_override_takes_precedence_over_project_config(self, tmp_path: Path) -> None:
+        (tmp_path / ".swiftlint.yml").write_text("disabled_rules: []\n")
+        dom_config = tmp_path / ".eedom" / "swiftlint.yml"
+        dom_config.parent.mkdir()
+        dom_config.write_text("disabled_rules: [force_cast]\n")
+        runner = MagicMock()
+        runner.run.return_value = _tool_result(_CLEAN_OUTPUT)
+        p = SwiftLintPlugin(tool_runner=runner)
+        p.run(_SWIFT_FILES, tmp_path)
+        cmd = runner.run.call_args[0][0].cmd
+        config_idx = cmd.index("--config")
+        assert ".eedom/swiftlint.yml" in cmd[config_idx + 1]
+
+    def test_uses_bundled_config_as_last_resort(self) -> None:
         runner = MagicMock()
         runner.run.return_value = _tool_result(_CLEAN_OUTPUT)
         p = SwiftLintPlugin(tool_runner=runner)
