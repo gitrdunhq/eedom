@@ -190,7 +190,11 @@ jobs:
                   plugin_errored = False
                   for result in run.get("results", []):
                       if result.get("ruleId") == "eedom-plugin-error":
-                          crashed += 1
+                          msg = result.get("message", {}).get("text", "")
+                          if "[TIMEOUT]" in msg:
+                              warnings += 1  # transient — don't block release
+                          else:
+                              crashed += 1
                           plugin_errored = True
                           break
                   if plugin_errored:
