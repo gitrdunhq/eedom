@@ -35,10 +35,15 @@ _SEV_MAP = {
 
 
 def _resolve_config(repo_path: Path) -> Path:
-    custom = repo_path / ".eedom" / "swiftlint.yml"
-    if custom.is_file():
-        logger.info("swiftlint.custom_config", path=str(custom))
-        return custom
+    # Priority: dom override → project's own config → bundled default
+    dom_override = repo_path / ".eedom" / "swiftlint.yml"
+    if dom_override.is_file():
+        logger.info("swiftlint.dom_config", path=str(dom_override))
+        return dom_override
+    project_config = repo_path / ".swiftlint.yml"
+    if project_config.is_file():
+        logger.info("swiftlint.project_config", path=str(project_config))
+        return project_config
     return _BUNDLED_CONFIG
 
 
