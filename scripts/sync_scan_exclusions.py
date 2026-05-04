@@ -68,7 +68,11 @@ def write_osv_configs(fixture_roots: list[Path]) -> list[Path]:
             target = lockfile_dir / "osv-scanner.toml"
             target.write_text(OSV_CONFIG_HEADER, encoding="utf-8")
             written.append(target)
-            print(f"  wrote {target.relative_to(REPO_ROOT)}")
+            try:
+                display = target.relative_to(REPO_ROOT)
+            except ValueError:
+                display = target
+            print(f"  wrote {display}")
     return written
 
 

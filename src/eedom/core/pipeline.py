@@ -126,7 +126,7 @@ class ReviewPipeline:
             if name == "syft":
                 scanners.append(d["SyftScanner"](evidence_dir=evidence_path))
             elif name == "osv-scanner":
-                scanners.append(d["OsvScanner"]())
+                scanners.append(d["OsvScanner"](exclude_paths=config.osv_exclude_paths))
             elif name == "trivy":
                 scanners.append(d["TrivyScanner"]())
             elif name == "scancode":
@@ -350,7 +350,7 @@ class ReviewPipeline:
             if name == "syft":
                 scanners.append(d["SyftScanner"](evidence_dir=evidence_path))
             elif name == "osv-scanner":
-                scanners.append(d["OsvScanner"]())
+                scanners.append(d["OsvScanner"](exclude_paths=config.osv_exclude_paths))
             elif name == "trivy":
                 scanners.append(d["TrivyScanner"]())
             elif name == "scancode":

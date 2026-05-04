@@ -69,6 +69,12 @@ class EedomSettings(BaseSettings):
     pipeline_timeout: int = 300
     pypi_timeout: int = 10
 
+    # OSV-Scanner path exclusions (passed as --experimental-exclude flags)
+    # Excludes e2e fixture dirs that contain intentionally pinned old deps.
+    osv_exclude_paths: list[str] = Field(
+        default=["tests/e2e/fixtures"],
+    )
+
     # OPA policy path
     opa_policy_path: str = "./policies/policy.rego"
 

@@ -38,8 +38,13 @@ _SEVERITY_MAP: dict[str, FindingSeverity] = {
 class OsvScanner(Scanner):
     """Detects known vulnerabilities using osv-scanner."""
 
-    def __init__(self, sbom_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        sbom_path: Path | None = None,
+        exclude_paths: list[str] | None = None,
+    ) -> None:
         self._sbom_path = sbom_path
+        self._exclude_paths: list[str] = exclude_paths or []
 
     @property
     def name(self) -> str:
@@ -52,7 +57,8 @@ class OsvScanner(Scanner):
         if self._sbom_path is not None:
             cmd = ["osv-scanner", "--format", "json", "--sbom", str(self._sbom_path)]
         else:
-            cmd = ["osv-scanner", "--format", "json", "-r", str(target_path)]
+            exclude_flags = [f"--experimental-exclude={p}" for p in self._exclude_paths]
+            cmd = ["osv-scanner", "--format", "json", *exclude_flags, "-r", str(target_path)]
 
         returncode, stdout, stderr = run_subprocess_with_timeout(cmd=cmd, timeout=_TIMEOUT)
         elapsed = time.monotonic() - start
