@@ -164,7 +164,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-lint-${{ hashFiles('uv.lock') }}
@@ -196,7 +196,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-test-${{ hashFiles('uv.lock') }}
@@ -234,7 +234,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-api-contract-${{ hashFiles('uv.lock') }}
@@ -265,7 +265,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-e2e-smoke-${{ hashFiles('uv.lock') }}
@@ -294,7 +294,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-e2e-full-${{ hashFiles('uv.lock') }}
@@ -302,13 +302,13 @@ jobs:
 
       - name: Cache scanner binaries
         id: scanner-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/scanner-bin
           key: scanners-${{ env.SCANNER_VERSIONS }}
 
       - name: Cache trivy DB
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/trivy-cache
           key: trivy-db-${{ github.run_id }}
@@ -365,7 +365,7 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Cache uv packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/uv-cache
           key: uv-review-${{ hashFiles('uv.lock') }}
@@ -373,13 +373,13 @@ jobs:
 
       - name: Cache scanner binaries
         id: scanner-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/scanner-bin
           key: scanners-${{ env.SCANNER_VERSIONS }}
 
       - name: Cache trivy DB
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: /tmp/trivy-cache
           key: trivy-db-${{ github.run_id }}
