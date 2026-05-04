@@ -1,0 +1,134 @@
+rules:
+  # ── Crash risks ──────────────────────────────────────────────────────────────
+
+  - id: org.swift.force-try
+    pattern: try! $EXPR
+    message: >
+      `try!` crashes the process on any thrown error. This is error-handling
+      debt: replace with `do { try ... } catch { ... }` or `try?` with an
+      explicit logged fallback. During decomposition, every `try!` is a seam
+      that needs a real error contract.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: correctness
+      source: ai-coding-discipline Rule 2
+
+  - id: org.swift.force-cast
+    pattern: $EXPR as! $TYPE
+    message: >
+      Force cast (`as!`) crashes if the runtime type doesn't match. Use
+      conditional cast (`as? $TYPE`) and handle the nil case explicitly.
+      In a decomposition, a force cast usually signals a missing protocol
+      or type boundary that should be made explicit.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: correctness
+      source: ai-coding-discipline Rule 2
+
+  # ── Hidden coupling ───────────────────────────────────────────────────────────
+
+  - id: org.swift.notification-center-post
+    pattern: NotificationCenter.default.post(...)
+    message: >
+      NotificationCenter.post broadcasts to every registered observer with
+      no compile-time contract. Each post is a hidden coupling point. During
+      decomposition, replace with direct delegation, a Combine publisher, or
+      structured concurrency (async/await) so data flow is explicit and
+      traceable.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      category: architecture
+      source: eskil-architecture
+
+  - id: org.swift.notification-center-observer
+    pattern: NotificationCenter.default.addObserver(...)
+    message: >
+      NotificationCenter.addObserver creates an invisible dependency — any
+      number of observers can react to a post with no visibility at the call
+      site. Map observers to explicit subscribers during decomposition and
+      replace with structured data flow.
+    languages: [swift]
+    severity: INFO
+    metadata:
+      category: architecture
+      source: eskil-architecture
+
+  # ── Scattered state ───────────────────────────────────────────────────────────
+
+  - id: org.swift.userdefaults-write
+    pattern: "UserDefaults.standard.set($VALUE, forKey: $KEY)"
+    message: >
+      UserDefaults.standard.set scatters app state across an untyped
+      key-value store with no single source of truth. During decomposition,
+      consolidate UserDefaults access into a typed settings repository or
+      @AppStorage wrapper so all reads/writes are tracked in one place.
+    languages: [swift]
+    severity: INFO
+    metadata:
+      category: architecture
+      source: code-standards DPS-3
+
+  # ── UI/threading coupling ─────────────────────────────────────────────────────
+
+  - id: org.swift.dispatch-main-async
+    pattern-regex: "DispatchQueue\\.main\\.async"
+    paths:
+      exclude:
+        - Tests/
+        - "*Tests.swift"
+        - "*Spec.swift"
+    message: >
+      DispatchQueue.main.async in business logic tangles UI threading with
+      domain code. During decomposition, dispatch to main only at the
+      presentation layer. Prefer @MainActor on view-layer types or
+      structured concurrency (await MainActor.run) so the threading contract
+      is part of the type system.
+    languages: [swift]
+    severity: INFO
+    metadata:
+      category: architecture
+      source: apple-concurrency-patterns
+
+  # ── Logging debt ──────────────────────────────────────────────────────────────
+
+  - id: org.swift.print-in-source
+    pattern: print(...)
+    paths:
+      exclude:
+        - Tests/
+        - "*Tests.swift"
+        - "*Spec.swift"
+        - Sources/Benchmark/
+        - "*Benchmark*"
+    message: >
+      Use os.Logger (OSLog) instead of print(). print() is invisible to
+      Console.app, stripped in release builds inconsistently, and bypasses
+      structured log levels. Replace with Logger(subsystem:category:) and
+      log at the appropriate level (.debug, .info, .error).
+    languages: [swift]
+    severity: INFO
+    metadata:
+      category: maintainability
+      source: code-standards DPS-6
+
+  # ── Explicit debt markers ─────────────────────────────────────────────────────
+
+  - id: org.swift.todo-fixme
+    pattern-regex: "//\\s*(TODO|FIXME|HACK|XXX)[:\\s]"
+    paths:
+      exclude:
+        - Tests/
+        - "*Tests.swift"
+        - "*Spec.swift"
+    message: >
+      Explicit technical debt marker. Convert to a tracked GitHub issue and
+      replace the comment with the issue number so the debt is visible in
+      the backlog and not buried in source.
+    languages: [swift]
+    severity: INFO
+    metadata:
+      category: maintainability
+      source: code-standards
