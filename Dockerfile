@@ -19,6 +19,7 @@ ARG MYPY_VERSION=1.15.0
 ARG CSPELL_VERSION=8.18.1
 ARG LS_LINT_VERSION=2.3.1
 ARG PMD_VERSION=7.24.0
+ARG SWIFTLINT_VERSION=0.57.1
 
 # ── Source revision pins ─────────────────────────────────────────────────────
 # GitHub release assets are still addressed by release version because that is
@@ -46,6 +47,8 @@ ARG KUBE_LINTER_SHA256_ARM64=802e1b09eabd08f6f0a060a6b8ab2bf7bc7e6bf4f673bb26923
 ARG LS_LINT_SHA256_ARM64=2abdb71243c619f0bb29587be5c228bec84c107985f2c066139ef0ec35fd3a99
 ARG PMD_SHA256=110934b36d39c19094d1b77386931978093f238f2c2f1851748822b69c7367ac
 ARG OPENGREP_SHA256_ARM64=3bade33c9aee60edf88899cac2b58086bf728caf0a93aced97dd77c272a740f1
+# SwiftLint — arm64 Linux binary not yet available; plugin degrades gracefully if missing
+ARG SWIFTLINT_SHA256_AMD64=FIXME_verify_sha256_before_building
 
 # AMD64 checksums
 ARG SYFT_SHA256_AMD64=7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a
@@ -132,6 +135,22 @@ RUN set -eux; \
     echo "${JQ_SHA}  /staging/jq/jq" | sha256sum --strict -c -; \
     rm -f /tmp/*.tar.gz /tmp/*.zip; \
     chmod +x /staging/gobin/* /staging/jq/jq
+
+# ── SwiftLint — amd64 only (no official arm64 Linux binary yet) ───────────────
+# Plugin degrades gracefully (NOT_INSTALLED) if this step is skipped.
+# Before building: verify SHA256 at https://github.com/realm/SwiftLint/releases
+# and replace FIXME_verify_sha256_before_building in the ARG above.
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "amd64" ] && [ "${SWIFTLINT_SHA256_AMD64}" != "FIXME_verify_sha256_before_building" ]; then \
+        curl -sSfL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux.zip"; \
+        echo "${SWIFTLINT_SHA256_AMD64}  /tmp/swiftlint.zip" | sha256sum --strict -c -; \
+        unzip -q /tmp/swiftlint.zip swiftlint -d /usr/local/bin/; \
+        chmod +x /usr/local/bin/swiftlint; \
+        rm /tmp/swiftlint.zip; \
+    else \
+        echo "SwiftLint: skipping (arm64 or SHA256 not yet verified)"; \
+    fi
 
 # ── Build-time checksums for runtime verification ────────────────────────────
 RUN for b in syft trivy osv-scanner opa gitleaks kube-linter ls-lint; do \

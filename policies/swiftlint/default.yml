@@ -1,0 +1,233 @@
+# eedom SwiftLint default configuration
+#
+# Sources:
+#   - openoats/AGENTS.md (Never Do list)
+#   - openoats/ARCHITECTURE_PRINCIPLES.md (code quality gates)
+#   - openoats/docs/solutions/ (post-mortems: NSLock, @unchecked Sendable, TOCTOU)
+#   - openoats/.wfc/references/code-patterns-from-repos.md (OwlWhisper/Petal patterns)
+#   - ~/.codex plugins: swiftui-performance-audit/code-smells.md
+#   - ~/.codex plugins: swiftui-view-refactor/mv-patterns.md
+#   - Cocoacasts: 5 Swift code smell categories
+#   - SwiftLint custom rule article (Ricardo Santos)
+#
+# Per-repo overrides: place .eedom/swiftlint.yml in the repo root.
+
+# ── Thresholds ────────────────────────────────────────────────────────────────
+file_length:
+  warning: 500
+  error: 800
+
+function_body_length:
+  warning: 40
+  error: 80
+
+type_body_length:
+  warning: 200
+  error: 350
+
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+
+nesting:
+  type_level:
+    warning: 3
+  function_level:
+    warning: 4
+
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+# ── Built-in rules: crash risks (Error — these are always wrong) ──────────────
+force_cast: error
+force_try: error
+
+# ── Opt-in rules ──────────────────────────────────────────────────────────────
+opt_in_rules:
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - fatal_error_message
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - first_where
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - unused_import
+  - weak_delegate
+  - empty_collection_literal
+  - redundant_nil_coalescing
+  - overridden_super_call
+
+# ── Disabled rules (too noisy or project-irrelevant) ─────────────────────────
+disabled_rules:
+  - todo
+
+# ── Custom rules — project-specific from accumulated docs ────────────────────
+custom_rules:
+
+  # Source: AGENTS.md Never Do / code-patterns-from-repos.md
+  no_print:
+    name: "No print statements"
+    regex: '\bprint\('
+    message: >
+      Use os.Logger(subsystem:category:) instead of print(). print() bypasses
+      structured logging, is invisible to Console.app, and strips in release
+      builds inconsistently.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: docs/solutions/build-errors/nslock-actor-migration.md
+  no_nslock:
+    name: "NSLock — use actor instead"
+    regex: '\bNSLock\(\)'
+    message: >
+      NSLock provides runtime-only synchronisation; the Swift 6 compiler cannot
+      verify thread safety. Replace with an actor — isolation is compile-time
+      guaranteed and Sendable conformance is implicit.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  no_nsrecursivelock:
+    name: "NSRecursiveLock — use actor instead"
+    regex: '\bNSRecursiveLock\(\)'
+    message: >
+      NSRecursiveLock has the same Swift 6 Sendable problem as NSLock, with the
+      added risk of hiding re-entrancy bugs. Replace with an actor.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: AGENTS.md Never Do
+  no_url_string_interpolation:
+    name: "URL with string interpolation"
+    regex: 'URL\(string:\s*"[^"]*\\\('
+    message: >
+      URL(string:) with interpolation is a crash risk (returns nil on invalid
+      characters) and a security risk (injection). Use URLComponents + percent
+      encoding for dynamic URLs.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: AGENTS.md Never Do / audio-buffer-on2-to-on-optimization.md
+  no_array_remove_first_in_loop:
+    name: "Array.removeFirst() — O(n) per call"
+    regex: '\.removeFirst\(\)'
+    message: >
+      Array.removeFirst() shifts all remaining elements: O(n) per call, O(n²)
+      total inside a loop. This was the root cause of latency degradation in the
+      audio buffer (PERF-001). Use a head-index (circular buffer) or Deque.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: docs/solutions/swift-concurrency/unchecked-sendable-safety-documentation.md (ADR-003)
+  unchecked_sendable_needs_safety:
+    name: "@unchecked Sendable requires SAFETY comment"
+    regex: '@unchecked\s+Sendable'
+    message: >
+      Every @unchecked Sendable type must have a SAFETY comment directly above
+      it that lists the invariants proving thread safety. See the template in
+      docs/solutions/swift-concurrency/unchecked-sendable-safety-documentation.md.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: docs/solutions/security-issues/api-key-secure-string-storage.md
+  no_hardcoded_timezone:
+    name: "Hardcoded timezone"
+    regex: '"UTC"|"GMT"'
+    message: >
+      Hardcoded timezone strings cause locale bugs. Use TimeZone.current or
+      define a typed constant in your configuration layer.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  no_hardcoded_date_format:
+    name: "Hardcoded date format string"
+    regex: 'dateFormat\s*=\s*"'
+    message: >
+      Hardcoded date format strings are fragile and localisation-hostile. Define
+      a typed constant or use the locale-aware DateFormatter.Style APIs.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: AGENTS.md Never Do / actor-isolation-consolidation.md
+  weak_self_in_actor_task:
+    name: "[weak self] in actor Task"
+    regex: 'Task\s*\{[^}]*\[weak self\]'
+    message: >
+      [weak self] inside an actor Task closure is wrong: actors capture self
+      strongly and the weak capture makes the closure silently no-op. Remove
+      [weak self] from Task closures inside actors.
+    severity: error
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: codex:swiftui-performance-audit/code-smells.md
+  foreach_id_self:
+    name: "ForEach with id: \\.self"
+    regex: 'ForEach\([^,]+,\s*id:\s*\\\.self\)'
+    message: >
+      ForEach(..., id: \.self) uses value identity which causes full list
+      rebuilds when items reorder or mutate. Use a stable Identifiable
+      identifier (id: \.id) instead.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: Cocoacasts / SwiftLint article
+  no_magic_numbers:
+    name: "Magic number"
+    regex: '(?<![a-zA-Z_])\b[0-9]{3,}\b(?!\s*[,\]])'
+    message: >
+      Magic numbers make intent opaque and changes error-prone. Define a named
+      constant or enum case. One-off counts in range literals (0..<10) are exempt.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+      - string
+
+  # Source: Cocoacasts / SwiftLint article
+  singleton_naming:
+    name: "Singleton should be named 'shared'"
+    regex: 'static\s+(var|let)\s+(instance|sharedInstance|singleton)\s*[=:]'
+    message: >
+      Singletons should be named 'shared' for consistency and autocomplete
+      discoverability. Rename to `static let shared = ...`.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
+
+  # Source: codex:swiftui-view-refactor/mv-patterns.md
+  private_computed_view:
+    name: "Computed some View property (prefer dedicated subview type)"
+    regex: 'private\s+var\s+\w+\s*:\s*some\s+View\s*\{'
+    message: >
+      Computed `some View` properties fragment the view without providing stable
+      identity. Extract into a dedicated private struct View type with explicit
+      inputs instead. See swiftui-view-refactor skill.
+    severity: warning
+    excluded_match_kinds:
+      - comment
+      - doccomment
