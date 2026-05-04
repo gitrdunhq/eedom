@@ -27,6 +27,7 @@ REPO_ROOT = Path(
         capture_output=True,
         text=True,
         check=True,
+        timeout=10,
     ).stdout.strip()
 )
 
@@ -82,6 +83,7 @@ def git_last_modified(path: Path) -> str | None:
             text=True,
             check=True,
             cwd=REPO_ROOT,
+            timeout=30,
         )
         return r.stdout.strip() or None
     except Exception:
@@ -251,6 +253,7 @@ def main() -> None:
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
+        timeout=10,
     ).stdout.strip()
 
     branch = subprocess.run(
@@ -258,6 +261,7 @@ def main() -> None:
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
+        timeout=10,
     ).stdout.strip()
 
     over_500 = [f["path"] for f in src_files if f["over_500"]]

@@ -41,8 +41,10 @@ runs:
     - name: Generate diff
       id: diff
       shell: bash
+      env:
+        BASE_REF: ${{ github.base_ref }}
       run: |
-        git diff origin/${{ github.base_ref }}...HEAD > "$RUNNER_TEMP/dep-changes.diff"
+        git diff "origin/$BASE_REF"...HEAD > "$RUNNER_TEMP/dep-changes.diff"
         echo "diff-path=$RUNNER_TEMP/dep-changes.diff" >> "$GITHUB_OUTPUT"
 
     - name: Run dependency review
