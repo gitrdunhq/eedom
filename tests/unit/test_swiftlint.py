@@ -213,6 +213,41 @@ class TestSwiftLintPluginRun:
         config_idx = cmd.index("--config")
         assert "swiftlint" in cmd[config_idx + 1]
 
+    def test_symlinked_project_config_outside_repo_uses_bundled(self, tmp_path: Path) -> None:
+        """Symlink inside repo pointing to a config outside repo_path must be rejected."""
+        import os
+
+        external = tmp_path.parent / "external_swiftlint.yml"
+        external.write_text("disabled_rules: []\n")
+        symlink_config = tmp_path / ".swiftlint.yml"
+        os.symlink(external, symlink_config)
+
+        runner = MagicMock()
+        runner.run.return_value = _tool_result(_CLEAN_OUTPUT)
+        p = SwiftLintPlugin(tool_runner=runner)
+        p.run(_SWIFT_FILES, tmp_path)
+        cmd = runner.run.call_args[0][0].cmd
+        config_idx = cmd.index("--config")
+        assert "external_swiftlint" not in cmd[config_idx + 1]
+
+    def test_symlinked_dom_config_outside_repo_uses_bundled(self, tmp_path: Path) -> None:
+        """Symlink inside .eedom/ pointing outside repo_path must be rejected."""
+        import os
+
+        external = tmp_path.parent / "evil_swiftlint.yml"
+        external.write_text("disabled_rules: []\n")
+        eedom_dir = tmp_path / ".eedom"
+        eedom_dir.mkdir()
+        os.symlink(external, eedom_dir / "swiftlint.yml")
+
+        runner = MagicMock()
+        runner.run.return_value = _tool_result(_CLEAN_OUTPUT)
+        p = SwiftLintPlugin(tool_runner=runner)
+        p.run(_SWIFT_FILES, tmp_path)
+        cmd = runner.run.call_args[0][0].cmd
+        config_idx = cmd.index("--config")
+        assert "evil_swiftlint" not in cmd[config_idx + 1]
+
 
 class TestSwiftLintPluginRender:
     def test_render_clean_returns_empty(self) -> None:
