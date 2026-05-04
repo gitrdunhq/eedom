@@ -1,0 +1,13 @@
+# Centralized scanner exclusion list.
+# Run `uv run scripts/sync_scan_exclusions.py` after editing to regenerate all derived configs.
+#
+# Tools consuming this file (via sync script):
+#   - osv-scanner  →  osv-scanner.toml in each fixture lockfile directory
+#   - dependabot   →  .github/dependabot.yml exclude-paths (validated, not overwritten)
+
+[fixture_dirs]
+# Directories containing intentionally pinned old deps used as scan-target fixtures.
+# These are NOT eedom's own dependencies — they are test inputs for the scanner.
+paths = [
+    "tests/e2e/fixtures",
+]
